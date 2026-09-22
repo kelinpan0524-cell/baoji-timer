@@ -182,6 +182,7 @@ class PlanExercise {
   PlanExercise copyWith({
     int? id,
     int? dayId,
+    String? name,
     int? orderIdx,
     int? sets,
     int? repsMin,
@@ -192,7 +193,7 @@ class PlanExercise {
       PlanExercise(
         id: id ?? this.id,
         dayId: dayId ?? this.dayId,
-        name: name,
+        name: name ?? this.name,
         orderIdx: orderIdx ?? this.orderIdx,
         sets: sets ?? this.sets,
         repsMin: repsMin ?? this.repsMin,

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
-import '../services/lark_service.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'workout_page.dart';
@@ -287,19 +286,9 @@ class _HomePageState extends State<HomePage> {
 
   /// 激活计划的未来训练日写入飞书日历（安装/导入计划后调用）。
   Future<void> _syncLarkDays(AppContainer c) async {
-    final specs = <PlanDaySyncSpec>[];
-    for (final day in c.planRepo.days) {
-      final exs = c.planRepo.exercisesByDayId[day.id] ?? [];
-      if (exs.isEmpty) continue;
-      specs.add(PlanDaySyncSpec(
-        planDayId: day.id!,
-        weekday: day.weekday,
-        title: day.title,
-        detail: exs
-            .map((e) => '· ${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}')
-            .join('\n'),
-      ));
-    }
+    final planId = c.planRepo.activePlan?.id;
+    if (planId == null) return;
+    final specs = await c.planRepo.larkSpecsForPlan(planId);
     await c.lark.syncUpcomingDays(days: specs);
   }
 
