@@ -1,0 +1,94 @@
+import 'package:flutter/material.dart';
+
+/// 深色高对比主题（设计规范见 docs/design-spec.md）。
+class AppTheme {
+  static const bg = Color(0xFF0E1116);
+  static const card = Color(0xFF1A2028);
+  static const cardHi = Color(0xFF232B36);
+  static const primary = Color(0xFF4ADE80);
+  static const danger = Color(0xFFF87171);
+  static const accent = Color(0xFF60A5FA);
+  static const warn = Color(0xFFFBBF24);
+  static const text = Color(0xFFE5E7EB);
+  static const textDim = Color(0xFF9CA3AF);
+
+  static ThemeData get dark => ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: bg,
+        colorScheme: const ColorScheme.dark(
+          primary: primary,
+          secondary: accent,
+          error: danger,
+          surface: card,
+          onPrimary: Color(0xFF06220F),
+          onSurface: text,
+        ),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: bg,
+          elevation: 0,
+          centerTitle: false,
+          foregroundColor: text,
+        ),
+        cardTheme: const CardThemeData(
+          color: card,
+          elevation: 0,
+          margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.all(Radius.circular(16)),
+          ),
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: bg,
+          indicatorColor: cardHi,
+          labelTextStyle: const WidgetStatePropertyAll(
+            TextStyle(fontSize: 12, color: textDim),
+          ),
+          iconTheme: WidgetStateProperty.resolveWith((states) => IconThemeData(
+                color: states.contains(WidgetState.selected) ? primary : textDim,
+              )),
+        ),
+        filledButtonTheme: FilledButtonThemeData(
+          style: FilledButton.styleFrom(
+            backgroundColor: primary,
+            foregroundColor: const Color(0xFF06220F),
+            textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            minimumSize: const Size.fromHeight(56),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: text,
+            side: const BorderSide(color: Color(0xFF374151)),
+            minimumSize: const Size.fromHeight(52),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: card,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+        dividerColor: const Color(0xFF2A323D),
+        fontFamily: null,
+      );
+
+  /// 等宽数字样式（计时/重量大数字）。
+  static TextStyle bigNum(double size, {Color color = text}) => TextStyle(
+        fontSize: size,
+        fontWeight: FontWeight.w800,
+        color: color,
+        fontFeatures: const [FontFeature.tabularFigures()],
+        height: 1.0,
+      );
+}

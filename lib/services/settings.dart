@@ -1,0 +1,111 @@
+import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// 应用设置：只存手机本地（shared_preferences）。密钥类字段永不进仓库/日志。
+class Settings extends ChangeNotifier {
+  Settings(this._prefs) {
+    _load();
+  }
+
+  final SharedPreferences _prefs;
+
+  // 训练偏好
+  int restCompoundSec = 180;
+  int restAssistanceSec = 120;
+  bool vibrationOn = true;
+  bool soundOn = true;
+
+  // AI（OpenAI 兼容）
+  String aiBaseUrl = '';
+  String aiApiKey = '';
+  String aiModel = '';
+
+  // 飞书
+  bool larkEnabled = false;
+  String larkAppId = '';
+  String larkAppSecret = '';
+  String larkRefreshToken = '';
+  String larkCalendarId = '';
+  int larkEventHour = 18; // 日历事件默认开始时刻
+  int larkEventMinutes = 30;
+  int larkReminderMin = 30;
+
+  // 专注模式
+  bool focusDndEnabled = true; // 训练时自动勿扰
+  bool focusAppCheckEnabled = true; // 切出分心 App 提醒
+  String distractingApps =
+      'com.smile.gifmaker,com.kuaishou.app,com.ss.android.ugc.aweme,com.tencent.weishi,com.xingin.xhs,com.sina.weibo,tv.danmaku.bili';
+
+  void _load() {
+    restCompoundSec = _prefs.getInt('${_kprefix}restCompound') ?? 180;
+    restAssistanceSec = _prefs.getInt('${_kprefix}restAssist') ?? 120;
+    vibrationOn = _prefs.getBool('${_kprefix}vibration') ?? true;
+    soundOn = _prefs.getBool('${_kprefix}sound') ?? true;
+    aiBaseUrl = _prefs.getString('${_kprefix}aiBaseUrl') ?? '';
+    aiApiKey = _prefs.getString('${_kprefix}aiApiKey') ?? '';
+    aiModel = _prefs.getString('${_kprefix}aiModel') ?? '';
+    larkEnabled = _prefs.getBool('${_kprefix}larkEnabled') ?? false;
+    larkAppId = _prefs.getString('${_kprefix}larkAppId') ?? '';
+    larkAppSecret = _prefs.getString('${_kprefix}larkSecret') ?? '';
+    larkRefreshToken = _prefs.getString('${_kprefix}larkRefresh') ?? '';
+    larkCalendarId = _prefs.getString('${_kprefix}larkCalendar') ?? '';
+    larkEventHour = _prefs.getInt('${_kprefix}larkHour') ?? 18;
+    larkEventMinutes = _prefs.getInt('${_kprefix}larkMin') ?? 30;
+    larkReminderMin = _prefs.getInt('${_kprefix}larkRemind') ?? 30;
+    focusDndEnabled = _prefs.getBool('${_kprefix}focusDnd') ?? true;
+    focusAppCheckEnabled = _prefs.getBool('${_kprefix}focusApp') ?? true;
+    distractingApps =
+        _prefs.getString('${_kprefix}distract') ?? distractingApps;
+    larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
+    larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
+  }
+
+  // token 运行时字段
+  String larkAccessToken = '';
+  int larkTokenExpiry = 0; // epoch ms
+
+  void set(void Function() change, {bool persist = true}) {
+    change();
+    if (persist) notifyListeners();
+  }
+
+  Future<void> save() async {
+    await _prefs.setInt('${_kprefix}restCompound', restCompoundSec);
+    await _prefs.setInt('${_kprefix}restAssist', restAssistanceSec);
+    await _prefs.setBool('${_kprefix}vibration', vibrationOn);
+    await _prefs.setBool('${_kprefix}sound', soundOn);
+    await _prefs.setString('${_kprefix}aiBaseUrl', aiBaseUrl);
+    await _prefs.setString('${_kprefix}aiApiKey', aiApiKey);
+    await _prefs.setString('${_kprefix}aiModel', aiModel);
+    await _prefs.setBool('${_kprefix}larkEnabled', larkEnabled);
+    await _prefs.setString('${_kprefix}larkAppId', larkAppId);
+    await _prefs.setString('${_kprefix}larkSecret', larkAppSecret);
+    await _prefs.setString('${_kprefix}larkRefresh', larkRefreshToken);
+    await _prefs.setString('${_kprefix}larkCalendar', larkCalendarId);
+    await _prefs.setInt('${_kprefix}larkHour', larkEventHour);
+    await _prefs.setInt('${_kprefix}larkMin', larkEventMinutes);
+    await _prefs.setInt('${_kprefix}larkRemind', larkReminderMin);
+    await _prefs.setBool('${_kprefix}focusDnd', focusDndEnabled);
+    await _prefs.setBool('${_kprefix}focusApp', focusAppCheckEnabled);
+    await _prefs.setString('${_kprefix}distract', distractingApps);
+    await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
+    await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);
+    notifyListeners();
+  }
+
+  bool get aiConfigured => aiBaseUrl.isNotEmpty && aiApiKey.isNotEmpty;
+
+  List<String> get distractingAppsList =>
+      distractingApps.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+
+  String debugSummary() => jsonEncode({
+        'aiConfigured': aiConfigured,
+        'larkEnabled': larkEnabled,
+        'larkCalendarConfigured': larkCalendarId.isNotEmpty,
+      });
+}
+
+// 避免拼错：内部统一用小写前缀常量
+const _kprefix = 'set.';
