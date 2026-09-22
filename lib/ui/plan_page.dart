@@ -2,14 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../core/app.dart';
 import '../engine/engine.dart';
 import '../services/ai_service.dart';
-import '../services/lark_service.dart';
+import 'plan_editor_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
-/// 计划页：周日视图 + 计划切换 + AI 导入。
+/// 计划页：多计划管理（查看/切换/重命名/复制/删除）+ 周视图 + AI 导入。
+/// 点击某个训练日进入编辑器，可人工调整动作与组数次数。
 class PlanPage extends StatefulWidget {
   const PlanPage({super.key});
 
@@ -19,7 +19,10 @@ class PlanPage extends StatefulWidget {
 
 class _PlanPageState extends State<PlanPage> {
   bool _loading = true;
-  int? _selectedDayId;
+  List<Plan> _plans = [];
+  Plan? _view; // 正在查看的计划（可为未启用计划）
+  List<PlanDay> _days = [];
+  Map<int, List<PlanExercise>> _exByDay = {};
 
   @override
   void initState() {
@@ -27,8 +30,22 @@ class _PlanPageState extends State<PlanPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
-  Future<void> _refresh() async {
-    await app(context).planRepo.reload();
+  Future<void> _refresh({Plan? view}) async {
+    final c = app(context);
+    await c.planRepo.reload(includeAll: true);
+    _plans = c.planRepo.allPlansCache;
+    _view = view ??
+        (_view == null
+            ? c.planRepo.activePlan
+            : _plans.where((p) => p.id == _view!.id).firstOrNull ??
+                c.planRepo.activePlan);
+    if (_view == null) {
+      _days = [];
+      _exByDay = {};
+    } else {
+      _days = await c.db.planDays(_view!.id!);
+      _exByDay = await c.db.daysExercisesMap(_days.map((d) => d.id!).toList());
+    }
     if (!mounted) return;
     setState(() => _loading = false);
   }
@@ -38,61 +55,114 @@ class _PlanPageState extends State<PlanPage> {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
-    final c = app(context);
-    final repo = c.planRepo;
-    if (repo.activePlan == null) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Text('还没有计划',
-                style: TextStyle(fontSize: 18, color: AppTheme.textDim)),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => _installBaoji(),
-              child: const Text('一键安装薄肌计划'),
-            ),
-            const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: () => _showAiImport(),
-              child: const Text('粘贴文本 · AI 拆解'),
-            ),
-          ],
-        ),
-      );
+    if (_plans.isEmpty) {
+      return _emptyState();
     }
-    final days = repo.days;
-    final selected =
-        _selectedDayId == null ? null : days.where((d) => d.id == _selectedDayId).firstOrNull;
+    final active = app(context).planRepo.activePlan;
+    final viewingActive = _view?.id == active?.id;
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
         Row(
           children: [
+            // 计划切换器
             Expanded(
-              child: Text(repo.activePlan!.name,
-                  style: const TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w700)),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(10),
+                onTap: () => _showPlanSwitcher(),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          '${_view?.name ?? '无计划'}'
+                          '（${viewingActive ? '使用中' : '未启用'}）',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      const Icon(Icons.expand_more,
+                          size: 20, color: AppTheme.textDim),
+                    ],
+                  ),
+                ),
+              ),
             ),
-            TextButton(
-                onPressed: () => _showAiImport(),
-                child: const Text('AI 导入新计划')),
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'activate') {
+                  _activateViewed();
+                } else if (v == 'rename') {
+                  _renamePlan();
+                } else if (v == 'duplicate') {
+                  _duplicatePlan();
+                } else if (v == 'delete') {
+                  _deletePlan();
+                }
+              },
+              itemBuilder: (_) => [
+                if (!viewingActive)
+                  const PopupMenuItem(
+                      value: 'activate',
+                      child: Row(children: [
+                        Icon(Icons.play_circle_outline, size: 18),
+                        SizedBox(width: 8),
+                        Text('设为使用中'),
+                      ])),
+                const PopupMenuItem(
+                    value: 'rename',
+                    child: Row(children: [
+                      Icon(Icons.edit_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('重命名'),
+                    ])),
+                const PopupMenuItem(
+                    value: 'duplicate',
+                    child: Row(children: [
+                      Icon(Icons.copy_all_outlined, size: 18),
+                      SizedBox(width: 8),
+                      Text('复制一份'),
+                    ])),
+                const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(children: [
+                      Icon(Icons.delete_outline,
+                          size: 18, color: AppTheme.danger),
+                      SizedBox(width: 8),
+                      Text('删除计划', style: TextStyle(color: AppTheme.danger)),
+                    ])),
+              ],
+            ),
           ],
+        ),
+        Text(
+          _sourceLabel(_view?.source),
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
         ),
         const SizedBox(height: 8),
         ...List.generate(7, (i) {
           final wd = i + 1;
-          final day = days.where((d) => d.weekday == wd).firstOrNull;
+          final day = _days.where((d) => d.weekday == wd).firstOrNull;
           final exs = day == null
               ? const <PlanExercise>[]
-              : (repo.exercisesByDayId[day.id] ?? const <PlanExercise>[]);
+              : (_exByDay[day.id] ?? const <PlanExercise>[]);
           final isToday = DateTime.now().weekday == wd;
           return Card(
             margin: const EdgeInsets.symmetric(vertical: 5),
             child: InkWell(
               borderRadius: BorderRadius.circular(16),
-              onTap: day == null ? null : () => setState(() => _selectedDayId = day.id),
+              onTap: day == null
+                  ? null
+                  : () async {
+                      await Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => PlanEditorPage(day: day)));
+                      // 编辑后刷新，并让飞书日历同步最新编排
+                      await _refresh();
+                      await _syncLarkDays();
+                    },
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Row(
@@ -113,7 +183,6 @@ class _PlanPageState extends State<PlanPage> {
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // 计数放标题行右侧，不混入动作名列表
                                 Row(
                                   children: [
                                     Expanded(
@@ -129,73 +198,289 @@ class _PlanPageState extends State<PlanPage> {
                                   ],
                                 ),
                                 const SizedBox(height: 4),
-                                // 每个动作名整体换行（Wrap），避免中文名在行尾被按字拆断
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 2,
-                                  children: [
-                                    for (var i = 0; i < exs.length; i++)
-                                      Text(
-                                        i == exs.length - 1
-                                            ? exs[i].name
-                                            : '${exs[i].name} ·',
-                                        style: const TextStyle(
-                                            color: AppTheme.textDim,
-                                            fontSize: 13),
-                                      ),
-                                  ],
-                                ),
+                                if (exs.isEmpty)
+                                  const Text('点此编排动作',
+                                      style: TextStyle(
+                                          color: AppTheme.accent,
+                                          fontSize: 13))
+                                else
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 2,
+                                    children: [
+                                      for (var k = 0; k < exs.length; k++)
+                                        Text(
+                                          k == exs.length - 1
+                                              ? exs[k].name
+                                              : '${exs[k].name} ·',
+                                          style: const TextStyle(
+                                              color: AppTheme.textDim,
+                                              fontSize: 13),
+                                        ),
+                                    ],
+                                  ),
                               ],
                             ),
                     ),
+                    const Icon(Icons.chevron_right,
+                        size: 18, color: AppTheme.textDim),
                   ],
                 ),
               ),
             ),
           );
         }),
-        if (selected != null) _dayDetail(c, selected),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _showAiImport(),
+                icon: const Icon(Icons.auto_awesome, size: 16),
+                label: const Text('AI 拆解导入'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _createBlankPlan(),
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('新建空白计划'),
+              ),
+            ),
+          ],
+        ),
       ],
     );
   }
 
-  Widget _dayDetail(AppContainer c, PlanDay day) {
-    final exs = c.planRepo.exercisesByDayId[day.id] ?? [];
-    return SectionCard(
-      title: day.title,
+  Widget _emptyState() {
+    return Center(
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          for (final e in exs)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                      '${e.name} — ${e.sets}×${e.repsMin}-${e.repsMax} · 休息 ${e.restSec}s · ${e.kind == 'compound' ? '复合' : '辅助'}',
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
-                  Text('渐进规则：${e.rule.desc}',
-                      style: const TextStyle(
-                          color: AppTheme.textDim, fontSize: 13)),
-                ],
-              ),
-            ),
+          const Text('还没有计划',
+              style: TextStyle(fontSize: 18, color: AppTheme.textDim)),
+          const SizedBox(height: 16),
+          FilledButton(
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              await app(context).planRepo.installBaojiPlan();
+              await _syncLarkDays();
+              if (mounted) {
+                messenger.showSnackBar(const SnackBar(
+                    content: Text('薄肌计划已安装'),
+                    backgroundColor: AppTheme.cardHi,
+                    behavior: SnackBarBehavior.floating));
+                await _refresh();
+              }
+            },
+            child: const Text('一键安装薄肌计划'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: () => _showAiImport(),
+            child: const Text('粘贴文本 · AI 拆解'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: () => _createBlankPlan(),
+            child: const Text('新建空白计划'),
+          ),
         ],
       ),
     );
   }
 
-  Future<void> _installBaoji() async {
-    final c = app(context);
-    await c.planRepo.installBaojiPlan();
-    if (mounted) {
-      toast(context, '薄肌计划已安装');
-      setState(() => _loading = true);
-      _refresh();
+  String _sourceLabel(String? source) {
+    switch (source) {
+      case 'preset':
+        return '内置计划 · 点任意训练日可人工调整';
+      case 'ai':
+        return 'AI 拆解计划 · 建议逐日校对后使用';
+      case 'copy':
+        return '复制计划';
+      default:
+        return '自定义计划';
     }
   }
+
+  // ================= 计划级操作 =================
+
+  Future<void> _showPlanSwitcher() async {
+    final c = app(context);
+    final dayCounts = await c.db.planDayCounts();
+    final exCounts = await c.db.planExerciseCounts();
+    final plans = await c.db.allPlans();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          children: [
+            const Text('切换计划',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('点计划查看/编辑；「使用中」的计划决定每天的训练安排。',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            const SizedBox(height: 8),
+            for (final p in plans)
+              ListTile(
+                leading: p.id == c.planRepo.activePlan?.id
+                    ? const Icon(Icons.check_circle, color: AppTheme.primary)
+                    : const Icon(Icons.radio_button_unchecked,
+                        color: AppTheme.textDim),
+                title: Text(p.name),
+                subtitle: Text(
+                    '${dayCounts[p.id] ?? 0} 个训练日 · ${exCounts[p.id] ?? 0} 个动作',
+                    style: const TextStyle(fontSize: 12)),
+                trailing: p.id == _view?.id
+                    ? const Text('查看中',
+                        style: TextStyle(color: AppTheme.accent, fontSize: 12))
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _view = p);
+                  _refresh(view: p);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _activateViewed() async {
+    final c = app(context);
+    if (_view == null) return;
+    // 原启用计划的未来日程从日历撤下，新计划日程写入
+    final oldDays = await c.db.planDays(c.planRepo.activePlan?.id ?? 0);
+    await c.db.setActivePlan(_view!.id!);
+    await c.planRepo.reload(includeAll: true);
+    unawaited(_removeOldEvents(oldDays.map((d) => d.id!).toList()));
+    await _syncLarkDays();
+    if (mounted) {
+      toast(context, '已启用「${_view!.name}」');
+      await _refresh(view: _view);
+    }
+  }
+
+  Future<void> _removeOldEvents(List<int> dayIds) async {
+    final c = app(context);
+    for (final id in dayIds) {
+      await c.lark.removePlanDayEvent(id);
+    }
+  }
+
+  Future<void> _renamePlan() async {
+    if (_view == null) return;
+    final ctrl = TextEditingController(text: _view!.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        title: const Text('重命名计划'),
+        content: TextField(controller: ctrl, autofocus: true),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child:
+                  const Text('取消', style: TextStyle(color: AppTheme.textDim))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child:
+                  const Text('保存', style: TextStyle(color: AppTheme.primary))),
+        ],
+      ),
+    );
+    if (name == null || !mounted || name.isEmpty) return;
+    final c = app(context);
+    await c.db.renamePlan(_view!.id!, name);
+    await _refresh();
+    if (mounted) toast(context, '已重命名');
+  }
+
+  Future<void> _duplicatePlan() async {
+    if (_view == null) return;
+    final c = app(context);
+    final newId =
+        await c.planRepo.duplicatePlan(_view!.id!, '${_view!.name}（副本）');
+    final plans = await c.db.allPlans();
+    final copy = plans.where((p) => p.id == newId).firstOrNull;
+    await _refresh(view: copy);
+    if (mounted) toast(context, '已复制为副本，可独立编辑不影响原计划');
+  }
+
+  Future<void> _deletePlan() async {
+    if (_view == null) return;
+    final planId = _view!.id!;
+    final planName = _view!.name;
+    final ok = await confirmDialog(context, '删除「$planName」？',
+        '计划的全部训练日和动作将被删除；历史训练记录保留。此操作无法撤销。',
+        okLabel: '删除');
+    if (!ok || !mounted) return;
+    final c = app(context);
+    final dayIds = (await c.db.planDays(planId)).map((d) => d.id!).toList();
+    await c.planRepo.deletePlanAndFixActive(planId);
+    // 撤下该计划在日历上的未来日程（尽力而为）
+    unawaited(_removeOldEvents(dayIds));
+    _view = null;
+    await _refresh();
+    if (mounted) toast(context, '已删除');
+  }
+
+  Future<void> _createBlankPlan() async {
+    final ctrl = TextEditingController(text: '我的计划');
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.card,
+        title: const Text('新建空白计划'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('创建后可自行编排每周训练日与动作。',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            const SizedBox(height: 12),
+            TextField(controller: ctrl, autofocus: true),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child:
+                  const Text('取消', style: TextStyle(color: AppTheme.textDim))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child:
+                  const Text('创建', style: TextStyle(color: AppTheme.primary))),
+        ],
+      ),
+    );
+    if (name == null || !mounted || name.isEmpty) return;
+    final c = app(context);
+    final plan = await c.db.insertPlan(Plan(
+      name: name,
+      source: 'manual',
+      createdAt: fmtDate(DateTime.now()),
+      isActive: 0,
+    ));
+    for (var wd = 1; wd <= 7; wd++) {
+      await c.db
+          .insertPlanDay(PlanDay(planId: plan.id!, weekday: wd, title: '训练日'));
+    }
+    final created =
+        (await c.db.allPlans()).where((p) => p.id == plan.id).firstOrNull;
+    await _refresh(view: created);
+    if (mounted) toast(context, '已创建，点击任意一天开始编排');
+  }
+
+  // ================= AI 导入 =================
 
   Future<void> _showAiImport() async {
     final c = app(context);
@@ -219,14 +504,14 @@ class _PlanPageState extends State<PlanPage> {
             const Text('AI 拆解训练计划',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            const Text('粘贴你的计划原文（如“周一 卧推 3×5-8 …”），AI 自动识别训练日、动作、组数次数。',
+            const Text(
+                '粘贴你的计划原文（如"周一 卧推 3×5-8 …"），AI 自动识别训练日、动作、组数次数；导入后可逐日人工校对。',
                 style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
             const SizedBox(height: 12),
             TextField(
               controller: ctrl,
               maxLines: 8,
-              decoration: const InputDecoration(
-                  hintText: '在此粘贴计划文本…'),
+              decoration: const InputDecoration(hintText: '在此粘贴计划文本…'),
             ),
             const SizedBox(height: 12),
             if (!c.settings.aiConfigured)
@@ -246,7 +531,6 @@ class _PlanPageState extends State<PlanPage> {
       toast(context, '请先在设置里配置 AI 接口');
       return;
     }
-    // 拆解中。先取 navigator，异步后再用它关掉，避免跨 async 用 context
     final nav = Navigator.of(context, rootNavigator: true);
     showDialog(
       context: context,
@@ -261,14 +545,14 @@ class _PlanPageState extends State<PlanPage> {
         specs: specs,
         metaMap: metaMap,
       );
-      // 关掉加载圈（无论后续成功失败都必须关，否则页面卡死）
       if (nav.canPop()) nav.pop();
-      // 写飞书日历（未来 14 天内的训练日）
-      await _syncUpcomingDays(c);
+      await _syncLarkDays();
       if (!mounted) return;
-      toast(context, '拆解完成：${specs.length} 个训练日，已启用「${plan.name}」');
-      setState(() => _loading = true);
-      _refresh();
+      toast(context, '拆解完成：${specs.length} 个训练日，点任意一天即可校对');
+      await _refresh(view: null);
+      final created =
+          _plans.where((p) => p.id == plan.id).firstOrNull;
+      await _refresh(view: created);
     } on AiException catch (e) {
       if (nav.canPop()) nav.pop();
       if (mounted) toast(context, e.message);
@@ -278,22 +562,14 @@ class _PlanPageState extends State<PlanPage> {
     }
   }
 
-  /// 激活计划的未来 14 天训练日写入飞书日历。
-  Future<void> _syncUpcomingDays(AppContainer c) async {
-    final repo = c.planRepo;
-    final specs = <PlanDaySyncSpec>[];
-    for (final day in repo.days) {
-      final exs = repo.exercisesByDayId[day.id] ?? [];
-      if (exs.isEmpty) continue;
-      specs.add(PlanDaySyncSpec(
-        planDayId: day.id!,
-        weekday: day.weekday,
-        title: day.title,
-        detail: exs
-            .map((e) => '· ${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}')
-            .join('\n'),
-      ));
-    }
+  // ================= 飞书同步 =================
+
+  /// 当前查看计划的未来 14 天训练日写入飞书日历（编辑/切换/导入后调用）。
+  Future<void> _syncLarkDays() async {
+    final c = app(context);
+    final planId = _view?.id ?? c.planRepo.activePlan?.id;
+    if (planId == null) return;
+    final specs = await c.planRepo.larkSpecsForPlan(planId);
     await c.lark.syncUpcomingDays(days: specs);
   }
 }

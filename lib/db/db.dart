@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 
@@ -5,12 +6,27 @@ import '../models/models.dart';
 
 /// SQLite 本地库：唯一数据源。所有查询经 DatabaseProvider。
 class Db {
-  Db._();
+  Db._() : _override = null;
   static final Db instance = Db._();
+
+  /// 测试缝：注入已打开的内存库（sqflite_common_ffi）。
+  @visibleForTesting
+  Db.forTesting(this._override);
+
+  final Database? _override;
+  Future<Database>? _overrideFuture;
 
   Future<Database>? _dbFuture;
 
   Future<Database> get database {
+    final o = _override;
+    if (o != null) {
+      // 与生产路径一致：开启外键（级联删除依赖它）
+      return _overrideFuture ??= () async {
+        await o.execute('PRAGMA foreign_keys = ON');
+        return o;
+      }();
+    }
     final existing = _dbFuture;
     if (existing != null) return existing;
     final dir = getDatabasesPath();
@@ -18,7 +34,7 @@ class Db {
           p.join(d, 'baoji_timer.db'),
           version: 2,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
-          onCreate: _onCreate,
+          onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
         ));
     _dbFuture = future;
@@ -38,6 +54,10 @@ class Db {
           'CREATE INDEX IF NOT EXISTS idx_sets_se ON sets(session_exercise_id)');
     }
   }
+
+  /// 建表（onCreate 与单元测试共用）。
+  @visibleForTesting
+  Future<void> createSchema(Database db) async => _onCreate(db, 1);
 
   Future<void> _onCreate(Database db, int v) async {
     await db.execute('''
@@ -159,6 +179,20 @@ class Db {
     return rows.isEmpty ? null : Plan.fromMap(rows.first);
   }
 
+  /// 全部计划（启用中的排最前，其余按创建时间倒序）。
+  Future<List<Plan>> allPlans() async {
+    final db = await database;
+    final rows = await db
+        .query('plans', orderBy: 'is_active DESC, id DESC');
+    return rows.map(Plan.fromMap).toList();
+  }
+
+  Future<void> renamePlan(int planId, String name) async {
+    final db = await database;
+    await db.update('plans', {'name': name},
+        where: 'id = ?', whereArgs: [planId]);
+  }
+
   Future<void> setActivePlan(int planId) async {
     final db = await database;
     await db.transaction((tx) async {
@@ -173,9 +207,87 @@ class Db {
     await db.delete('plans', where: 'id = ?', whereArgs: [planId]);
   }
 
+  /// 各计划训练日/动作数（切换器展示用），一次 GROUP BY 搞定。
+  Future<Map<int, int>> planDayCounts() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+        'SELECT plan_id, COUNT(*) AS n FROM plan_days GROUP BY plan_id');
+    return {
+      for (final r in rows) (r['plan_id'] as num).toInt(): (r['n'] as num).toInt(),
+    };
+  }
+
+  Future<Map<int, int>> planExerciseCounts() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT d.plan_id AS plan_id, COUNT(*) AS n
+      FROM plan_exercises e
+      JOIN plan_days d ON d.id = e.day_id
+      GROUP BY d.plan_id
+    ''');
+    return {
+      for (final r in rows) (r['plan_id'] as num).toInt(): (r['n'] as num).toInt(),
+    };
+  }
+
   // ---------- plan days / exercises ----------
   Future<int> insertPlanDay(PlanDay day) async =>
       (await database).insert('plan_days', day.toMap());
+
+  /// 更新训练日（标题/星期；切换星期由调用方保证目标日空闲）。
+  Future<void> updatePlanDay(PlanDay day) async {
+    final db = await database;
+    await db.update('plan_days', {'title': day.title, 'weekday': day.weekday},
+        where: 'id = ?', whereArgs: [day.id]);
+  }
+
+  Future<void> deletePlanDay(int dayId) async {
+    final db = await database;
+    await db.delete('plan_days', where: 'id = ?', whereArgs: [dayId]);
+  }
+
+  /// 交换两个训练日的星期（拖动计划编排用：目标日已有内容则对调）。
+  Future<void> swapPlanDayWeekdays(PlanDay a, PlanDay b) async {
+    final db = await database;
+    await db.transaction((tx) async {
+      await tx.update('plan_days', {'weekday': -1},
+          where: 'id = ?', whereArgs: [a.id]);
+      await tx.update('plan_days', {'weekday': b.weekday},
+          where: 'id = ?', whereArgs: [a.id]);
+      await tx.update('plan_days', {'weekday': a.weekday},
+          where: 'id = ?', whereArgs: [b.id]);
+    });
+  }
+
+  Future<void> updatePlanExercise(PlanExercise ex) async {
+    final db = await database;
+    await db.update('plan_exercises', ex.toMap(),
+        where: 'id = ?', whereArgs: [ex.id]);
+  }
+
+  Future<void> deletePlanExercise(int exerciseId) async {
+    final db = await database;
+    await db.delete('plan_exercises', where: 'id = ?', whereArgs: [exerciseId]);
+  }
+
+  /// 按给定顺序重排某天的动作（order_idx = 下标）。
+  Future<void> reorderPlanExercises(int dayId, List<int> idsInOrder) async {
+    final db = await database;
+    final batch = db.batch();
+    for (var i = 0; i < idsInOrder.length; i++) {
+      batch.update('plan_exercises', {'order_idx': i},
+          where: 'id = ?', whereArgs: [idsInOrder[i]]);
+    }
+    await batch.commit(noResult: true);
+  }
+
+  /// 全部已知动作（含肌群映射），编辑器自动补全/校对用。
+  Future<List<ExerciseMeta>> allExerciseMeta() async {
+    final db = await database;
+    final rows =
+        await db.query('exercise_meta', orderBy: 'name');
+    return rows.map(ExerciseMeta.fromMap).toList();
+  }
 
   Future<int> insertPlanExercise(PlanExercise ex) async =>
       (await database).insert('plan_exercises', ex.toMap());
@@ -415,6 +527,12 @@ class Db {
     final db = await database;
     await db.insert('lark_sync', sync.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> removeLarkSync(String refType, int refId) async {
+    final db = await database;
+    await db.delete('lark_sync',
+        where: 'ref_type = ? AND ref_id = ?', whereArgs: [refType, refId]);
   }
 
   Future<LarkSync?> larkSyncFor(String refType, int refId) async {

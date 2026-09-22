@@ -271,6 +271,30 @@ class LarkService {
     ).timeout(const Duration(seconds: 20));
   }
 
+  /// 删除某计划日对应的日历事件（切计划/删日时清未来日程）。
+  /// 尽力而为：失败静默忽略，本地同步记录仍然清除。
+  Future<void> removePlanDayEvent(int planDayId) async {
+    final sync = await _db.larkSyncFor('plan_day', planDayId);
+    if (sync == null) return;
+    try {
+      final token = await ensureToken();
+      if (token == null) return;
+      final cid = _settings.larkCalendarId.isNotEmpty
+          ? _settings.larkCalendarId
+          : await fetchPrimaryCalendar();
+      await http
+          .delete(
+            Uri.parse(
+                '$_base/open-apis/calendar/v4/calendars/$cid/events/${sync.larkEventId}'),
+            headers: {'Authorization': 'Bearer $token'},
+          )
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {
+      // 日历侧可能已手动删除/网络不可用：忽略
+    }
+    await _db.removeLarkSync('plan_day', planDayId);
+  }
+
   /// 把激活计划的训练日写入未来 14 天的飞书日历（计划安装/导入后调用）。
   Future<int> syncUpcomingDays({required List<PlanDaySyncSpec> days}) async {
     if (!configured) return 0;

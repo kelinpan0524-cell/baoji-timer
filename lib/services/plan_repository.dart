@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../db/db.dart';
 import '../engine/engine.dart';
 import '../presets/baoji_plan.dart';
+import '../services/lark_service.dart';
 import 'settings.dart';
 
 /// 计划仓库：安装内置计划、AI 计划落库、今日训练生成（含渐进推荐）。
@@ -16,17 +17,89 @@ class PlanRepository extends ChangeNotifier {
   Map<int, List<PlanExercise>> exercisesByDayId = {};
   List<PlanDay> days = [];
 
-  Future<void> reload() async {
+  /// 全部计划（多计划管理/切换器用）。
+  List<Plan> allPlansCache = [];
+
+  Future<void> reload({bool includeAll = false}) async {
     activePlan = await _db.activePlan();
+    if (includeAll) {
+      allPlansCache = await _db.allPlans();
+    }
     if (activePlan == null) {
       days = [];
       exercisesByDayId = {};
+      notifyListeners();
       return;
     }
     days = await _db.planDays(activePlan!.id!);
     exercisesByDayId =
         await _db.daysExercisesMap(days.map((d) => d.id!).toList());
     notifyListeners();
+  }
+
+  /// 某计划的全部训练日（不限激活计划）。
+  Future<List<PlanDay>> daysOfPlan(int planId) => _db.planDays(planId);
+
+  Future<Map<int, List<PlanExercise>>> exercisesOfDays(List<int> dayIds) =>
+      _db.daysExercisesMap(dayIds);
+
+  /// 复制计划（含全部训练日与动作），新计划不启用。返回新计划 id。
+  Future<int> duplicatePlan(int sourcePlanId, String newName) async {
+    final srcDays = await _db.planDays(sourcePlanId);
+    final srcEx = await _db.daysExercisesMap(srcDays.map((d) => d.id!).toList());
+    final newPlan = await _db.insertPlan(Plan(
+      name: newName,
+      source: 'copy',
+      createdAt: fmtDate(DateTime.now()),
+      isActive: 0,
+    ));
+    for (final day in srcDays) {
+      final newDayId = await _db.insertPlanDay(PlanDay(
+        planId: newPlan.id!,
+        weekday: day.weekday,
+        title: day.title,
+        notes: day.notes,
+      ));
+      var i = 0;
+      for (final ex in srcEx[day.id!] ?? const <PlanExercise>[]) {
+        await _db.insertPlanExercise(ex.copyWith(dayId: newDayId, orderIdx: i++));
+      }
+    }
+    return newPlan.id!;
+  }
+
+  /// 删除计划后若没有启用中的计划，自动启用最近的一个。
+  Future<void> deletePlanAndFixActive(int planId) async {
+    final wasActive = activePlan?.id == planId;
+    await _db.deletePlan(planId);
+    if (wasActive) {
+      final rest = await _db.allPlans();
+      if (rest.isNotEmpty) {
+        await _db.setActivePlan(rest.first.id!);
+      }
+    }
+    activePlan = await _db.activePlan();
+  }
+
+  /// 某计划的飞书日历同步规格（未来日程写入用）。
+  Future<List<PlanDaySyncSpec>> larkSpecsForPlan(int planId) async {
+    final days = await _db.planDays(planId);
+    final exMap =
+        await _db.daysExercisesMap(days.map((d) => d.id!).toList());
+    final specs = <PlanDaySyncSpec>[];
+    for (final d in days) {
+      final exs = exMap[d.id!] ?? const <PlanExercise>[];
+      if (exs.isEmpty) continue;
+      specs.add(PlanDaySyncSpec(
+        planDayId: d.id!,
+        weekday: d.weekday,
+        title: d.title,
+        detail: exs
+            .map((e) => '· ${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}')
+            .join('\n'),
+      ));
+    }
+    return specs;
   }
 
   /// 首次安装内置薄肌计划。
