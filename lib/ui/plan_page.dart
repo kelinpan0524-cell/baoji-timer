@@ -4,8 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
+import '../presets/baoji_plan.dart';
+import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
 import '../services/plan_repository.dart';
+import 'exercise_library_page.dart';
 import 'plan_editor_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -251,6 +254,20 @@ class _PlanPageState extends State<PlanPage> {
           );
         }),
         const SizedBox(height: 8),
+        // 添加计划三入口：模板（推荐）/ AI / 空白
+        FilledButton.tonalIcon(
+          onPressed: () => _showTemplatePicker(),
+          icon: const Icon(Icons.library_books, size: 18),
+          label: const Text('从模板添加（三分化 / 五分化 / 功能性 / 居家）'),
+          style: FilledButton.styleFrom(
+            backgroundColor: AppTheme.cardHi,
+            foregroundColor: AppTheme.text,
+            minimumSize: const Size.fromHeight(48),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
@@ -265,10 +282,19 @@ class _PlanPageState extends State<PlanPage> {
               child: OutlinedButton.icon(
                 onPressed: () => _createBlankPlan(),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('新建空白计划'),
+                label: const Text('新建空白'),
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const ExerciseLibraryPage())),
+            icon: const Icon(Icons.fitness_center, size: 16),
+            label: const Text('浏览动作库（肌群 · 居家/健身房）'),
+          ),
         ),
       ],
     );
@@ -297,6 +323,11 @@ class _PlanPageState extends State<PlanPage> {
               }
             },
             child: const Text('一键安装薄肌计划'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            onPressed: () => _showTemplatePicker(),
+            child: const Text('从模板添加计划'),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
@@ -499,6 +530,103 @@ class _PlanPageState extends State<PlanPage> {
         (await c.db.allPlans()).where((p) => p.id == plan.id).firstOrNull;
     await _refresh(view: created);
     if (mounted) toast(context, '已创建，点击任意一天开始编排');
+  }
+
+  // ================= 模板选择 =================
+
+  Future<void> _showTemplatePicker() async {
+    final c = app(context);
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        builder: (ctx, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          children: [
+            const Text('选择计划模板',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('安装后可逐日修改动作与组数；同模板重复安装不会重复建。',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            const SizedBox(height: 12),
+            _templateCard(ctx,
+                name: kBaojiPlanName,
+                intro: '每周三练（推/拉/腿），四大项渐进超负荷，为本 App 量身设计',
+                note: '适合按邵艾伦薄肌计划训练的人',
+                install: () async {
+                  await c.planRepo.installBaojiPlan();
+                }),
+            for (final t in kPlanTemplates)
+              _templateCard(ctx,
+                  name: t.name,
+                  intro: t.intro,
+                  note: t.note,
+                  install: () async {
+                    await c.planRepo.installTemplate(t);
+                  }),
+          ],
+        ),
+      ),
+    );
+    if (mounted) {
+      await _refresh(view: null);
+      if (mounted) await _syncLarkDays(app(context));
+    }
+  }
+
+  Widget _templateCard(
+    BuildContext ctx, {
+    required String name,
+    required String intro,
+    required String note,
+    required Future<void> Function() install,
+  }) {
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () async {
+          final navigator = Navigator.of(ctx);
+          final messenger = ScaffoldMessenger.of(ctx);
+          await install();
+          navigator.pop();
+          messenger.showSnackBar(SnackBar(
+            content: Text('已安装并设为使用中「$name」，可在编辑器微调'),
+            backgroundColor: AppTheme.cardHi,
+            behavior: SnackBarBehavior.floating,
+          ));
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                Expanded(
+                  child: Text(name,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+                const Icon(Icons.add_circle_outline,
+                    size: 20, color: AppTheme.primary),
+              ]),
+              const SizedBox(height: 6),
+              Text(intro, style: const TextStyle(fontSize: 13)),
+              const SizedBox(height: 4),
+              Text('适合：$note',
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 12)),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ================= AI 导入 =================

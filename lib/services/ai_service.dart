@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import '../engine/engine.dart';
-import '../presets/baoji_plan.dart';
+import '../presets/exercise_library.dart';
 import 'plan_repository.dart';
 import 'settings.dart';
 
@@ -16,7 +16,7 @@ class AiService {
   final Settings _settings;
 
   Map<String, ExerciseMeta> metaMap() => {
-        for (final m in kBaojiExerciseMeta) m.name: m,
+        for (final m in kExerciseLibrary) m.name: m,
       };
 
   /// 把用户粘贴的计划文本拆解为结构化计划。
@@ -33,7 +33,7 @@ class AiService {
   /// 自然语言描述 → 教练设计一份计划（输出与原文导入相同的 JSON 契约）。
   String buildDesignerPrompt(String description) {
     final lib =
-        kBaojiExerciseMeta.map((m) => '${m.name}(${m.muscles.main})').join('、');
+        kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
     return '''
 你是专业力量训练教练。根据用户的自然语言描述，设计一份每周力量训练计划，输出严格 JSON：
 1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
@@ -57,7 +57,7 @@ class AiService {
   }
 
   String _buildPrompt(String planText) {
-    final lib = kBaojiExerciseMeta.map((m) => '${m.name}(${m.muscles.main})').join('、');
+    final lib = kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
     return '''
 你是力量训练计划解析器。把下面的训练计划文本转换为严格 JSON。要求：
 1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
@@ -249,7 +249,7 @@ $planText
 
   /// 名称越长越具体，优先匹配（"上斜杠铃卧推"不应命中"杠铃卧推"）。
   static final List<ExerciseMeta> _sortedMeta = [
-    ...kBaojiExerciseMeta.toList()..sort((a, b) => b.name.length.compareTo(a.name.length)),
+    ...kExerciseLibrary.toList()..sort((a, b) => b.name.length.compareTo(a.name.length)),
   ];
 }
 

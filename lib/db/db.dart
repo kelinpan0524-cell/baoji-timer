@@ -32,7 +32,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 2,
+          version: 3,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -52,6 +52,11 @@ class Db {
           'CREATE INDEX IF NOT EXISTS idx_se_session ON session_exercises(session_id)');
       await db.execute(
           'CREATE INDEX IF NOT EXISTS idx_sets_se ON sets(session_exercise_id)');
+    }
+    if (oldV < 3) {
+      // v3：动作库加器械场景（gym/home/both）
+      await db.execute(
+          "ALTER TABLE exercise_meta ADD COLUMN equipment TEXT NOT NULL DEFAULT 'both'");
     }
   }
 
@@ -94,7 +99,8 @@ class Db {
         name TEXT PRIMARY KEY,
         main_muscle TEXT NOT NULL,
         secondary TEXT NOT NULL DEFAULT '',
-        is_compound INTEGER NOT NULL DEFAULT 0
+        is_compound INTEGER NOT NULL DEFAULT 0,
+        equipment TEXT NOT NULL DEFAULT 'both'
       )''');
     await db.execute('''
       CREATE TABLE sessions(

@@ -126,7 +126,7 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
           : '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 1.25kg',
     );
 
-    // 肌群标注写回动作库（保留既有次要肌群），热力图才能正确归类
+    // 肌群/场景标注写回动作库（保留既有次要肌群），热力图与动作库才正确
     Future<void> saveMeta() async {
       final old = _metaByName[result.name];
       final meta = ExerciseMeta(
@@ -134,6 +134,7 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
         MuscleGroups(
             main: result.muscle, secondary: old?.muscles.secondary ?? []),
         result.kind == 'compound',
+        result.equipment,
       );
       await c.db.upsertExerciseMeta(meta);
       _metaByName[result.name] = meta;
@@ -426,6 +427,7 @@ class ExerciseFormResult {
   final int restSec;
   final String kind;
   final String muscle; // 主肌群（写回动作库，供热力图归类）
+  final String equipment; // 器械场景 gym/home/both（写回动作库）
   const ExerciseFormResult({
     required this.name,
     required this.sets,
@@ -434,6 +436,7 @@ class ExerciseFormResult {
     required this.restSec,
     required this.kind,
     required this.muscle,
+    this.equipment = 'both',
   });
 }
 
@@ -465,6 +468,10 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
   late String? _muscle =
       widget.initialMuscle ?? widget.initial?.name ?? '';
   String? _nameError;
+  late String _equipment =
+      widget.knownMetas.firstWhere((m) => m.name == widget.initial?.name,
+              orElse: () => const ExerciseMeta('', MuscleGroups(main: '其他'), false))
+          .equipment;
 
   List<String> get _suggestions {
     final q = _nameCtrl.text.trim();
@@ -616,6 +623,53 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                 ),
               ],
             ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('场景',
+                      style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: [
+                      for (final eq in const [
+                        ('both', '都可以'),
+                        ('gym', '健身房'),
+                        ('home', '居家'),
+                      ])
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _equipment = eq.$1);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: _equipment == eq.$1
+                                  ? AppTheme.accent
+                                  : AppTheme.cardHi,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(eq.$2,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _equipment == eq.$1
+                                        ? const Color(0xFF06220F)
+                                        : AppTheme.textDim)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -646,6 +700,7 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                     muscle: (_muscle == null || _muscle!.isEmpty)
                         ? '其他'
                         : _muscle!,
+                    equipment: _equipment,
                   ),
                 );
               },

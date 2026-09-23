@@ -1,3 +1,6 @@
+export 'exercise_library.dart'
+    show kBaojiExerciseMeta, kExerciseLibrary, PresetExercise;
+
 import '../models/models.dart';
 
 /// 内置薄肌计划（PRD：四大项核心 + 每周三练 + 肩背偏重、上胸重点）。
@@ -69,19 +72,3 @@ const kBaojiExercisesByWeekday = <int, List<PresetExercise>>{
   ],
 };
 
-/// 动作 → 肌群映射（内置动作库，AI 拆解时也作为参考词表）。
-const kBaojiExerciseMeta = <ExerciseMeta>[
-  ExerciseMeta('杠铃卧推', MuscleGroups(main: '胸', secondary: ['肩', '手臂']), true),
-  ExerciseMeta('上斜哑铃卧推', MuscleGroups(main: '胸', secondary: ['肩']), true),
-  ExerciseMeta('上斜杠铃卧推（轻）', MuscleGroups(main: '胸', secondary: ['肩']), true),
-  ExerciseMeta('站姿推举', MuscleGroups(main: '肩', secondary: ['手臂', '核心']), true),
-  ExerciseMeta('哑铃侧平举', MuscleGroups(main: '肩', secondary: []), false),
-  ExerciseMeta('俯身飞鸟（后束）', MuscleGroups(main: '肩', secondary: ['背']), false),
-  ExerciseMeta('杠铃硬拉', MuscleGroups(main: '背', secondary: ['腿', '核心']), true),
-  ExerciseMeta('引体向上', MuscleGroups(main: '背', secondary: ['手臂']), true),
-  ExerciseMeta('坐姿划船', MuscleGroups(main: '背', secondary: ['手臂']), false),
-  ExerciseMeta('杠铃深蹲', MuscleGroups(main: '腿', secondary: ['核心']), true),
-  ExerciseMeta('罗马尼亚硬拉', MuscleGroups(main: '腿', secondary: ['背', '核心']), true),
-  ExerciseMeta('杠铃弯举', MuscleGroups(main: '手臂', secondary: []), false),
-  ExerciseMeta('绳索下压', MuscleGroups(main: '手臂', secondary: []), false),
-];

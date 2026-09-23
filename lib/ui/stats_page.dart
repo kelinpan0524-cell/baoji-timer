@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
-import '../presets/baoji_plan.dart';
+import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
 import 'muscle_body_painter.dart';
 import 'theme.dart';
@@ -404,7 +404,7 @@ class _MuscleTabState extends State<_MuscleTab> {
         .sessionsBetween(fmtDate(monday), fmtDate(DateTime.now()));
     final metaMap = <String, ExerciseMeta>{};
     // 动作元数据以库内为准（内置 + AI 计划沉淀）
-    for (final m in kBaojiExerciseMeta) {
+    for (final m in kExerciseLibrary) {
       metaMap[m.name] = m;
     }
     final byName = <String, List<SetEntry>>{};
