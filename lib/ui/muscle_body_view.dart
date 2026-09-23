@@ -17,7 +17,11 @@ class MuscleBodyView extends StatelessWidget {
 
   static const _skin = Color(0xFF2A323D);
   static const _line = Color(0xFF151A21); // 肌肉分隔线
-  static const _viewBox = '0 0 35 93';
+
+  /// 原库两视图共用一个坐标系：正面在 x∈[0,35]，背面在 x∈[37,72]。
+  /// viewBox 必须按视图取对应窗口，否则背面整体落在可视区外（空白）。
+  static const _viewBoxFront = '0 0 35 93';
+  static const _viewBoxBack = '37 0 35 93';
 
   /// 灰底 → 绿，随占比加深（sqrt 让低占比也可感知）。
   Color _heat(String region) {
@@ -27,7 +31,9 @@ class MuscleBodyView extends StatelessWidget {
     return Color.lerp(_skin, AppTheme.primary, 0.15 + 0.85 * t)!;
   }
 
-  String _buildSvg() {
+  /// 生成完整 SVG 字符串（可见于测试：锁定正面/背面 viewBox 与分区来源）。
+  @visibleForTesting
+  String buildSvg() {
     final paths = front ? kFrontMusclePaths : kBackMusclePaths;
     // 肌肉 id → 所属 App 肌群（反向索引）
     final idToRegion = <String, String>{};
@@ -37,7 +43,8 @@ class MuscleBodyView extends StatelessWidget {
       }
     });
     final buf = StringBuffer(
-        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="$_viewBox">');
+        '<svg xmlns="http://www.w3.org/2000/svg" '
+      'viewBox="${front ? _viewBoxFront : _viewBoxBack}">');
     // 先画描边底（分隔线），再画分区填充
     for (final e in paths.entries) {
       final region = idToRegion[e.key];
@@ -55,7 +62,7 @@ class MuscleBodyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SvgPicture.string(
-      _buildSvg(),
+      buildSvg(),
       fit: BoxFit.contain,
     );
   }
