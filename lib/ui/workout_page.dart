@@ -247,6 +247,50 @@ class _TopBarState extends State<_TopBar> {
   bool _endArmed = false;
   Timer? _disarm;
 
+  /// 两击确认后给三个出口：继续练 / 放弃本次（不留记录）/ 结束并保存。
+  Future<void> _showEndOptions() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.play_arrow, color: AppTheme.primary),
+              title: const Text('继续训练'),
+              onTap: () => Navigator.pop(ctx, 'continue'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppTheme.danger),
+              title: const Text('放弃本次（不留记录）'),
+              subtitle: const Text('误开的训练用这个，历史不会多一次',
+                  style: TextStyle(fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, 'quit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.check_circle, color: AppTheme.primary),
+              title: const Text('结束并保存'),
+              onTap: () => Navigator.pop(ctx, 'finish'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'finish') {
+      await endTraining(context);
+    } else if (choice == 'quit') {
+      final c = app(context);
+      final navigator = Navigator.of(context);
+      await c.session.quit();
+      if (!mounted) return;
+      navigator.pop(); // 退出训练页回首页
+    }
+  }
+
   void _armEnd() {
     _disarm?.cancel();
     setState(() => _endArmed = true);
@@ -291,7 +335,7 @@ class _TopBarState extends State<_TopBar> {
             onPressed: () {
               if (_endArmed) {
                 _disarm?.cancel();
-                endTraining(context);
+                _showEndOptions();
               } else {
                 _armEnd();
               }
@@ -339,6 +383,16 @@ class _ExerciseInfo extends StatelessWidget {
         const SizedBox(height: 12),
         Text(lastText,
             style: const TextStyle(color: AppTheme.textDim, fontSize: 15)),
+        if (s.currentSets.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: GestureDetector(
+              onTap: () => s.undoLastSet(),
+              child: const Text('↩ 撤销上一组',
+                  style:
+                      TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            ),
+          ),
       ],
     );
   }
@@ -360,6 +414,7 @@ class _ActionPanelState extends State<_ActionPanel> {
   int? _rir;
   String _note = '';
   bool _noteOpen = false;
+  bool _saving = false; // 防抖：力竭手抖双击不能记两组
   late final _noteCtrl = TextEditingController();
   static const _steps = [0.5, 1.25, 2.5, 5.0];
 
@@ -442,8 +497,11 @@ class _ActionPanelState extends State<_ActionPanel> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('余力 ',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 14)),
+              Tooltip(
+                message: '余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
+                child: const Text('余力 ',
+                    style: TextStyle(color: AppTheme.textDim, fontSize: 14)),
+              ),
               for (var r = 0; r <= 4; r++)
                 GestureDetector(
                   onTap: () {
@@ -529,9 +587,10 @@ class _ActionPanelState extends State<_ActionPanel> {
             color: doneAll
                 ? AppTheme.cardHi
                 : (_kind == SetKind.failure ? AppTheme.warn : AppTheme.primary),
-            onPressed: doneAll
+            onPressed: (doneAll || _saving)
                 ? null
                 : () async {
+                    _saving = true;
                     HapticFeedback.mediumImpact();
                     final reps = _reps ?? ex.rule.repsMin;
                     final pr = await s.completeSet(
@@ -541,6 +600,7 @@ class _ActionPanelState extends State<_ActionPanel> {
                       kind: _kind,
                       note: _note,
                     );
+                    _saving = false;
                     _noteCtrl.clear();
                     _note = '';
                     if (_noteOpen) setState(() => _noteOpen = false);

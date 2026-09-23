@@ -13,16 +13,18 @@ class SectionCard extends StatelessWidget {
     this.title,
     this.trailing,
     this.padding,
+    this.onLongPress,
   });
 
   final Widget child;
   final String? title;
   final Widget? trailing;
   final EdgeInsetsGeometry? padding;
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final card = Card(
       child: Padding(
         padding: padding ?? const EdgeInsets.all(16),
         child: Column(
@@ -47,6 +49,9 @@ class SectionCard extends StatelessWidget {
         ),
       ),
     );
+    // 长按删除等场景（历史页训练卡）
+    if (onLongPress == null) return card;
+    return InkWell(onLongPress: onLongPress, child: card);
   }
 }
 
@@ -176,6 +181,8 @@ void toast(BuildContext context, String msg) {
     content: Text(msg),
     backgroundColor: AppTheme.cardHi,
     behavior: SnackBarBehavior.floating,
+    // 抬高到底部导航/常驻按钮之上，避免遮挡可点区域
+    margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
     duration: const Duration(seconds: 2),
   ));
 }

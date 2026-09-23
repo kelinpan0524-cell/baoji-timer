@@ -202,6 +202,8 @@ class _HistoryPageState extends State<HistoryPage> {
           trailing: Text(
               s.status == 'quit' ? '已中断' : '${s.durationMin} 分钟',
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13)),
+          // 长按删除误开的训练（配合训练页"放弃本次"）
+          onLongPress: () => _deleteSession(s),
           child: snap.hasData
               ? Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -216,6 +218,19 @@ class _HistoryPageState extends State<HistoryPage> {
         );
       },
     );
+  }
+
+  /// 长按删除单次训练记录（含全部组记录，不可恢复）。
+  Future<void> _deleteSession(Session s) async {
+    final ok = await confirmDialog(context, '删除这次训练？',
+        '${s.date} · ${s.planDayTitle} 的全部记录将被删除，用于清理误开的训练。此操作无法撤销。',
+        okLabel: '删除');
+    if (!ok || !mounted) return;
+    final c = app(context);
+    await c.db.deleteSession(s.id!);
+    _detailFutures.remove(s.id!);
+    await _load();
+    if (mounted) toast(context, '已删除');
   }
 
   Future<List<Widget>> _sessionDetailWidgets(Session s) async {

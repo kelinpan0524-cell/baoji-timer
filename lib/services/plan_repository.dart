@@ -102,8 +102,16 @@ class PlanRepository extends ChangeNotifier {
     return specs;
   }
 
-  /// 首次安装内置薄肌计划。
+  /// 首次安装内置薄肌计划。已装过（同名 preset）则直接启用它，防双击装两份。
   Future<Plan> installBaojiPlan() async {
+    final existing = await _db.allPlans();
+    final preset =
+        existing.where((p) => p.source == 'preset').firstOrNull;
+    if (preset != null) {
+      await _db.setActivePlan(preset.id!);
+      await reload();
+      return preset;
+    }
     final plan = await _db.insertPlan(Plan(
       name: kBaojiPlanName,
       source: 'preset',
@@ -129,17 +137,33 @@ class PlanRepository extends ChangeNotifier {
   }
 
   /// 把 AI 拆解结果落库为一个新的计划并激活。
+  /// 落库前二次清洗（与 parseResponse 的清洗互为兜底）：weekday 越界跳过、
+  /// 同 weekday 合并、sets/reps 钳制；main_muscle 词形归一（"背部"→"背"）。
   Future<Plan> saveAiPlan({
     required String name,
     required List<AiDaySpec> specs,
     required Map<String, ExerciseMeta> metaMap,
+    bool activate = true,
   }) async {
+    final clean = <AiDaySpec>[];
+    final byWeekday = <int, int>{};
+    for (final spec in specs) {
+      if (spec.weekday < 1 || spec.weekday > 7) continue;
+      final idx = byWeekday[spec.weekday];
+      if (idx == null) {
+        byWeekday[spec.weekday] = clean.length;
+        clean.add(spec);
+      } else {
+        final old = clean[idx];
+        clean[idx] = AiDaySpec(old.weekday, old.title, [...old.exercises, ...spec.exercises]);
+      }
+    }
     final plan = await _db.insertPlan(Plan(
       name: name,
       source: 'ai',
       createdAt: fmtDate(DateTime.now()),
     ));
-    for (final spec in specs) {
+    for (final spec in clean) {
       final dayId = await _db.insertPlanDay(PlanDay(
         planId: plan.id!,
         weekday: spec.weekday,
@@ -148,13 +172,20 @@ class PlanRepository extends ChangeNotifier {
       var i = 0;
       for (final ex in spec.exercises) {
         final meta = metaMap[ex.name];
-        // 词表外动作：用 AI 判定的肌群沉淀进动作库，热力图才能正确归类
+        // 词表外动作：用 AI 判定的肌群沉淀进动作库，热力图才能正确归类；
+        // 词形归一：AI 常回 "背部"/"腿部"，匹配含"部"字的肌群名
+        final muscleToken = ex.mainMuscle;
+        final normalizedMuscle = muscleToken == null
+            ? null
+            : kMuscleRegions.firstWhere(
+                (r) => r == muscleToken || muscleToken.contains(r),
+                orElse: () => '');
         if (meta == null &&
-            ex.mainMuscle != null &&
-            kMuscleRegions.contains(ex.mainMuscle)) {
+            normalizedMuscle != null &&
+            normalizedMuscle.isNotEmpty) {
           final newMeta = ExerciseMeta(
             ex.name,
-            MuscleGroups(main: ex.mainMuscle!),
+            MuscleGroups(main: normalizedMuscle),
             ex.kind == 'compound',
           );
           metaMap[ex.name] = newMeta;
@@ -187,8 +218,10 @@ class PlanRepository extends ChangeNotifier {
     for (final m in metaMap.values) {
       await _db.upsertExerciseMeta(m);
     }
-    await _db.setActivePlan(plan.id!);
-    await reload();
+    if (activate) {
+      await _db.setActivePlan(plan.id!);
+    }
+    await reload(includeAll: true);
     return plan;
   }
 

@@ -189,6 +189,7 @@ class PlanExercise {
     int? repsMax,
     int? restSec,
     String? kind,
+    ProgressionRule? rule,
   }) =>
       PlanExercise(
         id: id ?? this.id,
@@ -200,7 +201,7 @@ class PlanExercise {
         repsMax: repsMax ?? this.repsMax,
         restSec: restSec ?? this.restSec,
         kind: kind ?? this.kind,
-        rule: rule,
+        rule: rule ?? this.rule,
       );
 }
 

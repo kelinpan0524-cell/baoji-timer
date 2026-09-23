@@ -380,8 +380,13 @@ class _LarkCardState extends State<_LarkCard> {
                           backgroundColor: AppTheme.cardHi,
                           behavior: SnackBarBehavior.floating));
                     } catch (e) {
+                      final msg = e.toString();
+                      final friendly = msg.contains('TimeoutException') ||
+                              msg.contains('ClientException')
+                          ? '网络不可用或超时，请检查网络'
+                          : (msg.length > 80 ? '\${msg.substring(0, 80)}…' : msg);
                       messenger.showSnackBar(SnackBar(
-                          content: Text('连接失败：$e'),
+                          content: Text('连接失败：$friendly'),
                           backgroundColor: AppTheme.cardHi,
                           behavior: SnackBarBehavior.floating));
                     }
