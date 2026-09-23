@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../db/db.dart';
 import '../engine/engine.dart';
 import '../presets/baoji_plan.dart';
+import '../presets/exercise_library.dart';
 import '../services/lark_service.dart';
 import 'settings.dart';
 
@@ -102,11 +103,68 @@ class PlanRepository extends ChangeNotifier {
     return specs;
   }
 
+  /// 把全量内置动作库写入 exercise_meta（App 首启/模板安装时调用，幂等）。
+  Future<void> seedExerciseLibrary() async {
+    for (final m in kExerciseLibrary) {
+      await _db.upsertExerciseMeta(m);
+    }
+  }
+
+  /// 安装计划模板（三分化/五分化/功能性/居家…）。
+  /// 同名模板已存在则直接启用返回；否则建计划、写动作、可选激活。
+  Future<Plan> installTemplate(PlanTemplate template,
+      {bool activate = true}) async {
+    await seedExerciseLibrary();
+    final existing = await _db.allPlans();
+    final same = existing.where((p) => p.name == template.name).firstOrNull;
+    if (same != null) {
+      if (activate) await _db.setActivePlan(same.id!);
+      await reload(includeAll: true);
+      return same;
+    }
+    final plan = await _db.insertPlan(Plan(
+      name: template.name,
+      source: template.source,
+      createdAt: fmtDate(DateTime.now()),
+      isActive: 0,
+    ));
+    for (final entry in template.byWeekday.entries) {
+      final dayId = await _db.insertPlanDay(PlanDay(
+        planId: plan.id!,
+        weekday: entry.key,
+        title: _templateDayTitle(entry.key),
+      ));
+      var i = 0;
+      for (final pe in entry.value) {
+        await _db.insertPlanExercise(
+            pe.toPlanExercise(dayId, i++));
+      }
+    }
+    if (activate) {
+      await _db.setActivePlan(plan.id!);
+    }
+    await reload(includeAll: true);
+    return plan;
+  }
+
+  /// 模板训练日标题（推/拉/腿…按模板日程生成友好名）。
+  String _templateDayTitle(int weekday) {
+    const wd = '一二三四五六日';
+    // 从模板第一个动作推断部位重点，简单起见用固定映射不够通用——
+    // 这里统一用"第 N 练"形式，用户可自行改标题。
+    var count = 0;
+    for (var i = 1; i <= weekday; i++) {
+      count++;
+    }
+    return '周${wd[weekday - 1]} · 第 $count 练';
+  }
+
   /// 首次安装内置薄肌计划。已装过（同名 preset）则直接启用它，防双击装两份。
   Future<Plan> installBaojiPlan() async {
+    await seedExerciseLibrary();
     final existing = await _db.allPlans();
     final preset =
-        existing.where((p) => p.source == 'preset').firstOrNull;
+        existing.where((p) => p.source == 'preset' && p.name == kBaojiPlanName).firstOrNull;
     if (preset != null) {
       await _db.setActivePlan(preset.id!);
       await reload();

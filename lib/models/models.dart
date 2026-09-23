@@ -220,19 +220,30 @@ ProgressionRule ruleFromJson(Object? v) {
   return ProgressionRule.fallback;
 }
 
-/// 训练动作库条目（用于肌肉映射与 AI 拆解提示词）
+/// 训练动作库条目（用于肌肉映射、AI 拆解提示词与动作库浏览）
 class ExerciseMeta {
   final String name;
   final MuscleGroups muscles;
   final bool isCompound;
 
-  const ExerciseMeta(this.name, this.muscles, this.isCompound);
+  /// 器械场景：gym=健身房（杠铃/器械）、home=居家（哑铃/弹力带/自重）、both=皆可
+  final String equipment;
+
+  const ExerciseMeta(this.name, this.muscles, this.isCompound,
+      [this.equipment = 'both']);
+
+  String get equipmentLabel => switch (equipment) {
+        'gym' => '健身房',
+        'home' => '居家',
+        _ => '皆可',
+      };
 
   Map<String, dynamic> toMap() => {
         'name': name,
         'main_muscle': muscles.main,
         'secondary': muscles.secondary.join(','),
         'is_compound': isCompound ? 1 : 0,
+        'equipment': equipment,
       };
 
   factory ExerciseMeta.fromMap(Map<String, dynamic> m) => ExerciseMeta(
@@ -245,6 +256,7 @@ class ExerciseMeta {
               .toList(),
         ),
         (m['is_compound'] as int?) == 1,
+        (m['equipment'] as String?) ?? 'both',
       );
 }
 
