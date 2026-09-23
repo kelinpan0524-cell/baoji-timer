@@ -6,6 +6,7 @@ import '../core/app.dart';
 import '../engine/engine.dart';
 import '../presets/baoji_plan.dart';
 import '../services/ai_service.dart';
+import 'muscle_body_painter.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -288,6 +289,7 @@ class _MuscleTab extends StatefulWidget {
 
 class _MuscleTabState extends State<_MuscleTab> {
   late final Future<Map<String, double>> _future;
+  bool _front = true;
 
   @override
   void initState() {
@@ -312,10 +314,39 @@ class _MuscleTabState extends State<_MuscleTab> {
               title: '本周肌群容量占比',
               child: Column(
                 children: [
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('正面')),
+                      ButtonSegment(value: false, label: Text('背面')),
+                    ],
+                    selected: {_front},
+                    onSelectionChanged: (sel) =>
+                        setState(() => _front = sel.first),
+                    showSelectedIcon: false,
+                    style: ButtonStyle(
+                      backgroundColor:
+                          WidgetStateProperty.resolveWith((states) =>
+                              states.contains(WidgetState.selected)
+                                  ? AppTheme.primary
+                                  : AppTheme.cardHi),
+                      foregroundColor:
+                          WidgetStateProperty.resolveWith((states) =>
+                              states.contains(WidgetState.selected)
+                                  ? const Color(0xFF06220F)
+                                  : AppTheme.textDim),
+                      side: const WidgetStatePropertyAll(
+                          BorderSide(color: Colors.transparent)),
+                      shape: const WidgetStatePropertyAll(
+                          RoundedRectangleBorder(
+                              borderRadius:
+                                  BorderRadius.all(Radius.circular(10)))),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   SizedBox(
-                    height: 260,
+                    height: 280,
                     child: CustomPaint(
-                      painter: _BodyHeatmapPainter(share),
+                      painter: MuscleBodyPainter(share, front: _front),
                       child: const SizedBox.expand(),
                     ),
                   ),
@@ -399,55 +430,6 @@ Color _heatColor(double v) {
   final t = v.clamp(0.0, 1.0);
   return Color.lerp(const Color(0xFF232B36), AppTheme.primary, t)!;
 }
-
-class _BodyHeatmapPainter extends CustomPainter {
-  _BodyHeatmapPainter(this.share);
-
-  final Map<String, double> share;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..style = PaintingStyle.fill;
-    // 人体分区近似：正面视角，头/胸/肩/臂/背(提示色)/腿/核心
-    final w = size.width;
-    final h = size.height;
-
-    Rect r(double x, double y, double ww, double hh) =>
-        Rect.fromLTWH(x * w, y * h, ww * w, hh * h);
-
-    void drawRegion(String muscle, Rect rect, {double radius = 10}) {
-      paint.color = _heatColor(share[muscle] ?? 0);
-      canvas.drawRRect(
-          RRect.fromRectAndRadius(rect, Radius.circular(radius)), paint);
-    }
-
-    // 头
-    paint.color = const Color(0xFF232B36);
-    canvas.drawCircle(Offset(w * 0.5, h * 0.07), w * 0.08, paint);
-    // 肩（左右）
-    drawRegion('肩', r(0.24, 0.15, 0.16, 0.10), radius: 14);
-    drawRegion('肩', r(0.60, 0.15, 0.16, 0.10), radius: 14);
-    // 胸
-    drawRegion('胸', r(0.34, 0.15, 0.32, 0.14));
-    // 臂（左右）
-    drawRegion('手臂', r(0.12, 0.27, 0.10, 0.28), radius: 16);
-    drawRegion('手臂', r(0.78, 0.27, 0.10, 0.28), radius: 16);
-    // 背（正面看不到，画中上提示）
-    drawRegion('背', r(0.36, 0.30, 0.28, 0.10), radius: 12);
-    // 核心
-    drawRegion('核心', r(0.38, 0.42, 0.24, 0.12));
-    // 腿
-    drawRegion('腿', r(0.36, 0.56, 0.12, 0.36), radius: 16);
-    drawRegion('腿', r(0.52, 0.56, 0.12, 0.36), radius: 16);
-    // 其他
-    drawRegion('其他', r(0.80, 0.88, 0.001, 0.001), radius: 0);
-  }
-
-  @override
-  bool shouldRepaint(_BodyHeatmapPainter oldDelegate) =>
-      oldDelegate.share != share;
-}
-
 // ---------------- 身体 ----------------
 
 class _BodyTab extends StatefulWidget {
