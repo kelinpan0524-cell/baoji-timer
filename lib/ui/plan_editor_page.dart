@@ -2,34 +2,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
-import '../models/models.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
-/// 训练日编辑器：改标题/星期、动作增删改与排序。所有修改即时保存。
-/// 返回值：是否有过修改（调用方据此决定是否刷新与重同步飞书）。
+/// 训练日编辑器：改标题/星期、动作增删改、拖拽排序、复制、肌群标注。
+/// 所有修改即时保存；返回值 = 是否有过修改（调用方据此刷新与重同步飞书）。
 class PlanEditorPage extends StatefulWidget {
-  const PlanEditorPage({super.key, required this.day});
+  const PlanEditorPage({super.key, required this.day, this.planName});
 
   final PlanDay day;
+  final String? planName;
 
   @override
   State<PlanEditorPage> createState() => _PlanEditorPageState();
 }
 
 class _PlanEditorPageState extends State<PlanEditorPage> {
-  late PlanDay _day;
+  late PlanDay _day = widget.day;
   List<PlanExercise> _exercises = [];
-  List<ExerciseMeta> _knownMeta = [];
+  Map<String, ExerciseMeta> _metaByName = {};
   bool _loading = true;
   bool _dirty = false; // 本次进入是否改过内容
-  late final TextEditingController _titleCtrl;
-  bool _moving = false; // 排序写库中，防连点丢步
+  late final TextEditingController _titleCtrl =
+      TextEditingController(text: widget.day.title);
 
   @override
   void initState() {
     super.initState();
-    _titleCtrl = TextEditingController(text: widget.day.title);
     // initState 里不能同步读 InheritedWidget，延后一帧再加载
     WidgetsBinding.instance.addPostFrameCallback((_) => _reload());
   }
@@ -43,7 +42,8 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
   Future<void> _reload() async {
     final c = app(context);
     _exercises = await c.db.dayExercises(_day.id!);
-    _knownMeta = await c.db.allExerciseMeta();
+    final metas = await c.db.allExerciseMeta();
+    _metaByName = {for (final m in metas) m.name: m};
     if (!mounted) return;
     setState(() => _loading = false);
   }
@@ -69,18 +69,25 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
         all.where((d) => d.weekday == weekday && d.id != _day.id).firstOrNull;
     if (occupant != null) {
       final ok = await confirmDialog(
-          context, '与周${'一二三四五六日'[weekday - 1]}对调？',
+          context,
+          '与周${'一二三四五六日'[weekday - 1]}对调？',
           '「${occupant.title}」已安排在周${'一二三四五六日'[weekday - 1]}，确认后两天的内容将互相交换。');
       if (!ok || !mounted) return;
     }
     if (occupant == null) {
       _day = PlanDay(
-          id: _day.id, planId: _day.planId, weekday: weekday, title: _day.title);
+          id: _day.id,
+          planId: _day.planId,
+          weekday: weekday,
+          title: _day.title);
       await c.db.updatePlanDay(_day);
     } else {
       await c.db.swapPlanDayWeekdays(_day, occupant);
       _day = PlanDay(
-          id: _day.id, planId: _day.planId, weekday: weekday, title: _day.title);
+          id: _day.id,
+          planId: _day.planId,
+          weekday: weekday,
+          title: _day.title);
     }
     _dirty = true;
     messenger.showSnackBar(SnackBar(
@@ -102,20 +109,36 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (ctx) => _ExerciseEditSheet(
         initial: existing,
-        knownNames: _knownMeta.map((m) => m.name).toList(),
+        knownMetas: _metaByName.values.toList(),
+        initialMuscle:
+            existing == null ? null : _metaByName[existing.name]?.muscles.main,
       ),
     );
     if (result == null || !mounted) return;
     final c = app(context);
-    ProgressionRule buildRule() => ProgressionRule(
-          repsMin: result.repsMin,
-          repsMax: result.repsMax,
-          incrementKg: result.kind == 'compound' ? 2.5 : 1.25,
-          workingSets: result.sets,
-          desc: result.kind == 'compound'
-              ? '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 2.5kg；有组低于 ${result.repsMin} 次 → 减 5%'
-              : '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 1.25kg',
-        );
+    final rule = ProgressionRule(
+      repsMin: result.repsMin,
+      repsMax: result.repsMax,
+      incrementKg: result.kind == 'compound' ? 2.5 : 1.25,
+      workingSets: result.sets,
+      desc: result.kind == 'compound'
+          ? '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 2.5kg；有组低于 ${result.repsMin} 次 → 减 5%'
+          : '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 1.25kg',
+    );
+
+    // 肌群标注写回动作库（保留既有次要肌群），热力图才能正确归类
+    Future<void> saveMeta() async {
+      final old = _metaByName[result.name];
+      final meta = ExerciseMeta(
+        result.name,
+        MuscleGroups(
+            main: result.muscle, secondary: old?.muscles.secondary ?? []),
+        result.kind == 'compound',
+      );
+      await c.db.upsertExerciseMeta(meta);
+      _metaByName[result.name] = meta;
+    }
+
     if (existing == null) {
       final draft = PlanExercise(
         dayId: _day.id!,
@@ -126,19 +149,10 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
         repsMax: result.repsMax,
         restSec: result.restSec,
         kind: result.kind,
-        rule: buildRule(),
+        rule: rule,
       );
       await c.db.insertPlanExercise(draft);
-      // 新动作名沉淀进动作库（肌群未知时归「其他」）
-      if (_knownMeta.every((m) => m.name != result.name)) {
-        await c.db.upsertExerciseMeta(ExerciseMeta(
-          result.name,
-          const MuscleGroups(main: '其他'),
-          result.kind == 'compound',
-        ));
-        _knownMeta = await c.db.allExerciseMeta();
-      }
-      await _reload(); // 以 DB 为准（order_idx 连续性由重查保证）
+      await saveMeta();
     } else {
       // 编辑时同步重建渐进规则：改组数/次数要影响训练引擎的判定
       final updated = existing.copyWith(
@@ -148,22 +162,35 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
         repsMax: result.repsMax,
         restSec: result.restSec,
         kind: result.kind,
-        rule: buildRule(),
+        rule: rule,
       );
       await c.db.updatePlanExercise(updated);
-      await _reload();
+      await saveMeta();
     }
     _dirty = true;
+    await _reload();
     if (mounted) setState(() {});
   }
 
-  Future<void> _removeExercise(PlanExercise ex) async {
-    final ok = await confirmDialog(
-        context, '删除动作？', '「${ex.name}」将从这一天移除（历史训练记录不受影响）。');
-    if (!ok || !mounted) return;
+  /// 复制动作：同配置插到末尾，名字加「副本」提示改名。
+  Future<void> _copyExercise(PlanExercise ex) async {
     final c = app(context);
+    await c.db.insertPlanExercise(
+      ex.copyWith(id: null, name: '${ex.name}（副本）', orderIdx: _exercises.length),
+    );
+    _dirty = true;
+    await _reload();
+    if (mounted) {
+      toast(context, '已复制「${ex.name}」，记得改动作名');
+    }
+  }
+
+  /// 删除动作：立即生效 + 可撤销（比确认弹窗顺手）。
+  Future<void> _removeExercise(PlanExercise ex) async {
+    final c = app(context);
+    final index = _exercises.indexOf(ex);
+    final snapshot = ex.copyWith();
     await c.db.deletePlanExercise(ex.id!);
-    // 补齐 order_idx（删除会留空洞，导致后续新增排序错乱）
     final rest =
         _exercises.where((e) => e.id != ex.id).map((e) => e.id!).toList();
     if (rest.isNotEmpty) {
@@ -171,24 +198,39 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     }
     _dirty = true;
     await _reload();
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(SnackBar(
+      content: Text('已删除「${snapshot.name}」'),
+      backgroundColor: AppTheme.cardHi,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: '撤销',
+        textColor: AppTheme.primary,
+        onPressed: () async {
+          final restored = snapshot.copyWith(id: null, orderIdx: 0);
+          final newId = await c.db.insertPlanExercise(restored);
+          final ids = _exercises.map((e) => e.id!).toList();
+          ids.insert(index.clamp(0, ids.length), newId);
+          await c.db.reorderPlanExercises(_day.id!, ids);
+          _dirty = true;
+          await _reload();
+          if (mounted) setState(() {});
+        },
+      ),
+    ));
   }
 
-  Future<void> _move(int index, int delta) async {
-    if (_moving) return; // 写库中防连点丢步
-    final j = index + delta;
-    if (j < 0 || j >= _exercises.length) return;
-    _moving = true;
-    // 乐观更新：先改内存再写库，连点不丢步
+  /// 拖拽排序落库（onReorderItem 的 newIndex 已由框架修正）。
+  Future<void> _onReorderItem(int oldIndex, int newIndex) async {
     final list = [..._exercises];
-    final tmp = list[index];
-    list[index] = list[j];
-    list[j] = tmp;
+    final item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
     setState(() => _exercises = list);
     final c = app(context);
     await c.db.reorderPlanExercises(_day.id!, list.map((e) => e.id!).toList());
     _dirty = true;
-    _moving = false;
   }
 
   @override
@@ -258,22 +300,38 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                                 style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700)),
-                            const Spacer(),
-                            TextButton.icon(
-                              onPressed: () => _openExerciseSheet(),
-                              icon: const Icon(Icons.add, size: 18),
-                              label: const Text('添加动作'),
-                            ),
+                            const SizedBox(width: 8),
+                            const Text('长按拖动排序',
+                                style: TextStyle(
+                                    color: AppTheme.textDim, fontSize: 12)),
                           ],
                         ),
+                        const SizedBox(height: 6),
                         if (_exercises.isEmpty)
                           const Padding(
                             padding: EdgeInsets.symmetric(vertical: 16),
                             child: Text('这一天还没有动作，点下方「添加动作」开始编排。',
                                 style: TextStyle(color: AppTheme.textDim)),
+                          )
+                        else
+                          ReorderableListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            buildDefaultDragHandles: false,
+                            onReorderItem: _onReorderItem,
+                            proxyDecorator: (child, index, animation) =>
+                                Material(
+                              elevation: 4,
+                              borderRadius: BorderRadius.circular(16),
+                              color: AppTheme.cardHi,
+                              child: child,
+                            ),
+                            itemCount: _exercises.length,
+                            itemBuilder: (BuildContext ctx, int i) =>
+                                _exerciseRow(i,
+                                    key: ValueKey(_exercises[i].id)),
                           ),
-                        for (var i = 0; i < _exercises.length; i++)
-                          _exerciseRow(i),
+                        const SizedBox(height: 8),
                       ],
                     ),
                   ),
@@ -296,59 +354,62 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     );
   }
 
-  Widget _exerciseRow(int i) {
+  Widget _exerciseRow(int i, {required Key key}) {
     final e = _exercises[i];
+    final muscle = _metaByName[e.name]?.muscles.main;
     return Card(
+      key: key,
       margin: const EdgeInsets.symmetric(vertical: 4),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-        child: Row(
-          children: [
-            Column(
+      child: ReorderableDelayedDragStartListener(
+        index: i,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _openExerciseSheet(e),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 6),
+            child: Row(
               children: [
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: i == 0 ? null : () => _move(i, -1),
-                  icon: const Icon(Icons.arrow_upward, size: 18),
+                const SizedBox(
+                    width: 32,
+                    height: 44,
+                    child: Icon(Icons.drag_indicator,
+                        size: 20, color: AppTheme.textDim)),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(e.name,
+                            style: const TextStyle(
+                                fontSize: 15, fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 2),
+                        Text(
+                            '${e.sets}×${e.repsMin}-${e.repsMax} · 休 ${e.restSec}s · ${e.kind == 'compound' ? '复合' : '辅助'}'
+                            '${muscle != null ? ' · $muscle' : ''}',
+                            style: const TextStyle(
+                                color: AppTheme.textDim, fontSize: 12)),
+                      ],
+                    ),
+                  ),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  onPressed: i == _exercises.length - 1
-                      ? null
-                      : () => _move(i, 1),
-                  icon: const Icon(Icons.arrow_downward, size: 18),
+                  tooltip: '复制',
+                  onPressed: () => _copyExercise(e),
+                  icon: const Icon(Icons.content_copy,
+                      size: 19, color: AppTheme.textDim),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: '删除',
+                  onPressed: () => _removeExercise(e),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppTheme.danger),
                 ),
               ],
             ),
-            const SizedBox(width: 4),
-            Expanded(
-              child: InkWell(
-                onTap: () => _openExerciseSheet(e),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(e.name,
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 2),
-                      Text(
-                          '${e.sets}×${e.repsMin}-${e.repsMax} · 休 ${e.restSec}s · ${e.kind == 'compound' ? '复合' : '辅助'}',
-                          style: const TextStyle(
-                              color: AppTheme.textDim, fontSize: 12)),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              onPressed: () => _removeExercise(e),
-              icon: const Icon(Icons.delete_outline,
-                  size: 20, color: AppTheme.danger),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -364,6 +425,7 @@ class ExerciseFormResult {
   final int repsMax;
   final int restSec;
   final String kind;
+  final String muscle; // 主肌群（写回动作库，供热力图归类）
   const ExerciseFormResult({
     required this.name,
     required this.sets,
@@ -371,14 +433,20 @@ class ExerciseFormResult {
     required this.repsMax,
     required this.restSec,
     required this.kind,
+    required this.muscle,
   });
 }
 
 class _ExerciseEditSheet extends StatefulWidget {
-  const _ExerciseEditSheet({this.initial, required this.knownNames});
+  const _ExerciseEditSheet({
+    this.initial,
+    required this.knownMetas,
+    this.initialMuscle,
+  });
 
   final PlanExercise? initial;
-  final List<String> knownNames;
+  final List<ExerciseMeta> knownMetas;
+  final String? initialMuscle;
 
   @override
   State<_ExerciseEditSheet> createState() => _ExerciseEditSheetState();
@@ -394,12 +462,18 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
       ? widget.initial!.restSec
       : 120;
   late String _kind = widget.initial?.kind ?? 'assistance';
+  late String? _muscle =
+      widget.initialMuscle ?? widget.initial?.name ?? '';
   String? _nameError;
 
   List<String> get _suggestions {
     final q = _nameCtrl.text.trim();
-    if (q.isEmpty) return const [];
-    return widget.knownNames
+    // 空时展示词表前几个，帮助发现与统一命名
+    if (q.isEmpty) {
+      return widget.knownMetas.take(8).map((m) => m.name).toList();
+    }
+    return widget.knownMetas
+        .map((m) => m.name)
         .where((n) => n != q && n.contains(q))
         .take(6)
         .toList();
@@ -420,82 +494,165 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
           right: 16,
           top: 16,
           bottom: MediaQuery.of(context).viewInsets.bottom + 16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.initial == null ? '添加动作' : '编辑动作',
-              style:
-                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nameCtrl,
-            autofocus: widget.initial == null,
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              labelText: '动作名',
-              errorText: _nameError,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.initial == null ? '添加动作' : '编辑动作',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nameCtrl,
+              autofocus: widget.initial == null,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: '动作名',
+                errorText: _nameError,
+              ),
             ),
-          ),
-          if (suggestions.isNotEmpty)
+            if (suggestions.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final n in suggestions)
+                      ActionChip(
+                        label:
+                            Text(n, style: const TextStyle(fontSize: 12)),
+                        backgroundColor: AppTheme.cardHi,
+                        side: BorderSide.none,
+                        onPressed: () {
+                          _nameCtrl.text = n;
+                          // 选词表动作时带出其肌群
+                          final meta = widget.knownMetas
+                              .where((m) => m.name == n)
+                              .firstOrNull;
+                          setState(
+                              () => _muscle = meta?.muscles.main ?? _muscle);
+                        },
+                      ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 12),
+            // 快捷预设：一键填组数/次数/休息
             Wrap(
               spacing: 6,
               runSpacing: 4,
               children: [
-                for (final n in suggestions)
+                for (final preset in const [
+                  ('力量 3×5', 3, 5, 5, 180),
+                  ('增肌 3×8-12', 3, 8, 12, 120),
+                  ('耐力 2×15', 2, 15, 20, 75),
+                ])
                   ActionChip(
-                    label: Text(n, style: const TextStyle(fontSize: 12)),
+                    label: Text(preset.$1,
+                        style: const TextStyle(fontSize: 12)),
                     backgroundColor: AppTheme.cardHi,
                     side: BorderSide.none,
-                    onPressed: () {
-                      _nameCtrl.text = n;
-                      setState(() {});
-                    },
+                    onPressed: () => setState(() {
+                      _sets = preset.$2;
+                      _repsMin = preset.$3;
+                      _repsMax = preset.$4;
+                      _restSec = preset.$5;
+                    }),
                   ),
               ],
             ),
-          const SizedBox(height: 10),
-          _stepper(
-              '组数', _sets, 1, 8, 1, (v) => setState(() => _sets = v)),
-          _stepper('次数下限', _repsMin, 1, _repsMax, 1,
-              (v) => setState(() => _repsMin = v)),
-          _stepper('次数上限', _repsMax, _repsMin, 30, 1,
-              (v) => setState(() => _repsMax = v)),
-          _stepper('组间休息（秒）', _restSec, 15, 600, 15,
-              (v) => setState(() => _restSec = v)),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _kindChip('复合', 'compound'),
-              const SizedBox(width: 8),
-              _kindChip('辅助', 'assistance'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: () {
-              final name = _nameCtrl.text.trim();
-              if (name.isEmpty) {
-                setState(() => _nameError = '请填写动作名');
-                return;
-              }
-              HapticFeedback.selectionClick();
-              Navigator.pop(
-                context,
-                ExerciseFormResult(
-                  name: name,
-                  sets: _sets,
-                  repsMin: _repsMin,
-                  repsMax: _repsMax,
-                  restSec: _restSec,
-                  kind: _kind,
+            const SizedBox(height: 10),
+            _stepper(
+                '组数', _sets, 1, 8, 1, (v) => setState(() => _sets = v)),
+            _stepper('次数下限', _repsMin, 1, _repsMax, 1,
+                (v) => setState(() => _repsMin = v)),
+            _stepper('次数上限', _repsMax, _repsMin, 30, 1,
+                (v) => setState(() => _repsMax = v)),
+            _stepper('组间休息（秒）', _restSec, 15, 600, 15,
+                (v) => setState(() => _restSec = v)),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('主肌群',
+                      style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
                 ),
-              );
-            },
-            child: const Text('保存'),
-          ),
-        ],
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Wrap(
+                    spacing: 5,
+                    runSpacing: 4,
+                    children: [
+                      for (final m in kMuscleRegions)
+                        GestureDetector(
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _muscle = m);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: _muscle == m
+                                  ? AppTheme.accent
+                                  : AppTheme.cardHi,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(m,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: _muscle == m
+                                        ? const Color(0xFF06220F)
+                                        : AppTheme.textDim)),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                _kindChip('复合', 'compound'),
+                const SizedBox(width: 8),
+                _kindChip('辅助', 'assistance'),
+              ],
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                final name = _nameCtrl.text.trim();
+                if (name.isEmpty) {
+                  setState(() => _nameError = '请填写动作名');
+                  return;
+                }
+                HapticFeedback.selectionClick();
+                Navigator.pop(
+                  context,
+                  ExerciseFormResult(
+                    name: name,
+                    sets: _sets,
+                    repsMin: _repsMin,
+                    repsMax: _repsMax,
+                    restSec: _restSec,
+                    kind: _kind,
+                    muscle: (_muscle == null || _muscle!.isEmpty)
+                        ? '其他'
+                        : _muscle!,
+                  ),
+                );
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
       ),
     );
   }
