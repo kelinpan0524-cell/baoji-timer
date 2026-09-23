@@ -13,6 +13,10 @@
 - **导出**：CSV / JSON 全量备份；**AI 分析包**（Markdown + 结构化 JSON + 预制提示词，一键复制给任何 AI 做训练总结）
 - **飞书日历**：训练日自动写日历（含提前提醒），练完回填摘要到当天事件；离线自动排队补写
 
+## 开源致谢
+
+- 人体肌肉热力图的 SVG 路径数据来自 [vulovix/body-muscles](https://github.com/vulovix/body-muscles)（Apache License 2.0），本项目按训练强度重新着色渲染。
+
 ## 开发调试
 
 - `scripts/mock_ai_server.py`：本地 mock AI 服务器（模拟 OpenAI 兼容接口），没有真实 Key 时端到端验证 AI 生成链路。用法见文件头注释。

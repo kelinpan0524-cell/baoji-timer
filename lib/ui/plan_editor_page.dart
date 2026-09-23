@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import 'exercise_picker_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -98,6 +99,45 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
     ));
+  }
+
+  /// 从动作库挑选：搜索/筛选/多选，确认后批量追加到当天（参数用合理默认，
+  /// 之后点开单个动作微调）。
+  Future<void> _pickFromLibrary() async {
+    final picked = await Navigator.of(context).push<List<ExerciseMeta>>(
+      MaterialPageRoute(
+        builder: (_) => ExercisePickerPage(
+          existingNames: _exercises.map((e) => e.name).toSet(),
+        ),
+      ),
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    final c = app(context);
+    var order = _exercises.length;
+    for (final m in picked) {
+      final isCompound = m.isCompound;
+      await c.db.insertPlanExercise(PlanExercise(
+        dayId: _day.id!,
+        name: m.name,
+        orderIdx: order++,
+        sets: isCompound ? 4 : 3,
+        repsMin: isCompound ? 6 : 8,
+        repsMax: isCompound ? 10 : 12,
+        restSec: isCompound ? 150 : 90,
+        kind: isCompound ? 'compound' : 'assistance',
+        rule: ProgressionRule(
+          repsMin: isCompound ? 6 : 8,
+          repsMax: isCompound ? 10 : 12,
+          incrementKg: isCompound ? 2.5 : 1.25,
+          workingSets: isCompound ? 4 : 3,
+        ),
+      ));
+    }
+    _dirty = true;
+    await _reload();
+    if (mounted) {
+      toast(context, '已添加 ${picked.length} 个动作，点开可微调组数');
+    }
   }
 
   Future<void> _openExerciseSheet([PlanExercise? existing]) async {
@@ -336,16 +376,34 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                       ],
                     ),
                   ),
-                  // 底部常驻：拇指区添加动作
+                  // 底部常驻：拇指区双入口（从动作库挑选 / 手动填写）
                   SafeArea(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
-                      child: OutlinedButton.icon(
-                        onPressed: () => _openExerciseSheet(),
-                        icon: const Icon(Icons.add, size: 18),
-                        label: const Text('添加动作'),
-                        style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(52)),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () => _pickFromLibrary(),
+                              icon: const Icon(Icons.library_books, size: 18),
+                              label: const Text('从动作库选'),
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size.fromHeight(52),
+                                backgroundColor: AppTheme.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: () => _openExerciseSheet(),
+                              icon: const Icon(Icons.edit, size: 18),
+                              label: const Text('手动填写'),
+                              style: OutlinedButton.styleFrom(
+                                  minimumSize: const Size.fromHeight(52)),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

@@ -15,6 +15,7 @@ dependencies:
   shared_preferences: ^2.3.4
   intl: ^0.20.1
   fl_chart: ^0.70.2
+  flutter_svg: ^2.0.10
   wakelock_plus: ^1.2.10
   permission_handler: ^11.3.1
   http: ^1.2.2
