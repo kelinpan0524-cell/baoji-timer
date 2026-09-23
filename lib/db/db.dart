@@ -564,6 +564,23 @@ class Db {
   // ---------- 聚合查询（数据页用，避免 N+1） ----------
 
   /// 单次 JOIN 拉出时间段内全部训练明细行。
+  /// 删除单次训练（级联删除其动作与组记录）。
+  Future<void> deleteSession(int sessionId) async {
+    final db = await database;
+    await db.delete('sessions', where: 'id = ?', whereArgs: [sessionId]);
+  }
+
+  /// 某计划全部训练日的飞书同步记录（清理残留日程用）。
+  Future<List<LarkSync>> larkSyncRefsForPlan(int planId) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT l.* FROM lark_sync l
+      JOIN plan_days d ON d.id = l.ref_id
+      WHERE l.ref_type = 'plan_day' AND d.plan_id = ?
+    ''', [planId]);
+    return rows.map(LarkSync.fromMap).toList();
+  }
+
   Future<List<Map<String, Object?>>> sessionRowsBetween(
       String from, String to) async {
     final db = await database;

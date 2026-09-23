@@ -304,6 +304,7 @@ class LarkService {
       for (var i = 0; i < 14; i++) {
         final d = today.add(Duration(days: i));
         if (d.weekday != day.weekday) continue;
+        // 不 break：未来 14 天内同一星期会命中 2 次，两周都要安排
         await upsertDayEvent(
           date: fmtYmd(d),
           title: '${day.title}（训练）',
@@ -311,7 +312,6 @@ class LarkService {
           planDayId: day.planDayId,
         );
         n++;
-        break;
       }
     }
     return n;

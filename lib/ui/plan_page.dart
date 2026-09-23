@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../core/app.dart';
 import '../engine/engine.dart';
 import '../services/ai_service.dart';
 import '../services/plan_repository.dart';
@@ -143,6 +144,20 @@ class _PlanPageState extends State<PlanPage> {
           _sourceLabel(_view?.source),
           style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
         ),
+        if (!viewingActive) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: AppTheme.warn.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Text(
+                '此计划未启用：编辑不会影响今天的训练，设为使用中后才生效。',
+                style: TextStyle(color: AppTheme.warn, fontSize: 13)),
+          ),
+        ],
         const SizedBox(height: 8),
         ...List.generate(7, (i) {
           final wd = i + 1;
@@ -158,11 +173,15 @@ class _PlanPageState extends State<PlanPage> {
               onTap: day == null
                   ? null
                   : () async {
-                      await Navigator.of(context).push(MaterialPageRoute(
-                          builder: (_) => PlanEditorPage(day: day)));
-                      // 编辑后刷新，并让飞书日历同步最新编排
+                      final changed = await Navigator.of(context).push(
+                          MaterialPageRoute<bool>(
+                              builder: (_) => PlanEditorPage(day: day)));
+                      // 有修改才刷新；只同步「使用中」的计划（见 _syncLarkDays）
+                      if (changed != true) return;
+                      if (!context.mounted) return;
+                      final container = app(context);
                       await _refresh();
-                      await _syncLarkDays();
+                      await _syncLarkDays(container);
                     },
               child: Padding(
                 padding: const EdgeInsets.all(14),
@@ -266,8 +285,9 @@ class _PlanPageState extends State<PlanPage> {
           FilledButton(
             onPressed: () async {
               final messenger = ScaffoldMessenger.of(context);
-              await app(context).planRepo.installBaojiPlan();
-              await _syncLarkDays();
+              final container = app(context);
+              await container.planRepo.installBaojiPlan();
+              await _syncLarkDays(container);
               if (mounted) {
                 messenger.showSnackBar(const SnackBar(
                     content: Text('薄肌计划已安装'),
@@ -364,9 +384,9 @@ class _PlanPageState extends State<PlanPage> {
     await c.db.setActivePlan(_view!.id!);
     await c.planRepo.reload(includeAll: true);
     unawaited(_removeOldEvents(oldDays.map((d) => d.id!).toList()));
-    await _syncLarkDays();
+    await _syncLarkDays(c);
     if (mounted) {
-      toast(context, '已启用「${_view!.name}」');
+      toast(context, '已设为使用中「${_view!.name}」');
       await _refresh(view: _view);
     }
   }
@@ -550,7 +570,9 @@ class _PlanPageState extends State<PlanPage> {
                     style: TextStyle(color: AppTheme.warn)),
               const SizedBox(height: 8),
               FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
+                onPressed: ctrl.text.trim().isEmpty
+                    ? null
+                    : () => Navigator.pop(ctx, true),
                 child: Text(genMode ? '生成计划' : '开始拆解'),
               ),
             ],
@@ -566,8 +588,30 @@ class _PlanPageState extends State<PlanPage> {
     final nav = Navigator.of(context, rootNavigator: true);
     showDialog(
       context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
+      barrierDismissible: false, // 可手动关闭，后台请求继续
+      builder: (_) => PopScope(
+        canPop: true,
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 14),
+                  const Text('正在让 AI 处理计划…',
+                      style: TextStyle(fontSize: 15)),
+                  const SizedBox(height: 4),
+                  Text('通常 10-30 秒，可关闭稍等',
+                      style: TextStyle(
+                          color: AppTheme.textDim, fontSize: 12)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
     try {
       final specs = genMode
@@ -581,40 +625,33 @@ class _PlanPageState extends State<PlanPage> {
         final name = await _showPlanPreview(specs);
         if (name == null || !mounted) return;
         final plan = await c.planRepo.saveAiPlan(
-          name: name,
+          name: name.isEmpty ? 'AI 生成 ${fmtDate(DateTime.now())}' : name,
           specs: specs,
           metaMap: c.ai.metaMap(),
         );
-        await _syncLarkDays();
+        await _refresh();
+        await _syncLarkDays(c);
         if (!mounted) return;
-        toast(context, '已保存「${plan.name}」，点任意一天可继续微调');
-        await _refresh(view: null);
-        final created =
-            _plans.where((p) => p.id == plan.id).firstOrNull;
-        await _refresh(view: created);
+        toast(context, '已保存并设为使用中「${plan.name}」，点任意一天可微调');
       } else {
         // 原文导入：逐字转成计划直接保存
-        final metaMap = c.ai.metaMap();
         final plan = await c.planRepo.saveAiPlan(
           name: 'AI 计划 ${fmtDate(DateTime.now())}',
           specs: specs,
-          metaMap: metaMap,
+          metaMap: c.ai.metaMap(),
         );
-        if (nav.canPop()) {}
-        await _syncLarkDays();
+        await _refresh();
+        await _syncLarkDays(c);
         if (!mounted) return;
-        toast(context, '拆解完成：${specs.length} 个训练日，点任意一天即可校对');
-        await _refresh(view: null);
-        final created =
-            _plans.where((p) => p.id == plan.id).firstOrNull;
-        await _refresh(view: created);
+        toast(context,
+            '拆解完成：${specs.length} 个训练日，已设为使用中「${plan.name}」');
       }
     } on AiException catch (e) {
       if (nav.canPop()) nav.pop();
       if (mounted) toast(context, e.message);
     } catch (e) {
       if (nav.canPop()) nav.pop();
-      if (mounted) toast(context, '失败：\$e');
+      if (mounted) toast(context, 'AI 请求失败，请重试或换模型（$e）');
     }
   }
 
@@ -625,6 +662,8 @@ class _PlanPageState extends State<PlanPage> {
     return showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      isDismissible: false, // 90 秒的成果不能被随手拖没
+      enableDrag: false,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
@@ -687,7 +726,12 @@ class _PlanPageState extends State<PlanPage> {
                     children: [
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx),
+                          onPressed: () async {
+                            final ok = await confirmDialog(
+                                ctx, '丢弃刚生成的计划？',
+                                '放弃后需要重新让 AI 生成一遍。');
+                            if (ok && ctx.mounted) Navigator.pop(ctx);
+                          },
                           child: const Text('放弃'),
                         ),
                       ),
@@ -712,12 +756,19 @@ class _PlanPageState extends State<PlanPage> {
 
   // ================= 飞书同步 =================
 
-  /// 当前查看计划的未来 14 天训练日写入飞书日历（编辑/切换/导入后调用）。
-  Future<void> _syncLarkDays() async {
-    final c = app(context);
-    final planId = _view?.id ?? c.planRepo.activePlan?.id;
-    if (planId == null) return;
-    final specs = await c.planRepo.larkSpecsForPlan(planId);
+  /// 「使用中」计划的未来 14 天训练日写入飞书日历（编辑/切换/导入后调用）。
+  /// 只同步使用中的计划——编辑未启用计划不应把它的日程写上日历。
+  /// 同步前清理：有日历记录但已无动作的日子（用户清空了那天）先撤事件。
+  Future<void> _syncLarkDays(AppContainer c, {int? planId}) async {
+    final target = planId ?? c.planRepo.activePlan?.id;
+    if (target == null) return;
+    final specs = await c.planRepo.larkSpecsForPlan(target);
+    final withEx = specs.map((s) => s.planDayId).toSet();
+    for (final sync in await c.db.larkSyncRefsForPlan(target)) {
+      if (!withEx.contains(sync.refId)) {
+        await c.lark.removePlanDayEvent(sync.refId);
+      }
+    }
     await c.lark.syncUpcomingDays(days: specs);
   }
 }

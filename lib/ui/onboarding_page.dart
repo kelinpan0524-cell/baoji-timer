@@ -204,18 +204,15 @@ class _OnboardingPageState extends State<OnboardingPage> {
           OutlinedButton(
             style: OutlinedButton.styleFrom(minimumSize: const Size(0, 88)),
             onPressed: () async {
-              // 先用内置占位，进入后可在计划页导入
-              if (c.planRepo.activePlan == null) {
-                await c.planRepo.installBaojiPlan();
-              }
+              // 空手进入：首页与计划页都有无计划的引导，不偷装
             },
             child: const Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text('稍后自己导入',
+                Text('稍后再说',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
                 SizedBox(height: 4),
-                Text('计划页可粘贴文本让 AI 拆解',
+                Text('进去后随时可装内置计划或 AI 导入',
                     style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
               ],
             ),
