@@ -30,6 +30,32 @@ class AiService {
     return _parseResponse(content);
   }
 
+  /// 自然语言描述 → 教练设计一份计划（输出与原文导入相同的 JSON 契约）。
+  String buildDesignerPrompt(String description) {
+    final lib =
+        kBaojiExerciseMeta.map((m) => '${m.name}(${m.muscles.main})').join('、');
+    return '''
+你是专业力量训练教练。根据用户的自然语言描述，设计一份每周力量训练计划，输出严格 JSON：
+1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
+2. 每个元素是一个训练日：{"weekday": 1-7(周一=1), "title": "训练日名称", "exercises": [...]}
+3. 每个 exercise：{"name": "规范中文动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "胸/肩/背/手臂/腿/核心 之一"}
+4. 每周 3-5 个训练日；同一肌群两次训练至少间隔 48 小时；容量安排符合渐进超负荷原则；热身组不写入。
+5. rest_sec：复合动作 150-180，辅助动作 90-120。动作名尽量使用参考词表：$lib
+6. 用户未说明的部分按增肌最佳实践补全；描述过简时按"每周 3 练、全身均衡"处理；用户指定了动作/器械/次数就尊重用户。
+
+用户描述：$description
+''';
+  }
+
+  /// 自然语言生成计划（不落库），返回后由 UI 预览、用户确认再保存。
+  Future<List<AiDaySpec>> designPlanFromDescription(String description) async {
+    if (!_settings.aiConfigured) {
+      throw const AiException('未配置 AI 接口，请在设置里填入 Base URL 和 API Key');
+    }
+    final content = await _chat(buildDesignerPrompt(description));
+    return _parseResponse(content);
+  }
+
   String _buildPrompt(String planText) {
     final lib = kBaojiExerciseMeta.map((m) => '${m.name}(${m.muscles.main})').join('、');
     return '''
@@ -47,10 +73,19 @@ $planText
   }
 
   Future<String> _chat(String prompt) async {
-    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+\$'), '');
+    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
     if (!base.startsWith('https://')) {
-      // API Key 走 Authorization 头，明文 http 会被中间人截获
-      throw const AiException('Base URL 必须以 https:// 开头');
+      // 公网必须 https（Key 在请求头，明文会被中间人截获）；
+      // 局域网/本机自建模型（Ollama、LM Studio 等）允许 http
+      final host = Uri.tryParse(base)?.host ?? '';
+      final isPrivate = host == 'localhost' ||
+          host.startsWith('127.') ||
+          host.startsWith('10.') ||
+          host.startsWith('192.168.') ||
+          RegExp(r'^172\.(1[6-9]|2\d|3[01])\.').hasMatch(host);
+      if (!isPrivate) {
+        throw const AiException('公网地址必须 https://（局域网自建模型可用 http）');
+      }
     }
     final url = '$base/chat/completions';
     try {
