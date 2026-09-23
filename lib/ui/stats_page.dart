@@ -6,7 +6,7 @@ import '../core/app.dart';
 import '../engine/engine.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
-import 'muscle_body_painter.dart';
+import 'muscle_body_view.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -344,11 +344,8 @@ class _MuscleTabState extends State<_MuscleTab> {
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
-                    height: 280,
-                    child: CustomPaint(
-                      painter: MuscleBodyPainter(share, front: _front),
-                      child: const SizedBox.expand(),
-                    ),
+                    height: 300,
+                    child: MuscleBodyView(share: share, front: _front),
                   ),
                   const SizedBox(height: 16),
                   ...kMuscleRegions.map((r) {
