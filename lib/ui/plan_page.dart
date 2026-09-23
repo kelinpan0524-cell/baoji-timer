@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
 import '../services/ai_service.dart';
+import '../services/plan_repository.dart';
 import 'plan_editor_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -485,44 +486,75 @@ class _PlanPageState extends State<PlanPage> {
   Future<void> _showAiImport() async {
     final c = app(context);
     final ctrl = TextEditingController();
+    bool genMode = false; // false=原文导入 true=描述生成
     final ok = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('AI 拆解训练计划',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            const Text(
-                '粘贴你的计划原文（如"周一 卧推 3×5-8 …"），AI 自动识别训练日、动作、组数次数；导入后可逐日人工校对。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: ctrl,
-              maxLines: 8,
-              decoration: const InputDecoration(hintText: '在此粘贴计划文本…'),
-            ),
-            const SizedBox(height: 12),
-            if (!c.settings.aiConfigured)
-              const Text('尚未配置 AI 接口：请先到 设置 → AI 配置 填写。',
-                  style: TextStyle(color: AppTheme.warn)),
-            const SizedBox(height: 8),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('开始拆解'),
-            ),
-          ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('AI 计划',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 10),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('原文导入')),
+                  ButtonSegment(value: true, label: Text('描述生成')),
+                ],
+                selected: {genMode},
+                onSelectionChanged: (s) => setSheet(() => genMode = s.first),
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith(
+                      (st) => st.contains(WidgetState.selected)
+                          ? AppTheme.primary
+                          : AppTheme.cardHi),
+                  foregroundColor: WidgetStateProperty.resolveWith(
+                      (st) => st.contains(WidgetState.selected)
+                          ? const Color(0xFF06220F)
+                          : AppTheme.textDim),
+                  side: const WidgetStatePropertyAll(
+                      BorderSide(color: Colors.transparent)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                genMode
+                    ? '用大白话描述你想要什么，AI 直接设计计划。例："每周四练，练背、胸、腿，增肌，家里只有哑铃"。'
+                    : '粘贴现成计划原文（如"周一 卧推 3×5-8 …"），AI 逐字转成结构化计划。',
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                maxLines: genMode ? 4 : 8,
+                decoration: InputDecoration(
+                    hintText: genMode
+                        ? '描述你的目标、频率、部位、器械…'
+                        : '在此粘贴计划原文…'),
+              ),
+              const SizedBox(height: 12),
+              if (!c.settings.aiConfigured)
+                const Text('尚未配置 AI 接口：请先到 设置 → AI 配置 填写。',
+                    style: TextStyle(color: AppTheme.warn)),
+              const SizedBox(height: 8),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: Text(genMode ? '生成计划' : '开始拆解'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -538,28 +570,144 @@ class _PlanPageState extends State<PlanPage> {
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
     try {
-      final specs = await c.ai.parsePlan(ctrl.text);
-      final metaMap = c.ai.metaMap();
-      final plan = await c.planRepo.saveAiPlan(
-        name: 'AI 计划 ${fmtDate(DateTime.now())}',
-        specs: specs,
-        metaMap: metaMap,
-      );
+      final specs = genMode
+          ? await c.ai.designPlanFromDescription(ctrl.text.trim())
+          : await c.ai.parsePlan(ctrl.text.trim());
       if (nav.canPop()) nav.pop();
-      await _syncLarkDays();
-      if (!mounted) return;
-      toast(context, '拆解完成：${specs.length} 个训练日，点任意一天即可校对');
-      await _refresh(view: null);
-      final created =
-          _plans.where((p) => p.id == plan.id).firstOrNull;
-      await _refresh(view: created);
+
+      if (genMode) {
+        // 生成模式：先预览，用户同意才保存
+        if (!mounted) return;
+        final name = await _showPlanPreview(specs);
+        if (name == null || !mounted) return;
+        final plan = await c.planRepo.saveAiPlan(
+          name: name,
+          specs: specs,
+          metaMap: c.ai.metaMap(),
+        );
+        await _syncLarkDays();
+        if (!mounted) return;
+        toast(context, '已保存「${plan.name}」，点任意一天可继续微调');
+        await _refresh(view: null);
+        final created =
+            _plans.where((p) => p.id == plan.id).firstOrNull;
+        await _refresh(view: created);
+      } else {
+        // 原文导入：逐字转成计划直接保存
+        final metaMap = c.ai.metaMap();
+        final plan = await c.planRepo.saveAiPlan(
+          name: 'AI 计划 ${fmtDate(DateTime.now())}',
+          specs: specs,
+          metaMap: metaMap,
+        );
+        if (nav.canPop()) {}
+        await _syncLarkDays();
+        if (!mounted) return;
+        toast(context, '拆解完成：${specs.length} 个训练日，点任意一天即可校对');
+        await _refresh(view: null);
+        final created =
+            _plans.where((p) => p.id == plan.id).firstOrNull;
+        await _refresh(view: created);
+      }
     } on AiException catch (e) {
       if (nav.canPop()) nav.pop();
       if (mounted) toast(context, e.message);
     } catch (e) {
       if (nav.canPop()) nav.pop();
-      if (mounted) toast(context, '拆解失败：$e');
+      if (mounted) toast(context, '失败：\$e');
     }
+  }
+
+  /// 生成结果预览：用户看完点「保存为计划」才落库。返回计划名（放弃返回 null）。
+  Future<String?> _showPlanPreview(List<AiDaySpec> specs) async {
+    final nameCtrl =
+        TextEditingController(text: 'AI 生成 ${fmtDate(DateTime.now())}');
+    return showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: SizedBox(
+          height: MediaQuery.of(ctx).size.height * 0.82,
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('计划预览（${specs.length} 个训练日）',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: nameCtrl,
+                      decoration: const InputDecoration(labelText: '计划名'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                  children: [
+                    for (final spec in specs)
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                              '周${'一二三四五六日'[spec.weekday - 1]} · ${spec.title}',
+                              style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.primary)),
+                          const SizedBox(height: 4),
+                          for (final ex in spec.exercises)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 2),
+                              child: Text(
+                                  '· ${ex.name}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
+                                  style: const TextStyle(fontSize: 14)),
+                            ),
+                          const SizedBox(height: 10),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.pop(ctx),
+                          child: const Text('放弃'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed: () =>
+                              Navigator.pop(ctx, nameCtrl.text.trim()),
+                          child: const Text('保存为计划'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ================= 飞书同步 =================
