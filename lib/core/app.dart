@@ -29,6 +29,8 @@ class AppContainer {
     // 训练开始/结束 → 专注模式动作
     session.onEnterFocus = _onEnterFocus;
     session.onExitFocus = _onExitFocus;
+    // 休息时间源 → 精确闹钟（开始/加时/继续重挂，暂停取消，恢复会话补挂）
+    session.onRestAlarmChanged = _onRestAlarmChanged;
   }
 
   final SharedPreferences prefs;
@@ -62,6 +64,14 @@ class AppContainer {
     final f = focus;
     if (settings.focusDndEnabled && await f.isDndAccessGranted()) {
       await f.setDnd(false);
+    }
+  }
+
+  Future<void> _onRestAlarmChanged(int? endAtMs) async {
+    if (endAtMs == null) {
+      await notify.cancelRestEnd();
+    } else {
+      await notify.scheduleRestEnd(endAtMs);
     }
   }
 

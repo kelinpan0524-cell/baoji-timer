@@ -76,19 +76,26 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
       if (!ok || !mounted) return;
     }
     if (occupant == null) {
-      _day = PlanDay(
-          id: _day.id,
-          planId: _day.planId,
-          weekday: weekday,
-          title: _day.title);
+      if (!mounted) return;
+      // setState 让 AppBar 标题与星期 chips 选中态即时刷新
+      setState(() {
+        _day = PlanDay(
+            id: _day.id,
+            planId: _day.planId,
+            weekday: weekday,
+            title: _day.title);
+      });
       await c.db.updatePlanDay(_day);
     } else {
       await c.db.swapPlanDayWeekdays(_day, occupant);
-      _day = PlanDay(
-          id: _day.id,
-          planId: _day.planId,
-          weekday: weekday,
-          title: _day.title);
+      if (!mounted) return;
+      setState(() {
+        _day = PlanDay(
+            id: _day.id,
+            planId: _day.planId,
+            weekday: weekday,
+            title: _day.title);
+      });
     }
     _dirty = true;
     messenger.showSnackBar(SnackBar(

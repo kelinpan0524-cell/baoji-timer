@@ -99,4 +99,11 @@ class NotifyService {
     await _plugin.cancel(1);
     await _plugin.cancel(2);
   }
+
+  /// 只取消休息结束的精确提醒（id=2），不动常驻倒计时（id=1）。
+  /// 休息暂停时调用：暂停期间到点不应照响。
+  Future<void> cancelRestEnd() async {
+    if (!_ready) return;
+    await _plugin.cancel(2);
+  }
 }

@@ -6,9 +6,16 @@ PRD 见 `/Users/arono/Downloads/薄肌训练计时器_App_需求文档（PRD）.
 ## 形态约束（不要违背）
 
 - **无服务器**：全部功能手机本地运行，SQLite 本地存储、本地计算。
-- **联网只有两件事**：飞书日历读写（手机直连飞书开放接口）、AI 计划拆解（用户自配 OpenAI 兼容 API）。
+- **联网只有三件事**：飞书日历读写（手机直连飞书开放接口）、AI 计划拆解（用户自配 OpenAI 兼容 API）、应用自更新检查（GitHub Releases，私仓只读令牌，域名白名单仅 github.com / *.githubusercontent.com）。
 - 本期只出 Android APK；不写 iOS 特定代码路径（Flutter 跨端天然保留）。
 - lark-cli 只在开发期使用（配置飞书应用、验证），不进入 App 运行链路。
+
+## 发布与应用内更新（2026-09 起）
+
+- **合并到 main = 自动出包**：`.github/workflows/ci.yml` 检查通过后构建签名 APK（构建号 = CI run number，即 versionCode）并发布 Release，tag 形如 `b17`。**不要重跑已发过 Release 的 workflow run**（tag 冲突会失败，需先删 Release）。
+- **签名**：CI 用 GitHub 机密里的签名（KEYSTORE_BASE64 等 4 个，与本地调试签名同源），CI 包与本地包可互相覆盖安装。**丢失该机密 = 以后所有装机都要卸载重装（丢训练数据）**，换 keystore 前必须想清楚。
+- **App 内更新**：启动静默检查（失败无声，仅设置入口红点，禁止弹窗打断训练）；设置页「应用更新」卡片手动检查/下载/安装；Android 8+ 首次需授权"安装未知应用"。
+- **release job 只在 push main 时跑**；PR 只跑 analyze/test。App 端更新判断依据 tag 里的构建号，本地手工出包时 pubspec 的 `+N` 不代表 CI 构建号。
 
 ## 常用命令
 

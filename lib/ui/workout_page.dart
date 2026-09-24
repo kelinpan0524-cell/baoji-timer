@@ -86,7 +86,9 @@ class _WorkoutPageState extends State<WorkoutPage>
     super.dispose();
   }
 
-  /// 休息开始/结束时挂接通知（常驻倒计时 + 精确结束提醒）。
+  /// 休息开始/结束时挂接通知。精确结束提醒不在这里挂：时间源统一走
+  /// SessionController.onRestAlarmChanged 回调（开始/加时/继续/暂停统一重排，
+  /// 见 App 容器接线），页面只负责常驻倒计时文案。
   void _syncPhaseSideEffects(WorkoutPhase phase) {
     if (_lastPhase == phase) return;
     final old = _lastPhase;
@@ -95,7 +97,6 @@ class _WorkoutPageState extends State<WorkoutPage>
     final s = c.session;
     if (phase == WorkoutPhase.resting) {
       c.notify.showOngoing(s.restEndAt);
-      c.notify.scheduleRestEnd(s.restEndAt);
     }
     if (old == WorkoutPhase.resting && phase != WorkoutPhase.resting) {
       c.notify.cancelRest();
@@ -150,10 +151,12 @@ class _WorkoutPageState extends State<WorkoutPage>
                   child: LayoutBuilder(
                     builder: (context, cons) {
                       final wide = cons.maxWidth >= 840;
+                      // 600dp 断点：更窄的屏（手机竖屏/分屏小窗）用紧凑面板，
+                      // 压大数字字号并收起备注行，给「完成本组」留出空间。
                       final narrow = cons.maxWidth < 600;
                       Widget content = s.phase == WorkoutPhase.resting
                           ? const _RestView()
-                          : _LiftView(s: s);
+                          : _LiftView(s: s, compact: narrow);
                       // 窄屏/中屏：操作区最大宽度 560，单手可达
                       if (!wide) {
                         content = Center(
@@ -163,7 +166,6 @@ class _WorkoutPageState extends State<WorkoutPage>
                           ),
                         );
                       }
-                      if (narrow) return content;
                       return content;
                     },
                   ),
@@ -180,9 +182,12 @@ class _WorkoutPageState extends State<WorkoutPage>
 // ================= 动作态 =================
 
 class _LiftView extends StatelessWidget {
-  const _LiftView({required this.s});
+  const _LiftView({required this.s, this.compact = false});
 
   final SessionController s;
+
+  /// <600dp 窄屏：压缩面板（大数字字号降档、隐藏备注行）。
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -217,16 +222,40 @@ class _LiftView extends StatelessWidget {
             ],
           );
         }
+        // 单栏：信息区 + 操作面板装进同一滚动区。内容装得下时用 min-height
+        // 撑满视口（信息居中、面板贴底，与原布局一致）；装不下（横屏 ~360dp
+        // 可用高、系统大字号）时整体可滚动，「完成本组」不再被挤出屏幕。
         return Column(
           children: [
             _TopBar(s: s),
             Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: _ExerciseInfo(s: s, ex: ex),
+              child: LayoutBuilder(
+                builder: (context, viewport) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: viewport.maxHeight),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 20),
+                              child: _ExerciseInfo(s: s, ex: ex),
+                            ),
+                          ),
+                          _ActionPanel(
+                              s: s,
+                              ex: ex,
+                              key: ValueKey(ex.id),
+                              compact: compact),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
-            _ActionPanel(s: s, ex: ex, key: ValueKey(ex.id)),
           ],
         );
       },
@@ -399,10 +428,19 @@ class _ExerciseInfo extends StatelessWidget {
 }
 
 class _ActionPanel extends StatefulWidget {
-  const _ActionPanel({super.key, required this.s, required this.ex});
+  const _ActionPanel({
+    super.key,
+    required this.s,
+    required this.ex,
+    this.compact = false,
+  });
 
   final SessionController s;
   final SessionExercise ex;
+
+  /// <600dp 窄屏压缩：重量大数字 84→56、收起备注行；
+  /// 步进按钮与「完成本组」高度不动（冻结基线）。
+  final bool compact;
 
   @override
   State<_ActionPanel> createState() => _ActionPanelState();
@@ -431,6 +469,7 @@ class _ActionPanelState extends State<_ActionPanel> {
   Widget build(BuildContext context) {
     final s = widget.s;
     final ex = widget.ex;
+    final compact = widget.compact;
     final repsChoices = <int>{
       for (var r = (ex.rule.repsMin - 2).clamp(1, 99);
           r <= ex.rule.repsMax + 2;
@@ -456,7 +495,8 @@ class _ActionPanelState extends State<_ActionPanel> {
               GestureDetector(
                 onLongPress: () => s.setWeightDraft(0),
                 child: Text(s.weightDraft <= 0 ? '自重' : fmtKg(s.weightDraft),
-                    style: AppTheme.bigNum(s.weightDraft <= 0 ? 56 : 84)),
+                    style: AppTheme.bigNum(
+                        compact || s.weightDraft <= 0 ? 56 : 84)),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 6, bottom: 10),
@@ -554,35 +594,40 @@ class _ActionPanelState extends State<_ActionPanel> {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
-          // 备注入口（默认收起，PRD P0 字段：单组备注）
-          GestureDetector(
-            onTap: () => setState(() => _noteOpen = !_noteOpen),
-            child: Text(_note.isEmpty && !_noteOpen
-                ? '+ 备注（可选）'
-                : '备注：${_note.isEmpty ? "编辑" : _note}',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 13,
-                    color: _note.isEmpty
-                        ? AppTheme.textDim
-                        : AppTheme.accent)),
-          ),
-          if (_noteOpen)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: TextField(
-                controller: _noteCtrl,
-                autofocus: false,
-                maxLines: 1,
-                onChanged: (v) => _note = v,
-                decoration: const InputDecoration(
-                    hintText: '这组的感受/状态（可选）',
-                    isDense: true),
-              ),
+          // 备注入口（默认收起，PRD P0 字段：单组备注）；
+          // <600dp 窄屏压缩时整段收起，给完成按钮留高度。
+          if (!compact) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => setState(() => _noteOpen = !_noteOpen),
+              child: Text(_note.isEmpty && !_noteOpen
+                  ? '+ 备注（可选）'
+                  : '备注：${_note.isEmpty ? "编辑" : _note}',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      fontSize: 13,
+                      color: _note.isEmpty
+                          ? AppTheme.textDim
+                          : AppTheme.accent)),
             ),
+            if (_noteOpen)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: TextField(
+                  controller: _noteCtrl,
+                  autofocus: false,
+                  maxLines: 1,
+                  onChanged: (v) => _note = v,
+                  decoration: const InputDecoration(
+                      hintText: '这组的感受/状态（可选）',
+                      isDense: true),
+                ),
+              ),
+          ],
           const SizedBox(height: 12),
+          // key 仅供 widget 测试定位（test/widget_layout_test.dart），无行为含义
           BigButton(
+            key: const Key('workoutCompleteSet'),
             label: doneAll ? '本动作已完成 ✓' : '完成本组',
             color: doneAll
                 ? AppTheme.cardHi
@@ -658,130 +703,158 @@ class _RestView extends StatelessWidget {
         ? (isLastEx ? '准备结束训练' : '下一个动作：${s.exercises[s.curExIdx + 1].name}')
         : '下一组：${fmtWeight(s.weightDraft)}${s.weightDraft > 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次';
 
-    return Column(
-      children: [
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('组间休息',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 18)),
-              const SizedBox(height: 8),
-              ValueListenableBuilder<int>(
-                valueListenable: s.restRemainingMs,
-                builder: (context, ms, _) {
-                  final remain = (ms / 1000).ceil();
-                  final frac =
-                      s.restTotalMs <= 0 ? 1.0 : ms / s.restTotalMs;
-                  final color = frac > 0.2
-                      ? AppTheme.primary
-                      : (frac > 0 ? AppTheme.warn : AppTheme.danger);
-                  return Text(
-                    fmtDuration(remain),
-                    style: AppTheme.bigNum(
-                      (MediaQuery.of(context).size.height *
-                              (_isWide(context) ? 0.20 : 0.15))
-                          .clamp(72.0, 260.0),
-                      color: color,
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 12),
-              Text(nextText,
-                  style: const TextStyle(color: AppTheme.text, fontSize: 18)),
-            ],
-          ),
-        ),
-        Container(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          decoration: const BoxDecoration(
-            color: AppTheme.card,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: SizedBox(
-                      height: 64,
-                      child: OutlinedButton(
+    // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
+    // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，
+    // 「跳过休息，直接开练」不再被挤出屏幕。
+    return LayoutBuilder(
+      builder: (context, viewport) => SingleChildScrollView(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: viewport.maxHeight),
+          child: IntrinsicHeight(
+            child: Column(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('组间休息',
+                          style: TextStyle(
+                              color: AppTheme.textDim, fontSize: 18)),
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<int>(
+                        valueListenable: s.restRemainingMs,
+                        builder: (context, ms, _) {
+                          final remain = (ms / 1000).ceil();
+                          final frac = s.restTotalMs <= 0
+                              ? 1.0
+                              : ms / s.restTotalMs;
+                          final color = frac > 0.2
+                              ? AppTheme.primary
+                              : (frac > 0 ? AppTheme.warn : AppTheme.danger);
+                          return Text(
+                            fmtDuration(remain),
+                            style: AppTheme.bigNum(
+                              // 下限 56（原 72）：横屏/矮屏下先给底部操作区
+                              // 留出空间，数字仍远大于页内其他文字（18/24 号），
+                              // 保持屏内最大元素。
+                              (MediaQuery.of(context).size.height *
+                                      (_isWide(context) ? 0.20 : 0.15))
+                                  .clamp(56.0, 260.0),
+                              color: color,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(nextText,
+                          style: const TextStyle(
+                              color: AppTheme.text, fontSize: 18)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                  decoration: const BoxDecoration(
+                    color: AppTheme.card,
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(24)),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 64,
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  HapticFeedback.selectionClick();
+                                  s.extendRest(30);
+                                  // 精确闹钟由控制器 onRestAlarmChanged 回调随
+                                  // restEndAt 统一重排；暂停态 restEndAt 不更新
+                                  // （加时改的是冻结值），只即时刷新常驻倒计时文案。
+                                  if (!s.isRestPaused) {
+                                    c.notify.showOngoing(s.restEndAt);
+                                  }
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: AppTheme.cardHi,
+                                  side: BorderSide.none,
+                                ),
+                                child: const Text('+30 秒',
+                                    style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SizedBox(
+                              height: 64,
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  HapticFeedback.selectionClick();
+                                  s.isRestPaused
+                                      ? s.resumeRest()
+                                      : s.pauseRest();
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: AppTheme.cardHi,
+                                  side: BorderSide.none,
+                                  foregroundColor: s.isRestPaused
+                                      ? AppTheme.primary
+                                      : AppTheme.text,
+                                ),
+                                child: Text(s.isRestPaused ? '继续' : '暂停',
+                                    style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SizedBox(
+                              height: 64,
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  HapticFeedback.selectionClick();
+                                  s.undoLastSet();
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: AppTheme.cardHi,
+                                  side: BorderSide.none,
+                                  foregroundColor: AppTheme.textDim,
+                                ),
+                                child: const Text('撤销',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600)),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      BigButton(
+                        label: '跳过休息，直接开练',
+                        height: 80,
                         onPressed: () {
-                          HapticFeedback.selectionClick();
-                          s.extendRest(30);
+                          HapticFeedback.mediumImpact();
                           c.notify.cancelRest();
-                          c.notify.showOngoing(s.restEndAt);
-                          c.notify.scheduleRestEnd(s.restEndAt);
+                          s.skipRest();
                         },
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: AppTheme.cardHi,
-                          side: BorderSide.none,
-                        ),
-                        child: const Text('+30 秒',
-                            style: TextStyle(
-                                fontSize: 18, fontWeight: FontWeight.w700)),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SizedBox(
-                      height: 64,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          HapticFeedback.selectionClick();
-                          s.isRestPaused ? s.resumeRest() : s.pauseRest();
-                        },
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: AppTheme.cardHi,
-                          side: BorderSide.none,
-                          foregroundColor:
-                              s.isRestPaused ? AppTheme.primary : AppTheme.text,
-                        ),
-                        child: Text(s.isRestPaused ? '继续' : '暂停',
-                            style: const TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w700)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: SizedBox(
-                      height: 64,
-                      child: OutlinedButton(
-                        onPressed: () {
-                          HapticFeedback.selectionClick();
-                          s.undoLastSet();
-                        },
-                        style: OutlinedButton.styleFrom(
-                          backgroundColor: AppTheme.cardHi,
-                          side: BorderSide.none,
-                          foregroundColor: AppTheme.textDim,
-                        ),
-                        child: const Text('撤销',
-                            style: TextStyle(
-                                fontSize: 16, fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              BigButton(
-                label: '跳过休息，直接开练',
-                height: 80,
-                onPressed: () {
-                  HapticFeedback.mediumImpact();
-                  c.notify.cancelRest();
-                  s.skipRest();
-                },
-              ),
-            ],
+                ),
+              ],
+            ),
           ),
         ),
-      ],
+      ),
     );
   }
 
@@ -925,7 +998,13 @@ class _SummaryPage extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text(value, style: AppTheme.bigNum(30, color: AppTheme.primary)),
+          // 360dp 屏每格仅约 104 逻辑像素，"9999kg" 在字体缩放或小屏下
+          // 放不下：FittedBox 等比缩字，避免溢出/与邻格重叠。
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child:
+                Text(value, style: AppTheme.bigNum(30, color: AppTheme.primary)),
+          ),
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(color: AppTheme.textDim)),
         ],

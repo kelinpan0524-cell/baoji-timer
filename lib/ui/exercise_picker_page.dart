@@ -4,9 +4,13 @@ import 'package:flutter/services.dart';
 import '../engine/engine.dart';
 import '../presets/exercise_library.dart';
 import 'theme.dart';
+// app(context) 快捷读取容器（与动作库浏览页同一来源）
+import 'widgets/common.dart';
 
 /// 从动作库挑选动作加入训练日：搜索 + 肌群/场景筛选 + 多选批量添加。
 /// 返回选中的动作列表（调用方按顺序插入当天）。
+/// 词表口径与动作库浏览页一致：内置词表 + 用户沉淀（AI 拆解/手动添加）的
+/// 词表外动作，同一动作在三个入口都能搜到。
 class ExercisePickerPage extends StatefulWidget {
   const ExercisePickerPage({super.key, required this.existingNames});
 
@@ -18,7 +22,8 @@ class ExercisePickerPage extends StatefulWidget {
 }
 
 class _ExercisePickerPageState extends State<ExercisePickerPage> {
-  late List<ExerciseMeta> _all;
+  // 先用内置词表渲染首帧，首帧后再合入 DB 沉淀的动作。
+  List<ExerciseMeta> _all = [...kExerciseLibrary];
   final _searchCtrl = TextEditingController();
   String _muscle = '全部';
   String _equipment = '全部';
@@ -30,7 +35,21 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
   @override
   void initState() {
     super.initState();
-    _all = [...kExerciseLibrary];
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  /// 合并 DB 沉淀的词表外动作（内置优先、按名去重），
+  /// 与 exercise_library_page / 编辑表单联想同一口径。
+  Future<void> _load() async {
+    final fromDb = await app(context).db.allExerciseMeta();
+    final known = {for (final m in kExerciseLibrary) m.name};
+    if (!mounted) return;
+    setState(() {
+      _all = [
+        ...kExerciseLibrary,
+        ...fromDb.where((m) => !known.contains(m.name)),
+      ];
+    });
   }
 
   @override
@@ -122,9 +141,15 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                   ),
                 ),
               const Spacer(),
-              Text('共 ${list.length} 个',
-                  style: const TextStyle(
-                      color: AppTheme.textDim, fontSize: 12)),
+              // 大字号下三个 chips + 计数挤同一行：Flexible 让计数缩省略号
+              // 而不是把 Row 撑到溢出裁字。
+              Flexible(
+                child: Text('共 ${list.length} 个',
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12)),
+              ),
             ]),
           ),
           Expanded(
