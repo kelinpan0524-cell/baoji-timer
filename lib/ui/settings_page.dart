@@ -55,7 +55,8 @@ class SettingsPage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('手机本地存储是唯一数据源，建议每周导出备份。',
+              const Text(
+                  '手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；当前版本不支持从 JSON 一键恢复。',
                   style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
               const SizedBox(height: 12),
               OutlinedButton(
@@ -73,7 +74,7 @@ class SettingsPage extends StatelessWidget {
                   await c.export.shareText('训练记录 JSON', json,
                       filename: 'training_export.json');
                 },
-                child: const Text('导出 JSON（全量备份）'),
+                child: const Text('导出 JSON（存档）'),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -145,7 +146,11 @@ class _FocusCardState extends State<_FocusCard> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // initState 里不能同步读 InheritedWidget（_load 首句 app(context)），
+    // 延后一帧
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _load();
+    });
   }
 
   Future<void> _load() async {
@@ -384,7 +389,7 @@ class _LarkCardState extends State<_LarkCard> {
                       final friendly = msg.contains('TimeoutException') ||
                               msg.contains('ClientException')
                           ? '网络不可用或超时，请检查网络'
-                          : (msg.length > 80 ? '\${msg.substring(0, 80)}…' : msg);
+                          : (msg.length > 80 ? '${msg.substring(0, 80)}…' : msg);
                       messenger.showSnackBar(SnackBar(
                           content: Text('连接失败：$friendly'),
                           backgroundColor: AppTheme.cardHi,
@@ -402,8 +407,35 @@ class _LarkCardState extends State<_LarkCard> {
   }
 }
 
-class _PermissionCard extends StatelessWidget {
+class _PermissionCard extends StatefulWidget {
   const _PermissionCard();
+
+  @override
+  State<_PermissionCard> createState() => _PermissionCardState();
+}
+
+class _PermissionCardState extends State<_PermissionCard>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 勿扰/使用情况等特殊权限必须离 App 去系统设置授权，
+    // 返回 resumed 时重建各行 FutureBuilder，状态即时刷新
+    if (state == AppLifecycleState.resumed) {
+      setState(() {});
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -427,7 +459,7 @@ class _PermissionCard extends StatelessWidget {
             desc: '训练开始自动开勿扰（屏蔽消息），结束自动恢复。不给则需手动开勿扰。',
             check: () => focus.isDndAccessGranted(),
             request: () async {
-              await openAppSettings();
+              await focus.openDndAccessSettings();
               return focus.isDndAccessGranted();
             },
           ),
@@ -436,7 +468,7 @@ class _PermissionCard extends StatelessWidget {
             desc: '训练中切到抖音等分心 App 后回来自动提醒。不给则没有分心提醒，其他功能不受影响。',
             check: () => focus.isUsageAccessGranted(),
             request: () async {
-              await openAppSettings();
+              await focus.openUsageAccessSettings();
               return focus.isUsageAccessGranted();
             },
           ),
@@ -446,7 +478,7 @@ class _PermissionCard extends StatelessWidget {
             check: () => focus.canExactAlarm(),
             request: () async {
               await focus.openExactAlarmSettings();
-              return false;
+              return focus.canExactAlarm();
             },
           ),
           _permRow(

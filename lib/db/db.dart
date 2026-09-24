@@ -37,8 +37,13 @@ class Db {
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
         ));
-    _dbFuture = future;
-    return future;
+    // 失败自清理：首次打开瞬时失败（磁盘满/IO 抖动）后，
+    // 下一次调用重新尝试打开，不让同一个 failed Future 缓存到进程结束。
+    _dbFuture = future.catchError((Object e) {
+      _dbFuture = null;
+      throw e;
+    });
+    return _dbFuture!;
   }
 
   Future<void> _onUpgrade(Database db, int oldV, int newV) async {
@@ -355,6 +360,25 @@ class Db {
     return Session.fromMap({...s.toMap(), 'id': id});
   }
 
+  /// 事务内一次插入会话与其全部动作，返回带回 id 的会话与动作列表。
+  /// 消除"先插会话再逐条插动作"两步之间的半写窗口（进程在间隙被杀
+  /// 或某条插入失败时，DB 会留下零动作的 active 脏会话）。
+  Future<(Session, List<SessionExercise>)> insertSessionWithExercises(
+      Session s, List<SessionExercise> exercises) async {
+    final db = await database;
+    return db.transaction((tx) async {
+      final sid = await tx.insert('sessions', s.toMap());
+      final out = <SessionExercise>[];
+      for (final e in exercises) {
+        final row = e.toMap();
+        row['session_id'] = sid; // 覆写为事务内拿到的会话 id
+        final id = await tx.insert('session_exercises', row);
+        out.add(SessionExercise.fromMap({...row, 'id': id}));
+      }
+      return (Session.fromMap({...s.toMap(), 'id': sid}), out);
+    });
+  }
+
   Future<void> updateSession(int id, Map<String, Object?> fields) async {
     final db = await database;
     await db.update('sessions', fields, where: 'id = ?', whereArgs: [id]);
@@ -441,6 +465,8 @@ class Db {
 
   /// 某动作全部历史组（按时间正序），用于对比与渐进判定。
   /// [kindFilter] 不为空时 SQL 侧只取该 kind；最多回 2000 行防无界。
+  /// SQL 侧倒序截断保留最新 2000 条，Dart 侧再反转为时间升序返回
+  /// （正序截断会在超限时丢掉最新数据，PR 判定与推荐重量回退到数年前）。
   Future<List<SetEntry>> historySets(String exerciseName,
       {int? beforeSessionExerciseId, String? kindFilter}) async {
     final db = await database;
@@ -450,10 +476,10 @@ class Db {
       JOIN sessions ss ON ss.id = se.session_id
       WHERE se.name = ? AND ss.status = 'done'
         AND (? IS NULL OR s.kind = ?)
-      ORDER BY s.done_at ASC
+      ORDER BY s.done_at DESC
       LIMIT 2000
     ''', [exerciseName, kindFilter, kindFilter]);
-    var list = rows.map(SetEntry.fromMap).toList();
+    var list = rows.map(SetEntry.fromMap).toList().reversed.toList();
     if (beforeSessionExerciseId != null) {
       // 截断到指定 session_exercise 之前（不含当前进行中的组）
       final cur = await db.query('sets',
@@ -553,8 +579,16 @@ class Db {
   // ---------- sync queue（离线补写） ----------
   Future<void> enqueueSync(String op, String payload) async {
     final db = await database;
-    await db.insert(
-        'sync_queue', {'op': op, 'payload': payload, 'created_at': DateTime.now().millisecondsSinceEpoch});
+    // 去重：完全相同的 op+payload 只留一条
+    // （token 失效期间逐日失败重试，同一操作反复入队不再堆积）
+    await db.delete('sync_queue',
+        where: 'op = ? AND payload = ?', whereArgs: [op, payload]);
+    await db.insert('sync_queue',
+        {'op': op, 'payload': payload, 'created_at': DateTime.now().millisecondsSinceEpoch});
+    // 硬性封顶 200 行：超出丢最旧，队列永不无限增长
+    await db.execute(
+        'DELETE FROM sync_queue WHERE id NOT IN '
+        '(SELECT id FROM sync_queue ORDER BY id DESC LIMIT 200)');
   }
 
   Future<List<Map<String, dynamic>>> pendingSync() async {
@@ -594,7 +628,7 @@ class Db {
       SELECT ss.id AS session_id, ss.date, ss.plan_day_title,
              ss.started_at, ss.ended_at,
              se.id AS se_id, se.name, se.order_idx,
-             s.weight_kg, s.reps, s.rir, s.kind
+             s.weight_kg, s.reps, s.rir, s.kind, s.done_at
       FROM sessions ss
       JOIN session_exercises se ON se.session_id = ss.id
       LEFT JOIN sets s ON s.session_exercise_id = se.id
@@ -614,6 +648,7 @@ class Db {
       'session_exercises': await db.query('session_exercises'),
       'sets': await db.query('sets'),
       'body_metrics': await db.query('body_metrics'),
+      'exercise_meta': await db.query('exercise_meta'),
     };
   }
 

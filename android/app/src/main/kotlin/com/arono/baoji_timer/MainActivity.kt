@@ -44,6 +44,14 @@ class MainActivity : FlutterActivity() {
                             openExactAlarmSettings()
                             result.success(null)
                         }
+                        "openDndSettings" -> {
+                            openDndAccessSettings()
+                            result.success(null)
+                        }
+                        "openUsageSettings" -> {
+                            openUsageAccessSettings()
+                            result.success(null)
+                        }
                         "ignoringBattery" -> result.success(isIgnoringBattery())
                         "requestIgnoreBattery" -> {
                             requestIgnoreBattery()
@@ -133,6 +141,24 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) {
                 startActivity(Intent(Settings.ACTION_SETTINGS))
             }
+        }
+    }
+
+    // 勿扰访问的授权开关只在系统专属页，应用信息页没有
+    private fun openDndAccessSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+        } catch (e: Exception) {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
+        }
+    }
+
+    // 使用情况访问同上
+    private fun openUsageAccessSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+        } catch (e: Exception) {
+            startActivity(Intent(Settings.ACTION_SETTINGS))
         }
     }
 
