@@ -72,3 +72,6 @@ exports/
 .zcode/
 out/
 android/.mimosa/
+
+# Playwright MCP snapshots
+.playwright-mcp/
