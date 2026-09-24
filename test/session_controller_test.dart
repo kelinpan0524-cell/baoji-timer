@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/db/db.dart';
 import 'package:baoji_timer/engine/engine.dart';
+import 'package:baoji_timer/services/export_service.dart';
 import 'package:baoji_timer/services/session_controller.dart';
 import 'package:baoji_timer/services/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -276,5 +277,177 @@ void main() {
     // 等 completeSet → _beginRestFor 的异步续体（预载下一动作上下文）跑完，
     // 避免它在 tearDown dispose 之后才 notifyListeners 报"used after dispose"。
     await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B1：同一动作组间休息保留手动调过的重量，换动作才重新推荐', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0, sets: 2, workingSets: 2);
+    final b = await addPlanEx(day, '动作乙', 1, sets: 1, workingSets: 1);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a, b]);
+    // 推荐值是内置起始 20：手动加重后做一组
+    c.setWeightDraft(62.5);
+    await c.completeSet(
+        weight: 62.5, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(c.weightDraft, 62.5,
+        reason: '同动作继续：手动调过的重量不被推荐值冲掉');
+
+    // 记满动作甲 → 推进到动作乙：换动作才刷新推荐重量
+    await c.completeSet(
+        weight: c.weightDraft, reps: 8, rir: 2, kind: SetKind.working);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(c.curExIdx, 1);
+    expect(c.weightDraft, presetStartOf('动作乙'),
+        reason: '无历史的动作用内置起始重量');
+  });
+
+  test('B2：动作练满进休息可回退加练一组，加练按正式组记录', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0, sets: 1, workingSets: 1);
+    final b = await addPlanEx(day, '动作乙', 1, sets: 1, workingSets: 1);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a, b]);
+    await c.completeSet(
+        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.curExIdx, 1, reason: '动作甲练满已推进');
+    expect(c.extraSetExerciseName, '动作甲', reason: '休息页应有加练入口');
+
+    await c.startExtraSet();
+    expect(c.phase, WorkoutPhase.lifting);
+    expect(c.curExIdx, 0);
+    expect(c.extraSetExerciseName, isNull);
+    expect(c.workingSetsDone, 1);
+
+    // 加练一组：作为正式组落库
+    await c.completeSet(
+        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    final map = await db.setsOfSession(c.session!.id!);
+    final working = (map[c.exercises[0].id] ?? [])
+        .where((e) => e.kind == SetKind.working)
+        .length;
+    expect(working, 2, reason: '加练组按正式组记录');
+    expect(c.curExIdx, 1, reason: '加练满后再次推进到下一动作');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B3：训练中可追加动作、可替换未记组动作，已记组不可替换', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0, sets: 3, workingSets: 3);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a]);
+
+    await c.appendExercises(const [
+      ExerciseMeta('临时动作', MuscleGroups(main: '胸'), true),
+    ]);
+    expect(c.exercises.length, 2);
+    expect(c.exercises.last.name, '临时动作');
+    expect(c.exercises.last.orderIdx, 1, reason: '追加到队尾');
+    final added = await rawDb
+        .query('session_exercises', where: "name = '临时动作'");
+    expect(added.length, 1, reason: '追加动作落库');
+
+    // 当前动作还没记组：可替换（沿用规则只换名）
+    final ok = await c.replaceCurrentExercise(
+        const ExerciseMeta('替换动作', MuscleGroups(main: '背'), false));
+    expect(ok, isTrue);
+    expect(c.exercises[0].name, '替换动作');
+    final renamed = await rawDb.query('session_exercises',
+        where: 'id = ?', whereArgs: [c.exercises[0].id]);
+    expect(renamed.first['name'], '替换动作');
+
+    // 已记组：不可替换（防把已记的组串到别的动作名下）
+    await c.completeSet(
+        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    final ok2 = await c.replaceCurrentExercise(
+        const ExerciseMeta('再换一个', MuscleGroups(main: '肩'), false));
+    expect(ok2, isFalse);
+    expect(c.exercises[0].name, '替换动作');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B4：休息减时有 5 秒地板，不把剩余时间减穿（暂停态同理）', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a]);
+    await c.completeSet(
+        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+
+    c.extendRest(-118); // 120 - 118 ≈ 2s → 地板抬到 5s
+    expect(c.restEndAt - DateTime.now().millisecondsSinceEpoch,
+        closeTo(5000, 1500));
+
+    c.pauseRest();
+    c.extendRest(-30); // 剩余 ≈5s，减 30 也被地板挡住
+    expect(c.restRemainingMs.value, 5000);
+    c.resumeRest();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B5：restoreFromJson 清空恢复后外键关系完整，缺段报错且不动数据', () async {
+    final plan = await db.insertPlan(Plan(
+        name: '计划', source: 'manual', createdAt: '2026-09-24', isActive: 1));
+    final dayId = await db.insertPlanDay(
+        PlanDay(planId: plan.id!, weekday: 1, title: '推日'));
+    await db.insertPlanExercise(PlanExercise(
+        dayId: dayId,
+        name: '卧推',
+        orderIdx: 0,
+        sets: 3,
+        repsMin: 5,
+        repsMax: 8,
+        restSec: 120,
+        kind: 'compound',
+        rule: ProgressionRule.fallback));
+    final s = await db.insertSession(Session(
+        date: '2026-09-20',
+        planDayTitle: '推日',
+        startedAt: 1,
+        endedAt: 2,
+        status: 'done'));
+    final se = await db.insertSessionExercise(SessionExercise(
+        sessionId: s.id!,
+        name: '卧推',
+        orderIdx: 0,
+        kind: 'compound',
+        rule: ProgressionRule.fallback));
+    await db.insertSet(SetEntry(
+        sessionExerciseId: se,
+        weightKg: 60,
+        reps: 8,
+        kind: SetKind.working,
+        doneAt: 1000,
+        note: '状态好'));
+    await db.upsertBodyMetric(const BodyMetric(
+        date: '2026-09-21', weightKg: 70.5));
+
+    final data = await db.exportAllJson();
+    final svc = ExportService(db);
+    final n = await svc.restoreFromJson(data);
+    expect(n, 1);
+
+    // 清空重灌后，会话→动作→组 的外键链与计划/身体数据完整
+    final sessions = await db.recentSessions(limit: 100);
+    expect(sessions.length, 1);
+    final ses = await db.sessionExercises(sessions.first.id!);
+    expect(ses.length, 1);
+    final sets = await db.setsOfSession(sessions.first.id!);
+    expect(sets[ses.first.id]!.length, 1);
+    expect(sets[ses.first.id]!.first.note, '状态好');
+    expect((await db.allPlans()).length, 1);
+    expect((await db.bodyMetrics()).length, 1);
+
+    // 缺关键段：抛 FormatException，且在清库之前校验（现有数据不动）
+    expect(() => svc.restoreFromJson({'sessions': []}),
+        throwsFormatException);
+    expect((await db.recentSessions(limit: 100)).length, 1);
   });
 }

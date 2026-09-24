@@ -104,6 +104,10 @@ class _HistoryPageState extends State<HistoryPage> {
                 ),
                 const SizedBox(height: 8),
                 ..._calendarRows(daysInMonth, firstWeekday, today),
+                const SizedBox(height: 6),
+                Text('点日期看当天明细 · 长按下方训练卡可删除误记的记录',
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 11)),
               ],
             ),
           ),
@@ -241,15 +245,27 @@ class _HistoryPageState extends State<HistoryPage> {
     for (final se in ses) {
       final sets = map[se.id!] ?? [];
       if (sets.isEmpty) continue;
+      // 组记录带余力（RIR）：60×8 R2；热身/力竭组沿用 (热)/(竭) 标记
       final desc = sets
           .map((x) =>
-              '${fmtKg(x.weightKg)}×${x.reps}${x.kind == SetKind.warmup ? '(热)' : x.kind == SetKind.failure ? '(竭)' : ''}')
+              '${fmtKg(x.weightKg)}×${x.reps}${x.kind == SetKind.warmup ? '(热)' : x.kind == SetKind.failure ? '(竭)' : ' R${x.rir}'}')
           .join('  ');
       widgets.add(Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Text('· ${se.name}:  $desc',
             style: const TextStyle(fontSize: 14)),
       ));
+      // 单组备注逐条带出（记了就要看得到）
+      final noted = sets.where((x) => x.note.trim().isNotEmpty).toList();
+      if (noted.isNotEmpty) {
+        widgets.add(Padding(
+          padding: const EdgeInsets.only(left: 14, bottom: 2),
+          child: Text(
+              '备注：${noted.map((x) => '${fmtKg(x.weightKg)}kg：${x.note.trim()}').join('；')}',
+              style: const TextStyle(
+                  color: AppTheme.textDim, fontSize: 13)),
+        ));
+      }
     }
     return widgets;
   }

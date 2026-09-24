@@ -67,12 +67,8 @@ class _OverviewTab extends StatefulWidget {
   State<_OverviewTab> createState() => _OverviewTabState();
 }
 
-class _BigFour {
-  static const lifts = ['杠铃深蹲', '杠铃卧推', '杠铃硬拉', '站姿推举'];
-}
-
 class _OverviewTabState extends State<_OverviewTab> {
-  String _selectedLift = _BigFour.lifts[1];
+  String? _selectedLift;
   Future<_OverviewData>? _future;
 
   @override
@@ -108,6 +104,12 @@ class _OverviewTabState extends State<_OverviewTab> {
           );
         }
         final insights = localInsights(d.setsByName);
+        // 所选动作不在本年度数据里（如新装/换计划）时重置到容量第一的动作
+        if (d.topLifts.isEmpty) {
+          _selectedLift = null;
+        } else if (!_selectedLiftIn(d)) {
+          _selectedLift = d.topLifts.first;
+        }
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
@@ -123,7 +125,16 @@ class _OverviewTabState extends State<_OverviewTab> {
                         LineChartData(
                           gridData: const FlGridData(show: false),
                           borderData: FlBorderData(show: false),
-                          titlesData: const FlTitlesData(show: false),
+                          titlesData: FlTitlesData(
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 22,
+                                getTitlesWidget: (v, _) =>
+                                    _weekLabel(d, v.toInt()),
+                              ),
+                            ),
+                          ),
                           lineBarsData: [
                             LineChartBarData(
                               spots: d.weeklyVolume,
@@ -139,13 +150,13 @@ class _OverviewTabState extends State<_OverviewTab> {
             ),
             const SizedBox(height: 12),
             SectionCard(
-              title: '四大项 1RM 进阶',
+              title: '主力动作 1RM 进阶（按训练容量自动选前 4）',
               child: Column(
                 children: [
                   Wrap(
                     spacing: 8,
                     children: [
-                      for (final lift in _BigFour.lifts)
+                      for (final lift in d.topLifts)
                         ChoiceChip(
                           label: Text(lift),
                           selected: _selectedLift == lift,
@@ -213,6 +224,23 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
+  bool _selectedLiftIn(_OverviewData d) => d.topLifts.contains(_selectedLift);
+
+  /// 周容量 x 轴刻度：约 5 个日期标签，避免拥挤
+  Widget _weekLabel(_OverviewData d, int i) {
+    if (i < 0 || i >= d.weekKeys.length) return const SizedBox.shrink();
+    final step = (d.weekKeys.length / 5).ceil();
+    if (i % step != 0 && i != d.weekKeys.length - 1) {
+      return const SizedBox.shrink();
+    }
+    final dt = DateTime.fromMillisecondsSinceEpoch(d.weekKeys[i] * 86400000);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text('${dt.month}/${dt.day}',
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 10)),
+    );
+  }
+
   /// 单次 JOIN 拉全部明细后内存聚合，避免逐 session 查询的 N+1。
   Future<_OverviewData> _load(AppContainer c) async {
     final now = DateTime.now();
@@ -222,9 +250,6 @@ class _OverviewTabState extends State<_OverviewTab> {
     final setsByName = <String, List<SetEntry>>{};
     final big4 = <String, List<FlSpot>>{};
     final sessionIds = <int>[];
-    for (final lift in _BigFour.lifts) {
-      big4[lift] = [];
-    }
     var curSession = -1;
     for (final r in rows) {
       final sid = (r['session_id'] as num).toInt();
@@ -251,22 +276,33 @@ class _OverviewTabState extends State<_OverviewTab> {
         final weekKey =
             mondayOf(parseDate(date)).millisecondsSinceEpoch ~/ 86400000;
         weekly[weekKey] = (weekly[weekKey] ?? 0) + entry.volume;
-        if (_BigFour.lifts.contains(name)) {
-          final rm = estimate1RM(weight, reps);
-          final list = big4[name]!;
-          final idx = sessionIds.indexOf(sid).toDouble();
-          if (list.isEmpty || rm > list.last.y) {
-            list.add(FlSpot(idx, rm));
-          }
+        // 所有动作都算 1RM 序列，"主力动作"由容量排序动态选出
+        final rm = estimate1RM(weight, reps);
+        final list = big4.putIfAbsent(name, () => <FlSpot>[]);
+        final idx = sessionIds.indexOf(sid).toDouble();
+        if (list.isEmpty || rm > list.last.y) {
+          list.add(FlSpot(idx, rm));
         }
       }
     }
     final keys = weekly.keys.toList()..sort();
+    // 主力动作 = 近一年正式组容量前 4（不再写死杠铃四大项名）
+    final volumeByName = <String, double>{};
+    for (final e in setsByName.entries) {
+      volumeByName[e.key] = e.value
+          .where((s) => s.kind == SetKind.working)
+          .fold(0.0, (a, b) => a + b.volume);
+    }
+    final topLifts = volumeByName.keys.where((k) => volumeByName[k]! > 0)
+        .toList()
+      ..sort((a, b) => volumeByName[b]!.compareTo(volumeByName[a]!));
     return _OverviewData(
       weeklyVolume: [
         for (var i = 0; i < keys.length; i++)
           FlSpot(i.toDouble(), weekly[keys[i]]!),
       ],
+      weekKeys: keys,
+      topLifts: topLifts.take(4).toList(),
       big4: big4,
       setsByName: setsByName,
     );
@@ -275,10 +311,21 @@ class _OverviewTabState extends State<_OverviewTab> {
 
 class _OverviewData {
   final List<FlSpot> weeklyVolume;
+
+  /// 与 weeklyVolume 下标对应的周一（epoch 天），供 x 轴日期标签用
+  final List<int> weekKeys;
+
+  /// 近一年正式组容量前 4 的动作名（动态"四大项"）
+  final List<String> topLifts;
   final Map<String, List<FlSpot>> big4;
   final Map<String, List<SetEntry>> setsByName;
-  _OverviewData(
-      {required this.weeklyVolume, required this.big4, required this.setsByName});
+  _OverviewData({
+    required this.weeklyVolume,
+    required this.weekKeys,
+    required this.topLifts,
+    required this.big4,
+    required this.setsByName,
+  });
 }
 
 // ---------------- 肌肉 ----------------

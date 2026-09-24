@@ -40,6 +40,10 @@ class SessionController extends ChangeNotifier {
   int workingSetsDone = 0; // 当前动作正式组完成数
   final Set<String> prHit = {};
 
+  /// 休息中可加练的"刚完成的动作"名（null = 无加练入口）。
+  /// 只在整动作练满自动推进时置位，休息结束/结束训练时清除。
+  String? extraSetExerciseName;
+
   Timer? _tick;
   final ValueNotifier<int> restRemainingMs = ValueNotifier(0);
   final ValueNotifier<String> focusBanner = ValueNotifier('');
@@ -230,6 +234,8 @@ class SessionController extends ChangeNotifier {
       // 本动作完成 → 下一个动作（若还有）也进入休息
       if (curExIdx < exercises.length - 1) {
         _advanceToNextExercise();
+        // 整动作练满进入休息：休息页提供"回退加练一组"入口
+        extraSetExerciseName = ex.name;
       } else {
         // 最后一个动作完成：直接结束会话；UI 检测到 !hasActive 后
         // 走 endTraining 展示总结页并回填飞书
@@ -268,10 +274,15 @@ class SessionController extends ChangeNotifier {
             : _settings.restAssistanceSec);
     final end = DateTime.now().millisecondsSinceEpoch + sec * 1000;
     _startRestAt(end, notifyUi: true);
-    // 预载下一动作上下文并推荐重量
+    // 预载（下一）动作上下文。推荐重量只在换动作时刷新——
+    // 同一动作继续时保留用户手动调过的重量，不再每组被冲回推荐值。
     _loadContextForCurrent().then((_) {
-      weightDraft = _recommendFor(currentEx!.name);
-      notifyListeners();
+      if (!hasActive) return;
+      final next = currentEx;
+      if (next == null || next.id != justFinished.id) {
+        weightDraft = _recommendFor(next?.name ?? '');
+        notifyListeners();
+      }
     });
   }
 
@@ -317,11 +328,30 @@ class SessionController extends ChangeNotifier {
     _tick?.cancel();
     _tick = null;
     _prefs.setInt('rest.endAt', 0);
+    extraSetExerciseName = null;
     _setPhase(WorkoutPhase.lifting);
     restRemainingMs.value = 0;
   }
 
   void skipRest() => _finishRest();
+
+  /// 休息中「刚完成的动作加练一组」：回退到该动作进入动作态，
+  /// 再完成的组按正式组记录（同样参与渐进判定与 PR）。
+  Future<void> startExtraSet() async {
+    final name = extraSetExerciseName;
+    if (name == null || !hasActive) return;
+    final idx = exercises.indexWhere((e) => e.name == name);
+    if (idx < 0) return;
+    _restPaused = false; // 暂停态回退前先解除，避免 resume 语义错乱
+    curExIdx = idx;
+    final list = setsByEx[exercises[idx].id] ?? const <SetEntry>[];
+    workingSetsDone = list.where((e) => e.kind == SetKind.working).length;
+    curSetIdx = list.length;
+    await _loadContextForCurrent();
+    weightDraft = _recommendFor(name);
+    _finishRest();
+    notifyListeners();
+  }
 
   // ---- 休息暂停/继续 ----
   bool _restPaused = false;
@@ -352,17 +382,22 @@ class SessionController extends ChangeNotifier {
   }
 
   void extendRest(int sec) {
-    if (phase != WorkoutPhase.resting) return;
+    if (phase != WorkoutPhase.resting || sec == 0) return;
     if (_restPaused) {
-      // 暂停态加时：只动冻结值与总时长，不写 prefs、不改 restEndAt
-      // （否则 resume 用冻结值重算时，加的秒数会被静默丢弃）
-      _restRemainingWhenPaused += sec * 1000;
-      restTotalMs += sec * 1000;
+      // 暂停态加/减时：只动冻结值与总时长，不写 prefs、不改 restEndAt
+      // （否则 resume 用冻结值重算时，加的秒数会被静默丢弃）；
+      // 地板 5 秒，减时不把休息直接减没
+      _restRemainingWhenPaused =
+          (_restRemainingWhenPaused + sec * 1000).clamp(5000, 1 << 31);
+      restTotalMs = (restTotalMs + sec * 1000).clamp(1000, 1 << 31);
       restRemainingMs.value = _restRemainingWhenPaused;
       return;
     }
-    restEndAt += sec * 1000;
-    restTotalMs += sec * 1000;
+    // 非暂停态：地板 5 秒，防止 -30 把剩余时间减成已过期
+    final floorEnd = DateTime.now().millisecondsSinceEpoch + 5000;
+    restEndAt =
+        (restEndAt + sec * 1000) < floorEnd ? floorEnd : restEndAt + sec * 1000;
+    restTotalMs = (restTotalMs + sec * 1000).clamp(1000, 1 << 31);
     _prefs.setInt('rest.endAt', restEndAt);
     _updateRemaining();
     onRestAlarmChanged?.call(restEndAt);
@@ -405,6 +440,66 @@ class SessionController extends ChangeNotifier {
     weightDraft = (w * 100).round() / 100;
     if (weightDraft < 0) weightDraft = 0;
     notifyListeners();
+  }
+
+  /// 自重/负重一键切换：有重量→归零（自重）；已是自重→回到上次用的重量
+  ///（无历史则用推荐值），不用记 0.5 步进点回去。
+  void toggleBodyweightDraft() {
+    if (weightDraft > 0) {
+      setWeightDraft(0);
+      return;
+    }
+    final name = currentEx?.name ?? '';
+    final last = lastWorkout[name];
+    final w = (last != null && last.isNotEmpty)
+        ? last.last.weightKg
+        : _recommendFor(name);
+    setWeightDraft(w);
+  }
+
+  /// 训练中临时加动作：从动作库挑的动作追加到队尾（只进本次会话，不改计划）。
+  /// 规则用默认（5-8 次 × 3 组），休息跟随全局偏好（restSec=0）。
+  Future<void> appendExercises(List<ExerciseMeta> metas) async {
+    if (!hasActive || metas.isEmpty) return;
+    var order = exercises.length;
+    for (final m in metas) {
+      final draft = SessionExercise(
+        sessionId: session!.id!,
+        name: m.name,
+        orderIdx: order++,
+        kind: m.isCompound ? 'compound' : 'assistance',
+        restSec: 0,
+        rule: ProgressionRule.fallback,
+      );
+      final id = await _db.insertSessionExercise(draft);
+      exercises.add(draft.copyWithId(id));
+    }
+    notifyListeners();
+  }
+
+  /// 训练中替换当前动作（仅限还没记过组的动作）：沿用原组次规则/休息/排序，
+  /// 只换名字。已记组或队列里已有同名动作时不动作（返回 false）。
+  Future<bool> replaceCurrentExercise(ExerciseMeta meta) async {
+    final ex = currentEx;
+    if (!hasActive || ex == null) return false;
+    if (currentSets.isNotEmpty) return false;
+    if (meta.name == ex.name) return false;
+    if (exercises.any((e) => e.name == meta.name)) return false;
+    final updated = SessionExercise(
+      id: ex.id,
+      sessionId: ex.sessionId,
+      name: meta.name,
+      orderIdx: ex.orderIdx,
+      kind: ex.kind,
+      restSec: ex.restSec,
+      rule: ex.rule,
+    );
+    await _db.updateSessionExercise(updated);
+    exercises[curExIdx] = updated;
+    await _loadContextForCurrent();
+    weightDraft = _recommendFor(meta.name);
+    notifyListeners();
+    return true;
   }
 
   // ---------- 结束 ----------
