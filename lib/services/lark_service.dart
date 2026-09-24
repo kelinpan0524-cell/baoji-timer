@@ -8,14 +8,17 @@ import '../models/models.dart';
 import 'settings.dart';
 
 /// 计划日同步规格：LarkService 不反向依赖 PlanRepository。
+/// 日期化排程后由仓库逐日解析出具体 date，这里只负责写日历。
 class PlanDaySyncSpec {
   final int planDayId;
-  final int weekday; // 1=周一
+  final String date; // yyyy-MM-dd，这条训练安排在哪天
+  final int weekday; // 1=周一（保留给旧调用方展示）
   final String title;
   final String detail;
   const PlanDaySyncSpec({
     required this.planDayId,
-    required this.weekday,
+    required this.date,
+    this.weekday = 1,
     required this.title,
     required this.detail,
   });
@@ -340,24 +343,19 @@ class LarkService {
     }
   }
 
-  /// 把激活计划的训练日写入未来 14 天的飞书日历（计划安装/导入后调用）。
+  /// 把训练安排写入飞书日历。日期化排程后，仓库已经把未来 14 天逐日
+  /// 解析成带具体日期的 spec（含循环模式和手动改期），这里直接逐条写。
   Future<int> syncUpcomingDays({required List<PlanDaySyncSpec> days}) async {
     if (!configured) return 0;
-    final today = DateTime.now();
     var n = 0;
     for (final day in days) {
-      for (var i = 0; i < 14; i++) {
-        final d = today.add(Duration(days: i));
-        if (d.weekday != day.weekday) continue;
-        // 不 break：未来 14 天内同一星期会命中 2 次，两周都要安排
-        await upsertDayEvent(
-          date: fmtYmd(d),
-          title: '${day.title}（训练）',
-          detail: day.detail,
-          planDayId: day.planDayId,
-        );
-        n++;
-      }
+      await upsertDayEvent(
+        date: day.date,
+        title: '${day.title}（训练）',
+        detail: day.detail,
+        planDayId: day.planDayId,
+      );
+      n++;
     }
     return n;
   }

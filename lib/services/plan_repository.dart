@@ -44,16 +44,24 @@ class PlanRepository extends ChangeNotifier {
   Future<Map<int, List<PlanExercise>>> exercisesOfDays(List<int> dayIds) =>
       _db.daysExercisesMap(dayIds);
 
-  /// 复制计划（含全部训练日与动作），新计划不启用。返回新计划 id。
+  /// 复制计划（含全部训练日与动作与排程模式），新计划不启用。返回新计划 id。
   Future<int> duplicatePlan(int sourcePlanId, String newName) async {
     final srcDays = await _db.planDays(sourcePlanId);
     final srcEx = await _db.daysExercisesMap(srcDays.map((d) => d.id!).toList());
+    final plans = await _db.allPlans();
+    final src = plans.where((p) => p.id == sourcePlanId).firstOrNull;
     final newPlan = await _db.insertPlan(Plan(
       name: newName,
       source: 'copy',
       createdAt: fmtDate(DateTime.now()),
       isActive: 0,
+      pattern: src?.pattern ?? 'weekly',
+      patternStart: src?.patternStart ?? '',
+      cycleTrain: src?.cycleTrain ?? 0,
+      cycleRest: src?.cycleRest ?? 0,
     ));
+    // 旧 id → 新 id 映射：排程覆盖行跟着复制（改期历史不丢）
+    final idMap = <int, int>{};
     for (final day in srcDays) {
       final newDayId = await _db.insertPlanDay(PlanDay(
         planId: newPlan.id!,
@@ -61,10 +69,18 @@ class PlanRepository extends ChangeNotifier {
         title: day.title,
         notes: day.notes,
       ));
+      idMap[day.id!] = newDayId;
       var i = 0;
       for (final ex in srcEx[day.id!] ?? const <PlanExercise>[]) {
         await _db.insertPlanExercise(ex.copyWith(dayId: newDayId, orderIdx: i++));
       }
+    }
+    for (final e in await _db.allScheduleEntries(sourcePlanId)) {
+      await _db.upsertScheduleEntry(PlanScheduleEntry(
+        planId: newPlan.id!,
+        date: e.date,
+        dayId: e.dayId == null ? null : idMap[e.dayId!],
+      ));
     }
     return newPlan.id!;
   }
@@ -82,19 +98,23 @@ class PlanRepository extends ChangeNotifier {
     activePlan = await _db.activePlan();
   }
 
-  /// 某计划的飞书日历同步规格（未来日程写入用）。
+  /// 某计划的飞书日历同步规格（未来 14 天，逐日按排程解析出具体日期）。
   Future<List<PlanDaySyncSpec>> larkSpecsForPlan(int planId) async {
-    final days = await _db.planDays(planId);
-    final exMap =
-        await _db.daysExercisesMap(days.map((d) => d.id!).toList());
+    final plans = await _db.allPlans();
+    final plan = plans.where((p) => p.id == planId).firstOrNull;
+    if (plan == null) return [];
     final specs = <PlanDaySyncSpec>[];
-    for (final d in days) {
-      final exs = exMap[d.id!] ?? const <PlanExercise>[];
+    final today = DateTime.now();
+    for (var i = 0; i < 14; i++) {
+      final d = today.add(Duration(days: i));
+      final day = await dayForDateOn(plan, d);
+      if (day == null) continue;
+      final exs = await _db.dayExercises(day.id!);
       if (exs.isEmpty) continue;
       specs.add(PlanDaySyncSpec(
-        planDayId: d.id!,
-        weekday: d.weekday,
-        title: d.title,
+        planDayId: day.id!,
+        date: fmtDate(d),
+        title: day.title,
         detail: exs
             .map((e) => '· ${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}')
             .join('\n'),
@@ -291,6 +311,114 @@ class PlanRepository extends ChangeNotifier {
       if (d.weekday == weekday) return d;
     }
     return null;
+  }
+
+  // ================= 日期化排程 =================
+  //
+  // 解析优先级：手动覆盖行（plan_schedule，含"显式休息"墓碑）
+  //   > 循环推导（练 N 休 M，按 patternStart 纯数学算，不落库）
+  //   > 按星期模板（旧行为）。
+  // 手动拖动/添加/清空只写覆盖行；没动过的日子永远跟随模板/循环规则。
+
+  /// 激活计划在某天该练什么（首页/计划页/飞书同步共用）。
+  Future<PlanDay?> dayForDate(DateTime d) async {
+    final plan = activePlan;
+    if (plan?.id == null) return null;
+    return dayForDateOn(plan!, d);
+  }
+
+  Future<PlanDay?> dayForDateOn(Plan plan, DateTime d) async {
+    if (plan.id == null) return null;
+    final override = await _db.scheduleEntryOn(plan.id!, fmtDate(d));
+    if (override != null) {
+      if (override.dayId == null) return null; // 显式休息
+      return await _db.planDayById(override.dayId!);
+    }
+    if (plan.isCycle) return _cycleDayFor(plan, d);
+    return _dayForWeekdayOn(plan, d.weekday);
+  }
+
+  /// 某计划的星期模板日（不依赖激活缓存）。
+  Future<PlanDay?> _dayForWeekdayOn(Plan plan, int weekday) async {
+    final days = await _db.planDays(plan.id!);
+    for (final d in days) {
+      if (d.weekday == weekday) return d;
+    }
+    return null;
+  }
+
+  /// 循环推导：patternStart 起第 k 天，k % (练N+休M) < N → 按顺序循环用模板日。
+  /// 只取有动作的模板日（空模板日跳过，避免循环到"空训练日"）。
+  Future<PlanDay?> _cycleDayFor(Plan plan, DateTime d) async {
+    if (plan.patternStart.isEmpty || plan.cycleTrain <= 0) return null;
+    final period = plan.cycleTrain + (plan.cycleRest > 0 ? plan.cycleRest : 0);
+    if (period <= 0) return null;
+    final start = parseDate(plan.patternStart);
+    final k = DateTime(d.year, d.month, d.day)
+        .difference(DateTime(start.year, start.month, start.day))
+        .inDays;
+    if (k < 0) return null;
+    final pos = k % period;
+    if (pos >= plan.cycleTrain) return null; // 循环里的休息日
+    final days = await _db.planDays(plan.id!);
+    final exMap = await _db.daysExercisesMap(days.map((e) => e.id!).toList());
+    final trainable = <PlanDay>[];
+    for (final day in days) {
+      if ((exMap[day.id] ?? const <PlanExercise>[]).isNotEmpty) {
+        trainable.add(day);
+      }
+    }
+    if (trainable.isEmpty) return null;
+    return trainable[pos % trainable.length];
+  }
+
+  /// 手动覆盖：把某天设为指定模板日（dayId=null = 显式休息）。
+  Future<void> setOverride(Plan plan, DateTime d, int? dayId) async {
+    await _db.upsertScheduleEntry(
+        PlanScheduleEntry(planId: plan.id!, date: fmtDate(d), dayId: dayId));
+  }
+
+  /// 清除某天覆盖行：回到按模板/循环的默认推导。
+  Future<void> clearOverride(Plan plan, DateTime d) async {
+    final e = await _db.scheduleEntryOn(plan.id!, fmtDate(d));
+    if (e != null) await _db.deleteScheduleEntry(e.id!);
+  }
+
+  /// 拖拉改期：把 from 日的训练挪到 to 日；to 日已有训练则两天内容互换。
+  /// from 出发后落"显式休息"墓碑，推导不会再把训练填回来。
+  Future<void> moveScheduleDay(Plan plan, DateTime from, DateTime to) async {
+    final fDate = fmtDate(from);
+    final tDate = fmtDate(to);
+    if (fDate == tDate) return;
+    final fromEntry = await _db.scheduleEntryOn(plan.id!, fDate);
+    final toEntry = await _db.scheduleEntryOn(plan.id!, tDate);
+    final fromDay = fromEntry != null && fromEntry.dayId != null
+        ? await _db.planDayById(fromEntry.dayId!)
+        : await dayForDateOn(plan, from);
+    if (fromDay == null) return; // 起点没有训练可挪
+    final toDayId = toEntry != null
+        ? toEntry.dayId
+        : (await dayForDateOn(plan, to))?.id; // 目的地按规则本有训练 → 互换
+    await _db.upsertScheduleEntry(PlanScheduleEntry(
+        planId: plan.id!, date: tDate, dayId: fromDay.id));
+    await _db.upsertScheduleEntry(PlanScheduleEntry(
+        planId: plan.id!, date: fDate, dayId: toDayId));
+  }
+
+  /// 更新计划的排程模式/循环参数（patternStart 的唯一写入口）。
+  Future<void> updateSchedulePattern({
+    required int planId,
+    required String pattern,
+    String? patternStart,
+    int cycleTrain = 0,
+    int cycleRest = 0,
+  }) async {
+    await _db.updatePlanFields(planId, {
+      'pattern': pattern,
+      'pattern_start': ?patternStart,
+      'cycle_train': cycleTrain,
+      'cycle_rest': cycleRest,
+    });
   }
 
   /// 某动作的建议重量：历史渐进推荐 → 内置起始重量 → 20kg。

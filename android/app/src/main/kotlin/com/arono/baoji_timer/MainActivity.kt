@@ -85,6 +85,7 @@ class MainActivity : FlutterActivity() {
                             result.success(null)
                         }
                         "launcherApps" -> result.success(launcherApps())
+                        "launcherAppsWithIcons" -> result.success(launcherAppsWithIcons())
                         else -> result.notImplemented()
                     }
                 } catch (e: Exception) {
@@ -225,6 +226,49 @@ class MainActivity : FlutterActivity() {
             .map { it.activityInfo.packageName }
             .distinct()
             .sorted()
+    }
+
+    // ---- 桌面应用列表（带应用名与图标 PNG 字节，供分心名单列表展示） ----
+    private fun launcherAppsWithIcons(): List<Map<String, Any>> {
+        val pm = packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val out = mutableListOf<Map<String, Any>>()
+        val seen = mutableSetOf<String>()
+        for (ri in pm.queryIntentActivities(intent, 0)) {
+            val pkg = ri.activityInfo.packageName
+            if (pkg == packageName || !seen.add(pkg)) continue
+            val label = try {
+                ri.loadLabel(pm).toString()
+            } catch (e: Exception) {
+                pkg
+            }
+            var icon: ByteArray? = null
+            try {
+                val d = ri.loadIcon(pm)
+                // 统一缩到 64px 左右再压 PNG：列表展示 38dp 足够，控制通道传输量
+                val w = if (d.intrinsicWidth in 1..96) d.intrinsicWidth else 64
+                val h = if (d.intrinsicHeight in 1..96) d.intrinsicHeight else 64
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bmp)
+                d.setBounds(0, 0, w, h)
+                d.draw(canvas)
+                val stream = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
+                icon = stream.toByteArray()
+                bmp.recycle()
+            } catch (e: Exception) {
+                icon = null
+            }
+            out.add(mapOf(
+                "package" to pkg,
+                "label" to label,
+                "icon" to (icon ?: ByteArray(0)),
+            ))
+            if (out.size >= 120) break
+        }
+        out.sortBy { (it["label"] as String).lowercase() }
+        return out
     }
 
     // ---- 应用内自更新安装 ----

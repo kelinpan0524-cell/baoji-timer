@@ -32,7 +32,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 3,
+          version: 4,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -63,6 +63,32 @@ class Db {
       await db.execute(
           "ALTER TABLE exercise_meta ADD COLUMN equipment TEXT NOT NULL DEFAULT 'both'");
     }
+    if (oldV < 4) {
+      // v4：日期化排程——plans 加循环模式参数；plan_schedule 存手动改期覆盖行；
+      // sessions 记录训练/休息净时长
+      await db.execute(
+          "ALTER TABLE plans ADD COLUMN pattern TEXT NOT NULL DEFAULT 'weekly'");
+      await db.execute(
+          "ALTER TABLE plans ADD COLUMN pattern_start TEXT NOT NULL DEFAULT ''");
+      await db.execute(
+          'ALTER TABLE plans ADD COLUMN cycle_train INTEGER NOT NULL DEFAULT 0');
+      await db.execute(
+          'ALTER TABLE plans ADD COLUMN cycle_rest INTEGER NOT NULL DEFAULT 0');
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS plan_schedule(
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+          date TEXT NOT NULL,
+          day_id INTEGER REFERENCES plan_days(id) ON DELETE CASCADE,
+          UNIQUE(plan_id, date)
+        )''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_sched_date ON plan_schedule(date)');
+      await db.execute(
+          'ALTER TABLE sessions ADD COLUMN rest_ms INTEGER NOT NULL DEFAULT 0');
+      await db.execute(
+          'ALTER TABLE sessions ADD COLUMN active_ms INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   /// 建表（onCreate 与单元测试共用）。
@@ -76,7 +102,11 @@ class Db {
         name TEXT NOT NULL,
         source TEXT NOT NULL,
         created_at TEXT NOT NULL,
-        is_active INTEGER NOT NULL DEFAULT 1
+        is_active INTEGER NOT NULL DEFAULT 1,
+        pattern TEXT NOT NULL DEFAULT 'weekly',
+        pattern_start TEXT NOT NULL DEFAULT '',
+        cycle_train INTEGER NOT NULL DEFAULT 0,
+        cycle_rest INTEGER NOT NULL DEFAULT 0
       )''');
     await db.execute('''
       CREATE TABLE plan_days(
@@ -116,7 +146,9 @@ class Db {
         started_at INTEGER NOT NULL,
         ended_at INTEGER,
         status TEXT NOT NULL DEFAULT 'active',
-        notes TEXT NOT NULL DEFAULT ''
+        notes TEXT NOT NULL DEFAULT '',
+        rest_ms INTEGER NOT NULL DEFAULT 0,
+        active_ms INTEGER NOT NULL DEFAULT 0
       )''');
     await db.execute('''
       CREATE TABLE session_exercises(
@@ -174,6 +206,16 @@ class Db {
         payload TEXT NOT NULL,
         created_at INTEGER NOT NULL
       )''');
+    await db.execute('''
+      CREATE TABLE plan_schedule(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL REFERENCES plans(id) ON DELETE CASCADE,
+        date TEXT NOT NULL,
+        day_id INTEGER REFERENCES plan_days(id) ON DELETE CASCADE,
+        UNIQUE(plan_id, date)
+      )''');
+    await db.execute(
+        'CREATE INDEX idx_sched_date ON plan_schedule(date)');
   }
 
   // ---------- plans ----------
@@ -216,6 +258,12 @@ class Db {
   Future<void> deletePlan(int planId) async {
     final db = await database;
     await db.delete('plans', where: 'id = ?', whereArgs: [planId]);
+  }
+
+  /// 更新计划任意字段（排程模式/循环参数等；调用方负责事务语义）。
+  Future<void> updatePlanFields(int planId, Map<String, Object?> fields) async {
+    final db = await database;
+    await db.update('plans', fields, where: 'id = ?', whereArgs: [planId]);
   }
 
   /// 各计划训练日/动作数（切换器展示用），一次 GROUP BY 搞定。
@@ -345,6 +393,52 @@ class Db {
         '(SELECT id FROM plan_days WHERE plan_id = ?)',
         [planId]);
     await db.delete('plan_days', where: 'plan_id = ?', whereArgs: [planId]);
+  }
+
+  // ---------- plan schedule（日期化排程覆盖行） ----------
+  Future<int> upsertScheduleEntry(PlanScheduleEntry e) async {
+    final db = await database;
+    return db.insert('plan_schedule', e.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteScheduleEntry(int id) async {
+    final db = await database;
+    await db.delete('plan_schedule', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<PlanScheduleEntry?> scheduleEntryOn(int planId, String date) async {
+    final db = await database;
+    final rows = await db.query('plan_schedule',
+        where: 'plan_id = ? AND date = ?',
+        whereArgs: [planId, date],
+        limit: 1);
+    return rows.isEmpty ? null : PlanScheduleEntry.fromMap(rows.first);
+  }
+
+  /// [from, to] 闭区间内的全部覆盖行（视图渲染用，一次查询）。
+  Future<List<PlanScheduleEntry>> scheduleEntries(
+      int planId, String from, String to) async {
+    final db = await database;
+    final rows = await db.query('plan_schedule',
+        where: 'plan_id = ? AND date >= ? AND date <= ?',
+        whereArgs: [planId, from, to]);
+    return rows.map(PlanScheduleEntry.fromMap).toList();
+  }
+
+  /// 某计划全部覆盖行（删除模板日/计划删除前清理等用）。
+  Future<List<PlanScheduleEntry>> allScheduleEntries(int planId) async {
+    final db = await database;
+    final rows = await db.query('plan_schedule', where: 'plan_id = ?',
+        whereArgs: [planId]);
+    return rows.map(PlanScheduleEntry.fromMap).toList();
+  }
+
+  Future<PlanDay?> planDayById(int dayId) async {
+    final db = await database;
+    final rows = await db
+        .query('plan_days', where: 'id = ?', whereArgs: [dayId], limit: 1);
+    return rows.isEmpty ? null : PlanDay.fromMap(rows.first);
   }
 
   // ---------- exercise meta ----------
@@ -659,6 +753,7 @@ class Db {
       'plans': await db.query('plans'),
       'plan_days': await db.query('plan_days'),
       'plan_exercises': await db.query('plan_exercises'),
+      'plan_schedule': await db.query('plan_schedule'),
       'sessions': await db.query('sessions'),
       'session_exercises': await db.query('session_exercises'),
       'sets': await db.query('sets'),
@@ -696,6 +791,7 @@ class Db {
         'sets',
         'session_exercises',
         'sessions',
+        'plan_schedule',
         'plan_exercises',
         'plan_days',
         'plans',
@@ -710,6 +806,7 @@ class Db {
         'plans',
         'plan_days',
         'plan_exercises',
+        'plan_schedule',
         'sessions',
         'session_exercises',
         'sets',
