@@ -81,12 +81,19 @@ jobs:
         run: |
           VERSION=$(grep '^version:' pubspec.yaml | awk '{print $2}' | cut -d '+' -f 1)
           TAG="b${{ github.run_number }}"
+          # 只列"自上一个版本以来"的提交，不把早已发过的功能重复列进说明
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$PREV" ] && [ "$(git rev-list --count "$PREV..HEAD")" -gt 0 ]; then
+            RANGE="$PREV..HEAD"
+          else
+            RANGE="-8"   # 兜底：拿不到上个版本时退回最近 8 条
+          fi
           {
             echo "薄肌训练计时器 v${VERSION}（构建 ${{ github.run_number }}）"
             echo
-            echo "## 最近变更"
+            echo "## 本次更新"
             # 用户视角：只留每个提交的主句（分号前），去掉 merge 噪音 / hash / [ZCode] 前缀 / PR 号
-            git log --no-merges --pretty=format:'%s' -10 \
+            git log --no-merges --pretty=format:'%s' $RANGE \
               | sed -E 's/^\[ZCode\] +//' \
               | sed -E 's/ +\(#[0-9]+\)$//' \
               | sed -E 's/[;；].*//' \
