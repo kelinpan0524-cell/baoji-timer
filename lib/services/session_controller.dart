@@ -41,7 +41,8 @@ class SessionController extends ChangeNotifier {
   final Set<String> prHit = {};
 
   /// 休息中可加练的"刚完成的动作"名（null = 无加练入口）。
-  /// 只在整动作练满自动推进时置位，休息结束/结束训练时清除。
+  /// 每次进入休息都会置位（组间休息也能"再来一组"），
+  /// 休息结束/结束训练时清除。
   String? extraSetExerciseName;
 
   /// 本次训练净时长（毫秒）：休息桶 / 训练桶，随相位切换累计，
@@ -150,9 +151,9 @@ class SessionController extends ChangeNotifier {
         currentWeight: last.last.weightKg,
         rule: rule,
       );
-      final next = last.last.weightKg + v.deltaKg;
-      if (next > 0) return round05(next);
-      return round05(last.last.weightKg);
+      // 负重量（辅助配重）同样渐进：-30 → -27.5 = 辅助减少 2.5kg，是进步。
+      // 不再做 next>0 检查——那会让辅助器械动作永远卡在原配重。
+      return round05(last.last.weightKg + v.deltaKg);
     }
     return _presetStartFor(name);
   }
@@ -260,8 +261,6 @@ class SessionController extends ChangeNotifier {
       // 本动作完成 → 下一个动作（若还有）也进入休息
       if (curExIdx < exercises.length - 1) {
         _advanceToNextExercise();
-        // 整动作练满进入休息：休息页提供"回退加练一组"入口
-        extraSetExerciseName = ex.name;
       } else {
         // 最后一个动作完成：直接结束会话；UI 检测到 !hasActive 后
         // 走 endTraining 展示总结页并回填飞书
@@ -269,6 +268,9 @@ class SessionController extends ChangeNotifier {
         return pr;
       }
     }
+    // 无论组间还是练满推进：休息页都能"再来一组"回到刚完成的动作。
+    // 组间时 currentEx 未变，startExtraSet 回退到自身是无害幂等操作。
+    extraSetExerciseName = ex.name;
     _beginRestFor(ex);
     return pr;
   }
@@ -361,8 +363,10 @@ class SessionController extends ChangeNotifier {
 
   void skipRest() => _finishRest();
 
-  /// 休息中「刚完成的动作加练一组」：回退到该动作进入动作态，
+  /// 休息中「刚完成的动作再来一组」：回退到该动作进入动作态，
   /// 再完成的组按正式组记录（同样参与渐进判定与 PR）。
+  /// 重量继承该动作最后一组的实际重量（手调过的配重不从头再来），
+  /// 没有历史组才回落到推荐值。
   Future<void> startExtraSet() async {
     final name = extraSetExerciseName;
     if (name == null || !hasActive) return;
@@ -374,7 +378,7 @@ class SessionController extends ChangeNotifier {
     workingSetsDone = list.where((e) => e.kind == SetKind.working).length;
     curSetIdx = list.length;
     await _loadContextForCurrent();
-    weightDraft = _recommendFor(name);
+    weightDraft = list.isNotEmpty ? list.last.weightKg : _recommendFor(name);
     _finishRest();
     notifyListeners();
   }
@@ -441,7 +445,10 @@ class SessionController extends ChangeNotifier {
       ex = exercises[curExIdx];
       list = setsByEx[ex.id!];
       await _loadContextForCurrent();
-      weightDraft = _recommendFor(ex.name);
+      // 回退动作的重量 = 它剩余最后一组的实际重量（重记这组时手感不从头再来）
+      weightDraft = (list != null && list.isNotEmpty)
+          ? list.last.weightKg
+          : _recommendFor(ex.name);
     }
     if (list == null || list.isEmpty) return;
     final last = list.last;
@@ -464,14 +471,17 @@ class SessionController extends ChangeNotifier {
 
   void setWeightDraft(double w) {
     weightDraft = (w * 100).round() / 100;
-    if (weightDraft < 0) weightDraft = 0;
+    // 允许负值 = 辅助器械配重（引体向上/双杠臂屈伸辅助机，配重越大负荷越轻）；
+    // 下限 -300kg 防手抖连点把数值打到无意义区间。
+    if (weightDraft < -300) weightDraft = -300;
+    if (weightDraft > 1000) weightDraft = 1000;
     notifyListeners();
   }
 
-  /// 自重/负重一键切换：有重量→归零（自重）；已是自重→回到上次用的重量
-  ///（无历史则用推荐值），不用记 0.5 步进点回去。
+  /// 自重/负重一键切换：有重量（含辅助配重负值）→ 归零（自重）；
+  /// 已是自重→回到上次用的重量（无历史则用推荐值），不用记步进点回去。
   void toggleBodyweightDraft() {
-    if (weightDraft > 0) {
+    if (weightDraft != 0) {
       setWeightDraft(0);
       return;
     }

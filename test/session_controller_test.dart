@@ -334,6 +334,64 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
+  test('B6：组间（未练满）休息也有「再来一组」，重量继承最后一组实际值', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0, sets: 3, workingSets: 3);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a]);
+    c.setWeightDraft(52.5); // 手调重量（推荐 20）
+    await c.completeSet(
+        weight: 52.5, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+    expect(c.workingSetsDone, 1, reason: '只做了 1/3 组，未练满');
+    expect(c.extraSetExerciseName, '动作甲',
+        reason: '组间休息也提供「再来一组」回到本动作');
+
+    await c.startExtraSet();
+    expect(c.phase, WorkoutPhase.lifting);
+    expect(c.weightDraft, 52.5,
+        reason: '再来一组继承最后一组实际重量，不被推荐值冲回');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B7：负重量（辅助器械配重）可记录、容量按 0 计、跨次渐进', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '引体向上', 0, sets: 1, workingSets: 1);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a]);
+
+    c.setWeightDraft(-30); // 辅助配重 30kg：从自重 0 往下减
+    expect(c.weightDraft, -30, reason: '负值保留，不再被钳到 0');
+    await c.completeSet(
+        weight: -30, reps: 8, rir: 2, kind: SetKind.working);
+    final stats = await c.stats();
+    expect(stats.volume, 0, reason: '辅助配重按 0 容量计（不回减总容量）');
+
+    // 下次训练该动作：历史 -30 达标 → 推荐 -27.5（辅助减少 = 进步）
+    await c.finish();
+    final c2 = makeController();
+    await c2.startFromDay(day: day, planExercises: [a]);
+    expect(c2.weightDraft, -27.5,
+        reason: '负重量同样渐进，不再卡死在原配重');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B8：toggleBodyweightDraft 对辅助配重态一键归零；下限 -300 防手抖', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '引体向上', 0, sets: 1, workingSets: 1);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a]);
+    c.setWeightDraft(-30);
+    c.toggleBodyweightDraft();
+    expect(c.weightDraft, 0, reason: '辅助态点一下切回纯自重');
+
+    c.setWeightDraft(-5000);
+    expect(c.weightDraft, -300, reason: '负值下限 -300kg');
+  });
+
   test('B3：训练中可追加动作、可替换未记组动作，已记组不可替换', () async {
     final day = await makePlanDay('日');
     final a = await addPlanEx(day, '动作甲', 0, sets: 3, workingSets: 3);
