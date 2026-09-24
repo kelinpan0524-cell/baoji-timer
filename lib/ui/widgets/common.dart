@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../core/app.dart';
 import '../theme.dart';
-import 'glass.dart';
 
 /// 通用小组件。
 
@@ -25,30 +24,32 @@ class SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final card = GlassCard(
-      padding: padding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (title != null)
-            Row(
-              children: [
-                // Flexible：系统大字号下长标题允许换行，不会把 Row 顶出横向溢出
-                Flexible(
-                  child: Text(title!,
-                      style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.text)),
-                ),
-                const Spacer(),
-                ?trailing,
-              ],
-            ),
-          if (title != null) const SizedBox(height: 12),
-          child,
-        ],
+    final card = Card(
+      child: Padding(
+        padding: padding ?? const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (title != null)
+              Row(
+                children: [
+                  // Flexible：系统大字号下长标题允许换行，不会把 Row 顶出横向溢出
+                  Flexible(
+                    child: Text(title!,
+                        style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.text)),
+                  ),
+                  const Spacer(),
+                  ?trailing,
+                ],
+              ),
+            if (title != null) const SizedBox(height: 12),
+            child,
+          ],
+        ),
       ),
     );
     // 长按删除等场景（历史页训练卡）
@@ -57,7 +58,7 @@ class SectionCard extends StatelessWidget {
   }
 }
 
-/// 训练页超大按钮（≥88dp）。主色走流体渐变 + 外发光（glass.dart FluidButton）。
+/// 训练页超大按钮（≥88dp）。
 class BigButton extends StatelessWidget {
   const BigButton({
     super.key,
@@ -76,20 +77,25 @@ class BigButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // key 不内传：只留在 BigButton 上，避免同一 key 命中两层 widget
-    return FluidButton(
-      label: label,
-      onPressed: onPressed,
-      color: color,
+    return SizedBox(
       height: height,
-      fontSize: fontSize,
-      // 完成态/占位（cardHi）不发光不渐变，退回平面
-      flat: color == AppTheme.cardHi,
+      width: double.infinity,
+      child: FilledButton(
+        onPressed: onPressed,
+        style: FilledButton.styleFrom(
+          backgroundColor: color,
+          foregroundColor: const Color(0xFF06220F),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        ),
+        child: Text(label,
+            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800)),
+      ),
     );
   }
 }
 
-/// 重量步进大按钮（玻璃小药丸）。
+/// 重量步进大按钮。
 class WeightStepButton extends StatelessWidget {
   const WeightStepButton({
     super.key,
@@ -110,31 +116,22 @@ class WeightStepButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: SizedBox(
           height: 60,
-          child: Material(
-            type: MaterialType.transparency,
-            child: InkWell(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                onTap();
-              },
-              borderRadius: BorderRadius.circular(16),
-              child: Ink(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  gradient: AppTheme.glassFill(strength: 0.9),
-                  color: AppTheme.cardHi.withValues(alpha: 0.85),
-                  border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.10)),
-                ),
-                child: Center(
-                  child: Text(label,
-                      style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.text)),
-                ),
-              ),
+          child: OutlinedButton(
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              onTap();
+            },
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size(0, 60),
+              backgroundColor: AppTheme.cardHi,
+              side: BorderSide.none,
+              padding: EdgeInsets.zero,
             ),
+            child: Text(label,
+                style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: AppTheme.text)),
           ),
         ),
       ),
