@@ -392,6 +392,30 @@ void main() {
     expect(c.weightDraft, -300, reason: '负值下限 -300kg');
   });
 
+  test('B9：手动改重量并完成后，下次训练直接从实际重量开始（不回计划初始）', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0, sets: 2, workingSets: 2);
+
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [a]);
+    final base = c.weightDraft; // 无历史：内置起始重量
+    c.setWeightDraft(base + 40); // 手动加 40kg（换器械/个人偏好）
+    await c.completeSet(
+        weight: c.weightDraft, reps: 7, rir: 2, kind: SetKind.working);
+    await c.completeSet(
+        weight: c.weightDraft, reps: 7, rir: 2, kind: SetKind.working);
+    await c.finish();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    // 下次训练：次数在区间内但未全达上限 → 渐进判 hold（+0），
+    // 推荐重量 = 上次实际重量——手动调整无需每次重来
+    final c2 = makeController();
+    await c2.startFromDay(day: day, planExercises: [a]);
+    expect(c2.weightDraft, base + 40,
+        reason: '下次训练从上次实际重量开始，手动调整被记住');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
   test('B3：训练中可追加动作、可替换未记组动作，已记组不可替换', () async {
     final day = await makePlanDay('日');
     final a = await addPlanEx(day, '动作甲', 0, sets: 3, workingSets: 3);

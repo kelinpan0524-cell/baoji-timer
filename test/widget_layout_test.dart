@@ -6,7 +6,7 @@
 //   - 挑选页：A8-4 筛选行 Flexible / A2-3 词表口径合并 DB 沉淀
 // 断言口径：takeException 为 null（无 RenderFlex 溢出）+ 关键按钮矩形在屏内。
 // 冻结基线回归锚点：完成本组按钮（BigButton 88dp）、休息大数字为屏内最大
-// 元素、重量微调仍是步进按钮。
+// 元素、重量微调主入口仍是步进按钮（点数字键盘直输为 2026-09-24 新增入口）。
 //
 // ⚠ sqflite_common_ffi 的 SQL 在后台 isolate 跑，回包走真实事件循环，
 // testWidgets 的 FakeAsync 驱不动（直接 await 会死锁到 10 分钟超时）——
@@ -181,7 +181,7 @@ void main() {
         final btn = find.byKey(const Key('workoutCompleteSet'));
         expect(btn, findsOneWidget);
         expectOnScreen(tester, btn, size, reason: '完成本组按钮（88dp 主操作）');
-        // 冻结基线：完成本组按钮高度 ≥88dp；重量微调仍是步进按钮（不弹键盘）
+        // 冻结基线：完成本组按钮高度 ≥88dp；步进按钮 8 枚原样（键盘直输为新增入口，不替代）
         expect(tester.getSize(btn).height, greaterThanOrEqualTo(88.0),
             reason: '冻结基线：完成本组按钮高度 ≥88dp');
         expect(find.byType(WeightStepButton), findsNWidgets(8),
@@ -282,6 +282,87 @@ void main() {
         }
       });
     }
+  });
+
+  // ---------- 重量键盘输入 ----------
+
+  group('重量键盘输入（点数字/直接输入 → 数字键盘直输）', () {
+    // 弹层动画：tap 后先 pump() 起帧、再 pump(时长) 才会推进（单次 pump(300)
+    // 首帧 elapsed=0，弹层停在屏外起点，tap 落空）。
+    testWidgets('动作态：点重量数字弹输入层，输入 86.5 确认后草稿生效',
+        (tester) async {
+      setSurface(tester, phone);
+      await startLifting(tester);
+      await pumpWorkout(tester);
+
+      await tester.tap(find.byKey(const ValueKey('weightDraftNum')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.byType(TextField), findsOneWidget, reason: '弹出数字输入层');
+      expect(find.text('输入重量（kg）'), findsOneWidget,
+          reason: '输入层标题可见（底层动作面板仍在树中，属正常浮层结构）');
+
+      await tester.enterText(find.byType(TextField), '86.5');
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(container.session.weightDraft, 86.5);
+      expect(find.byType(WeightStepButton), findsNWidgets(8),
+          reason: '确认后回到动作面板，0.5/1.25/2.5/5kg 步进按钮原样');
+    });
+
+    testWidgets('动作态：空输入不关层并提示；取消不改草稿', (tester) async {
+      setSurface(tester, phone);
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      final before = container.session.weightDraft;
+
+      await tester.tap(find.byKey(const ValueKey('weightDraftNum')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      // 输入层已过滤字母，空文本是仅剩的非法态
+      await tester.enterText(find.byType(TextField), '');
+      await tester.tap(find.text('确认'));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('请输入数字，如 62.5 或 -30'), findsOneWidget,
+          reason: '空输入给错误提示，不关层');
+      await tester.tap(find.text('取消'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(container.session.weightDraft, before, reason: '取消不改草稿');
+      expect(find.byType(TextField), findsNothing, reason: '输入层已关');
+    });
+
+    testWidgets('休息态：展开步进后有「直接输入重量」，输 -27.5 = 辅助配重',
+        (tester) async {
+      setSurface(tester, phone);
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      await tester.runAsync(() async {
+        await container.session
+            .completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+        // 排干 _beginRestFor 里 _loadContextForCurrent 的悬挂续体
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(container.session.phase, WorkoutPhase.resting);
+
+      await tester.tap(find.textContaining('点击可改重量'));
+      await tester.pump(const Duration(milliseconds: 50));
+      final inputBtn = find.text('直接输入重量');
+      expect(inputBtn, findsOneWidget);
+      await tester.ensureVisible(inputBtn);
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.tap(inputBtn);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(find.byType(TextField), '-27.5');
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(container.session.weightDraft, -27.5,
+          reason: '休息态键盘直输负值 = 辅助配重');
+    });
   });
 
   // ---------- 总结页 ----------
