@@ -1090,9 +1090,12 @@ Future<void> _doEndTraining(BuildContext context) async {
   final durationMin = s.session?.durationMin ?? 0;
   await s.finish();
   c.notify.cancelRest();
+  // 净时长（训练/休息分桶）在 finish 落库后回读
+  final restMin = ((s.session?.restMs ?? 0) / 60000).ceil();
+  final activeMin = ((s.session?.activeMs ?? 0) / 60000).ceil();
   final summaryBuf = StringBuffer();
   summaryBuf.writeln(
-      '$title 完成：总容量 ${fmtVolume(stats.volume)}，${stats.workingSets} 个正式组，${stats.exercises.length} 个动作。');
+      '$title 完成：总容量 ${fmtVolume(stats.volume)}，${stats.workingSets} 个正式组，${stats.exercises.length} 个动作，总时长 $durationMin 分钟（训练 $activeMin / 休息 $restMin）。');
   for (final v in verdicts) {
     summaryBuf.writeln('- $v');
   }
@@ -1107,6 +1110,8 @@ Future<void> _doEndTraining(BuildContext context) async {
       title: title,
       prNames: prNames,
       durationMin: durationMin,
+      activeMin: activeMin,
+      restMin: restMin,
     ),
   ));
 }
@@ -1118,6 +1123,8 @@ class _SummaryPage extends StatelessWidget {
     required this.title,
     required this.prNames,
     required this.durationMin,
+    required this.activeMin,
+    required this.restMin,
   });
 
   final SessionStats stats;
@@ -1125,6 +1132,8 @@ class _SummaryPage extends StatelessWidget {
   final String title;
   final List<String> prNames;
   final int durationMin;
+  final int activeMin;
+  final int restMin;
 
   @override
   Widget build(BuildContext context) {
@@ -1156,7 +1165,12 @@ class _SummaryPage extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-              Text('训练时长 $durationMin 分钟',
+              Text(
+                  durationMin > 0
+                      ? (activeMin > 0 || restMin > 0
+                          ? '总时长 $durationMin 分钟 · 训练 $activeMin 分 · 休息 $restMin 分'
+                          : '训练时长 $durationMin 分钟')
+                      : '训练完成',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: AppTheme.textDim)),
               const SizedBox(height: 24),

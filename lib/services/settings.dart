@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../models/app_release.dart';
+
 /// 应用设置：只存手机本地（shared_preferences）。密钥类字段永不进仓库/日志。
 class Settings extends ChangeNotifier {
   Settings(this._prefs) {
@@ -38,6 +40,10 @@ class Settings extends ChangeNotifier {
   String distractingApps =
       'com.smile.gifmaker,com.kuaishou.app,com.ss.android.ugc.aweme,com.tencent.weishi,com.xingin.xhs,com.sina.weibo,tv.danmaku.bili';
 
+  // 应用更新（GitHub 私仓 Releases）
+  String ghUpdateToken = ''; // 只读令牌，与 AI Key 同一本地存放策略
+  AppRelease? pendingUpdate; // 运行时状态（发现的新版），不落盘
+
   void _load() {
     restCompoundSec = _prefs.getInt('${_kprefix}restCompound') ?? 180;
     restAssistanceSec = _prefs.getInt('${_kprefix}restAssist') ?? 120;
@@ -58,6 +64,7 @@ class Settings extends ChangeNotifier {
     focusAppCheckEnabled = _prefs.getBool('${_kprefix}focusApp') ?? true;
     distractingApps =
         _prefs.getString('${_kprefix}distract') ?? distractingApps;
+    ghUpdateToken = _prefs.getString('${_kprefix}ghToken') ?? '';
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
     larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
   }
@@ -90,6 +97,7 @@ class Settings extends ChangeNotifier {
     await _prefs.setBool('${_kprefix}focusDnd', focusDndEnabled);
     await _prefs.setBool('${_kprefix}focusApp', focusAppCheckEnabled);
     await _prefs.setString('${_kprefix}distract', distractingApps);
+    await _prefs.setString('${_kprefix}ghToken', ghUpdateToken);
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
     await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);
     notifyListeners();

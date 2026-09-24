@@ -45,6 +45,25 @@ class SessionController extends ChangeNotifier {
   /// 休息结束/结束训练时清除。
   String? extraSetExerciseName;
 
+  /// 本次训练净时长（毫秒）：休息桶 / 训练桶，随相位切换累计，
+  /// 结束时写入 sessions（总结页、历史、AI 分析评估休息长短用）。
+  int restMs = 0;
+  int activeMs = 0;
+  DateTime? _phaseSince;
+
+  void _accrueTime() {
+    final since = _phaseSince;
+    if (since == null) return;
+    final dt = DateTime.now().difference(since).inMilliseconds;
+    if (dt <= 0) return;
+    if (phase == WorkoutPhase.resting) {
+      restMs += dt;
+    } else if (phase == WorkoutPhase.lifting) {
+      activeMs += dt;
+    }
+    _phaseSince = DateTime.now();
+  }
+
   Timer? _tick;
   final ValueNotifier<int> restRemainingMs = ValueNotifier(0);
   final ValueNotifier<String> focusBanner = ValueNotifier('');
@@ -66,6 +85,10 @@ class SessionController extends ChangeNotifier {
       if (active == null) return;
       final ok = await _loadSession(active.id!);
       if (!ok) return;
+      // 时长统计从恢复时刻重新起表（历史段在进程被杀时已丢，无法追平）
+      restMs = 0;
+      activeMs = 0;
+      _phaseSince = DateTime.now();
       final restEnd = _prefs.getInt('rest.endAt') ?? 0;
       final sid = _prefs.getInt('rest.sessionId') ?? 0;
       if (sid == active.id && restEnd > DateTime.now().millisecondsSinceEpoch) {
@@ -187,6 +210,9 @@ class SessionController extends ChangeNotifier {
     curExIdx = 0;
     curSetIdx = 0;
     workingSetsDone = 0;
+    restMs = 0;
+    activeMs = 0;
+    _phaseSince = DateTime.now(); // 时长统计从这里起表
     await _loadContextForCurrent();
     weightDraft = _recommendFor(currentEx!.name);
     _setPhase(WorkoutPhase.lifting);
@@ -521,6 +547,8 @@ class SessionController extends ChangeNotifier {
     await _db.updateSession(session!.id!, {
       'ended_at': DateTime.now().millisecondsSinceEpoch,
       'status': 'done',
+      'rest_ms': restMs,
+      'active_ms': activeMs,
     });
     await _exitFocus();
     session = await _db.sessionById(session!.id!);
@@ -536,6 +564,8 @@ class SessionController extends ChangeNotifier {
     await _db.updateSession(session!.id!, {
       'ended_at': DateTime.now().millisecondsSinceEpoch,
       'status': 'quit',
+      'rest_ms': restMs,
+      'active_ms': activeMs,
     });
     await _exitFocus();
     WakelockPlus.disable();
@@ -595,6 +625,7 @@ class SessionController extends ChangeNotifier {
   }
 
   void _setPhase(WorkoutPhase p, {bool silent = false}) {
+    if (phase != p) _accrueTime(); // 相位切换前把上一段时长入桶
     phase = p;
     if (!silent) notifyListeners();
   }
