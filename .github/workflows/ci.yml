@@ -10,6 +10,9 @@ on:
   pull_request:
   push:
     branches: [main]
+    paths-ignore:          # 纯文档改动不出空版本包（App 端会误报更新红点）
+      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:

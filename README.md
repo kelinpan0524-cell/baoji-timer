@@ -57,6 +57,12 @@
 2. 装好即用：内置薄肌计划，不注册、不登录、不要权限
 3. 想要 App 内一键更新？见 [docs/update-setup.md](docs/update-setup.md)（首次授权一次即可，无需令牌）
 
+## 🍎 iPhone 用户 & 想自己折腾的人
+
+官方只出 Android 版。想自己编译、fork 维护一份、或在 Mac 上自行适配 iOS 的，
+看 [AI-BUILD-GUIDE.md](AI-BUILD-GUIDE.md)——一份写给 AI 编程助手的操作手册，
+把它连同仓库丢给你的 AI（ZCode / Claude Code / Cursor 均可），说「按手册帮我做」就行。
+
 ## 🔒 隐私设计
 
 - **无服务器**：全部功能手机本地运行，训练数据存本地 SQLite
