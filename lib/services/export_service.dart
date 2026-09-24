@@ -31,6 +31,21 @@ class ExportService {
 
   String _csv(String v) => '"${v.replaceAll('"', '""')}"';
 
+  /// 动作的实际组间休息（相邻两组 doneAt 之差的平均，>30 分钟的跨动作/中场
+  /// 休息剔除）。计划休息秒数带上，AI 才能对比"计划 vs 实际"。
+  String _actualRestNote(SessionExercise se, List<SetEntry> sets) {
+    if (sets.length < 2) return '';
+    final gaps = <int>[];
+    for (var i = 1; i < sets.length; i++) {
+      final g = sets[i].doneAt - sets[i - 1].doneAt;
+      if (g > 0 && g < 30 * 60 * 1000) gaps.add(g);
+    }
+    if (gaps.isEmpty) return '';
+    final avgSec = (gaps.fold(0, (a, b) => a + b) / gaps.length / 1000).round();
+    final planned = se.restSec > 0 ? '计划休 ${se.restSec}s' : '休息跟随全局设置';
+    return '（$planned · 实际均休 ~${avgSec}s）';
+  }
+
   Future<String> buildCsv() async {
     final sessions = await _db.recentSessions(limit: 100000);
     final buf = StringBuffer(
@@ -87,7 +102,9 @@ class ExportService {
     buf.writeln('1. 各大项（深蹲/卧推/硬拉/推举）的进步趋势，指出停滞或退步的动作；');
     buf.writeln('2. 训练频率与容量是否足以支撑渐进超负荷；');
     buf.writeln('3. 肌群均衡度（哪个肌群训练量偏低）；');
-    buf.writeln('4. 给出未来 2-4 周的具体调整建议（加重策略、弱项补强、恢复建议）。');
+    buf.writeln('4. 组间休息是否合适：结合"计划休息 vs 实际休息"判断哪些动作休息过长或过短'
+        '（参考：增肌复合动作 90-180 秒、辅助动作 60-90 秒、大重量低次数力量组 3-5 分钟）；');
+    buf.writeln('5. 给出未来 2-4 周的具体调整建议（加重策略、弱项补强、恢复建议）。');
     buf.writeln('数据时间范围：$from 至 $to。');
     buf.writeln();
     buf.writeln('## 训练概要');
@@ -106,14 +123,17 @@ class ExportService {
       final map = await _db.setsOfSession(s.id!);
       final stats = sessionStatsFrom(map, ses);
       buf.writeln('### ${s.date} ${s.planDayTitle}');
-      buf.writeln('- 总容量 ${stats.volume.toStringAsFixed(0)}kg · 正式组 ${stats.workingSets} 组 · 时长 ${s.durationMin} 分钟');
+      final timeNote = s.restMs > 0
+          ? '（训练 ${(s.activeMs / 60000).ceil()} 分 · 休息 ${(s.restMs / 60000).ceil()} 分）'
+          : '';
+      buf.writeln('- 总容量 ${stats.volume.toStringAsFixed(0)}kg · 正式组 ${stats.workingSets} 组 · 时长 ${s.durationMin} 分钟$timeNote');
       for (final se in ses) {
         final sets = map[se.id!] ?? const <SetEntry>[];
         if (sets.isEmpty) continue;
         final desc = sets
             .map((x) => '${x.weightKg}kg×${x.reps}${x.kind == SetKind.warmup ? '(热)' : x.kind == SetKind.failure ? '(失)' : ''}')
             .join(', ');
-        buf.writeln('- ${se.name}: $desc');
+        buf.writeln('- ${se.name}: $desc${_actualRestNote(se, sets)}');
         byNameVolume[se.name] =
             (byNameVolume[se.name] ?? 0) + sets.fold(0.0, (a, b) => a + b.volume);
       }

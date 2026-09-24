@@ -19,6 +19,7 @@ class _HomePageState extends State<HomePage> {
   List<Session> _doneThisWeek = [];
   Session? _lastSession;
   SessionStats? _lastStats;
+  PlanDay? _todayDay; // 今天该练什么（排程解析：覆盖行 > 循环 > 星期模板）
 
   @override
   void initState() {
@@ -40,11 +41,13 @@ class _HomePageState extends State<HomePage> {
       final map = await c.db.setsOfSession(last.first.id!);
       stats = sessionStatsFrom(map, ses);
     }
+    final today = await c.planRepo.dayForDate(DateTime.now());
     if (!mounted) return;
     setState(() {
       _doneThisWeek = done;
       _lastSession = last.isEmpty ? null : last.first;
       _lastStats = stats;
+      _todayDay = today;
       _loading = false;
     });
   }
@@ -57,7 +60,7 @@ class _HomePageState extends State<HomePage> {
     }
     final repo = c.planRepo;
     final today = DateTime.now();
-    final day = repo.dayForWeekday(today.weekday);
+    final day = _todayDay;
     final active = c.session.hasActive;
     final planName = repo.activePlan?.name;
 
