@@ -7,6 +7,7 @@ import 'plan_page.dart';
 import 'settings_page.dart';
 import 'stats_page.dart';
 import 'theme.dart';
+import 'widgets/common.dart';
 import 'widgets/glass.dart';
 
 /// 主框架：底部导航（今日 / 计划 / 历史 / 数据 / 设置）。
@@ -39,6 +40,8 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // 设置入口红点：启动静默检查发现新版时点亮（只提示，不弹窗）
+    final s = app(context).settings;
     return Scaffold(
       backgroundColor: AppTheme.bg,
       // 条件渲染（非 IndexedStack）：切 tab 时页面重建并重新查询，
@@ -55,22 +58,29 @@ class _HomeShellState extends State<HomeShell> {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           child: GlassBar(
-            child: Row(
-              children: [
-                for (var i = 0; i < _items.length; i++)
-                  Expanded(
-                    child: _NavItem(
-                      icon: _items[i].$1,
-                      selectedIcon: _items[i].$2,
-                      label: _items[i].$3,
-                      selected: _index == i,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        setState(() => _index = i);
-                      },
-                    ),
-                  ),
-              ],
+            child: AnimatedBuilder(
+              animation: s,
+              builder: (context, _) {
+                final hasUpdate = s.pendingUpdate != null;
+                return Row(
+                  children: [
+                    for (var i = 0; i < _items.length; i++)
+                      Expanded(
+                        child: _NavItem(
+                          icon: _items[i].$1,
+                          selectedIcon: _items[i].$2,
+                          label: _items[i].$3,
+                          selected: _index == i,
+                          badge: i == 4 && hasUpdate,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            setState(() => _index = i);
+                          },
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),
@@ -79,7 +89,8 @@ class _HomeShellState extends State<HomeShell> {
   }
 }
 
-/// 导航条目：选中态为发光小药丸（主色 18% 底 + 主色图标文字）。
+/// 导航条目：选中态为发光小药丸（主色 18% 底 + 主色图标文字）；
+/// [badge] = 设置项有新版本时的小红点。
 class _NavItem extends StatelessWidget {
   const _NavItem({
     required this.icon,
@@ -87,6 +98,7 @@ class _NavItem extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.badge = false,
   });
 
   final IconData icon;
@@ -94,6 +106,7 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final bool badge;
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +137,26 @@ class _NavItem extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(selected ? selectedIcon : icon, color: color, size: 22),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(selected ? selectedIcon : icon, color: color, size: 22),
+                  if (badge)
+                    Positioned(
+                      top: -2,
+                      right: -4,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: AppTheme.danger,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: AppTheme.bg, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               const SizedBox(height: 2),
               Text(label,
                   style: TextStyle(

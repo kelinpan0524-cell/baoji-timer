@@ -10,16 +10,38 @@ import android.os.VibrationEffect
 import android.os.PowerManager
 import android.provider.Settings
 import android.app.usage.UsageStatsManager
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val channelName = "baoji/focus"
+    private val updaterChannelName = "baoji/updater"
     private var dndFilterBeforeTraining: Int? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannelName)
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "canRequestInstall" -> result.success(canRequestPackageInstalls())
+                        "openInstallPermissionSettings" -> {
+                            openInstallPermissionSettings()
+                            result.success(null)
+                        }
+                        "installApk" -> {
+                            installApk(call.argument<String>("path"))
+                            result.success(null)
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (e: Exception) {
+                    result.error("NATIVE_ERROR", e.message, null)
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 try {
@@ -63,6 +85,7 @@ class MainActivity : FlutterActivity() {
                             result.success(null)
                         }
                         "launcherApps" -> result.success(launcherApps())
+                        "launcherAppsWithIcons" -> result.success(launcherAppsWithIcons())
                         else -> result.notImplemented()
                     }
                 } catch (e: Exception) {
@@ -203,5 +226,83 @@ class MainActivity : FlutterActivity() {
             .map { it.activityInfo.packageName }
             .distinct()
             .sorted()
+    }
+
+    // ---- 桌面应用列表（带应用名与图标 PNG 字节，供分心名单列表展示） ----
+    private fun launcherAppsWithIcons(): List<Map<String, Any>> {
+        val pm = packageManager
+        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        val out = mutableListOf<Map<String, Any>>()
+        val seen = mutableSetOf<String>()
+        for (ri in pm.queryIntentActivities(intent, 0)) {
+            val pkg = ri.activityInfo.packageName
+            if (pkg == packageName || !seen.add(pkg)) continue
+            val label = try {
+                ri.loadLabel(pm).toString()
+            } catch (e: Exception) {
+                pkg
+            }
+            var icon: ByteArray? = null
+            try {
+                val d = ri.loadIcon(pm)
+                // 统一缩到 64px 左右再压 PNG：列表展示 38dp 足够，控制通道传输量
+                val w = if (d.intrinsicWidth in 1..96) d.intrinsicWidth else 64
+                val h = if (d.intrinsicHeight in 1..96) d.intrinsicHeight else 64
+                val bmp = android.graphics.Bitmap.createBitmap(
+                    w, h, android.graphics.Bitmap.Config.ARGB_8888)
+                val canvas = android.graphics.Canvas(bmp)
+                d.setBounds(0, 0, w, h)
+                d.draw(canvas)
+                val stream = java.io.ByteArrayOutputStream()
+                bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, stream)
+                icon = stream.toByteArray()
+                bmp.recycle()
+            } catch (e: Exception) {
+                icon = null
+            }
+            out.add(mapOf(
+                "package" to pkg,
+                "label" to label,
+                "icon" to (icon ?: ByteArray(0)),
+            ))
+            if (out.size >= 120) break
+        }
+        out.sortBy { (it["label"] as String).lowercase() }
+        return out
+    }
+
+    // ---- 应用内自更新安装 ----
+    private fun canRequestPackageInstalls(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            packageManager.canRequestPackageInstalls()
+
+    private fun openInstallPermissionSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !canRequestPackageInstalls()) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName"))
+                )
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES))
+            }
+        }
+    }
+
+    /** 唤起系统安装器安装缓存目录里的 APK（Android 8+ 需先授权"安装未知应用"）。 */
+    private fun installApk(path: String?) {
+        if (path == null) return
+        val file = File(path)
+        if (!file.exists()) return
+        if (!canRequestPackageInstalls()) {
+            openInstallPermissionSettings()
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
     }
 }

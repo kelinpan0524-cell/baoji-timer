@@ -2,10 +2,13 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app.dart';
+import '../services/focus_service.dart';
 import '../services/settings.dart';
+import '../services/update_service.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -53,6 +56,8 @@ class SettingsPage extends StatelessWidget {
         _LarkCard(s: s),
         const SizedBox(height: 12),
         _PermissionCard(),
+        const SizedBox(height: 12),
+        _UpdateCard(s: s),
         const SizedBox(height: 12),
         SectionCard(
           title: '数据',
@@ -180,7 +185,7 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-/// 专注模式：分心 App 名单勾选（读取已装 App，点选切换）。
+/// 专注模式：分心 App 名单（带应用图标与名称的列表，支持搜索勾选）。
 class _FocusCard extends StatefulWidget {
   const _FocusCard({required this.s});
 
@@ -191,7 +196,9 @@ class _FocusCard extends StatefulWidget {
 }
 
 class _FocusCardState extends State<_FocusCard> {
-  List<String>? _apps;
+  List<AppEntry>? _apps;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
@@ -203,25 +210,29 @@ class _FocusCardState extends State<_FocusCard> {
     });
   }
 
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final c = app(context);
-    final list = await c.focus.installedLauncherApps();
+    final list = await c.focus.installedAppsWithIcons();
     // 过滤掉自己
-    final filtered = list.where((p) => p != 'com.arono.baoji_timer').toList()..sort();
+    final filtered = list
+        .where((a) => a.packageName != 'com.arono.baoji_timer')
+        .toList();
     if (mounted) setState(() => _apps = filtered);
   }
 
-  /// 包名 → 友好名（常见 App 映射，未知显示尾段）。
-  String _label(String pkg) {
-    const known = {
-      'com.smile.gifmaker': '抖音', 'com.ss.android.ugc.aweme': '抖音',
-      'com.kuaishou.app': '快手', 'com.xingin.xhs': '小红书',
-      'com.sina.weibo': '微博', 'tv.danmaku.bili': '哔哩哔哩',
-      'com.tencent.weishi': '微视', 'com.tencent.mm': '微信',
-      'com.eg.android.AlipayGphone': '支付宝', 'com.netease.cloudmusic': '网易云音乐',
-    };
-    if (known.containsKey(pkg)) return known[pkg]!;
-    return pkg.split('.').last;
+  void _toggle(String pkg, bool on) {
+    final s = widget.s;
+    final set = s.distractingAppsList.toSet();
+    on ? set.add(pkg) : set.remove(pkg);
+    s.distractingApps = set.join(',');
+    s.save();
+    setState(() {});
   }
 
   @override
@@ -229,14 +240,31 @@ class _FocusCardState extends State<_FocusCard> {
     final s = widget.s;
     final selected = s.distractingAppsList.toSet();
     final apps = _apps;
+    final q = _query.trim();
+    final filtered = (apps ?? const <AppEntry>[])
+        .where((a) =>
+            q.isEmpty ||
+            a.label.toLowerCase().contains(q.toLowerCase()) ||
+            a.packageName.toLowerCase().contains(q.toLowerCase()))
+        .toList();
     return SectionCard(
       title: '专注模式',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('训练中切到下面勾选的 App 后，回到本应用会提醒你。默认已含常见短视频/社交 App。',
+          const Text('勾选训练中不想刷的 App，切过去再回来会提醒你。',
               style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
           const SizedBox(height: 10),
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search, size: 20),
+              hintText: '搜索应用名…',
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 6),
           if (apps == null)
             const Center(
                 child: Padding(
@@ -246,30 +274,75 @@ class _FocusCardState extends State<_FocusCard> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2)),
             ))
+          else if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('没有匹配的应用',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final pkg in apps.take(60))
-                  FilterChip(
-                    label: Text(_label(pkg), style: const TextStyle(fontSize: 13)),
-                    selected: selected.contains(pkg),
-                    onSelected: (on) {
-                      final set = s.distractingAppsList.toSet();
-                      on ? set.add(pkg) : set.remove(pkg);
-                      s.distractingApps = set.join(',');
-                      s.save();
-                      setState(() {});
-                    },
-                    selectedColor: AppTheme.primary,
-                    checkmarkColor: const Color(0xFF06220F),
-                    backgroundColor: AppTheme.cardHi,
-                    side: BorderSide.none,
-                  ),
-              ],
-            ),
+            // 列表带图标：默认只铺前 12 行防卡片过长，搜索时展开全部匹配
+            ...[
+            const SizedBox(height: 2),
+            for (final a in filtered.take(q.isEmpty ? 12 : filtered.length))
+              _appRow(a, selected.contains(a.packageName)),
+            if (q.isEmpty && filtered.length > 12)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Text('还有 ${filtered.length - 12} 个，输入名称搜索',
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12)),
+              ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _appRow(AppEntry a, bool selected) {
+    final icon = a.icon;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => _toggle(a.packageName, !selected),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 38,
+              height: 38,
+              child: icon != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: Image.memory(icon,
+                          width: 38, height: 38, fit: BoxFit.cover),
+                    )
+                  : const Icon(Icons.android_outlined,
+                      size: 30, color: AppTheme.textDim),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(a.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
+                  Text(a.packageName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 11)),
+                ],
+              ),
+            ),
+            Checkbox(
+              value: selected,
+              activeColor: AppTheme.primary,
+              onChanged: (on) => _toggle(a.packageName, on == true),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -599,6 +672,245 @@ class _PermissionCardState extends State<_PermissionCard>
           ),
         );
       },
+    );
+  }
+}
+
+/// 应用更新：GitHub Releases 自更新（私仓需只读令牌）。
+class _UpdateCard extends StatefulWidget {
+  const _UpdateCard({required this.s});
+
+  final Settings s;
+
+  @override
+  State<_UpdateCard> createState() => _UpdateCardState();
+}
+
+class _UpdateCardState extends State<_UpdateCard>
+    with WidgetsBindingObserver {
+  late final _ctrlToken = TextEditingController(text: widget.s.ghUpdateToken);
+  bool _checking = false;
+  bool _upToDate = false;
+  bool _needInstallPerm = false;
+  String? _error;
+  int? _received;
+  int? _total;
+  String? _apkPath;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _ctrlToken.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 从"允许安装未知应用"系统页返回时自动继续安装
+    if (state == AppLifecycleState.resumed &&
+        _needInstallPerm &&
+        _apkPath != null) {
+      _tryInstall();
+    }
+  }
+
+  Future<void> _check() async {
+    final s = widget.s;
+    // 检查前先把输入框里的令牌存下（与 AI 卡片一致的本地保存策略）
+    s.ghUpdateToken = _ctrlToken.text.trim();
+    await s.save();
+    setState(() {
+      _checking = true;
+      _error = null;
+      _upToDate = false;
+    });
+    try {
+      final release = await UpdateService(s).checkLatest();
+      s.set(() => s.pendingUpdate = release);
+      if (mounted) {
+        setState(() => _upToDate = release == null);
+      }
+    } on UpdateException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = '检查失败：$e');
+    } finally {
+      if (mounted) setState(() => _checking = false);
+    }
+  }
+
+  Future<void> _downloadAndInstall() async {
+    final s = widget.s;
+    final release = s.pendingUpdate;
+    if (release == null) return;
+    setState(() {
+      _error = null;
+      _received = 0;
+      _total = release.apkSize;
+    });
+    try {
+      final path =
+          await UpdateService(s).downloadApk(release, onProgress: (r, t) {
+        if (mounted) {
+          setState(() {
+            _received = r;
+            _total = t;
+          });
+        }
+      });
+      if (!mounted) return;
+      setState(() => _apkPath = path);
+      await _tryInstall();
+    } on UpdateException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = '下载失败：$e');
+    }
+  }
+
+  Future<void> _tryInstall() async {
+    final path = _apkPath;
+    if (path == null) return;
+    final svc = UpdateService(widget.s);
+    try {
+      if (await svc.canRequestInstall()) {
+        await svc.installApk(path);
+      } else if (mounted) {
+        setState(() => _needInstallPerm = true);
+      }
+    } on Exception catch (e) {
+      if (mounted) setState(() => _error = '无法启动安装：$e');
+    }
+  }
+
+  String _briefNotes(String notes) {
+    final lines = notes.split('\n').take(8).join('\n');
+    return lines.length > 240 ? '${lines.substring(0, 240)}…' : lines;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.s;
+    return SectionCard(
+      title: '应用更新',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          FutureBuilder<PackageInfo>(
+            future: PackageInfo.fromPlatform(),
+            builder: (context, snap) => Text(
+              snap.hasData
+                  ? '当前版本 v${snap.data!.version}（构建 ${snap.data!.buildNumber}）'
+                  : '当前版本 …',
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '更新包发布在 GitHub 私有仓库，需粘贴一个只读令牌：GitHub → Settings → Developer settings → Fine-grained tokens（只勾选本仓库，权限 Contents: Read-only）。令牌只存手机本地。',
+            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          TextField(
+            controller: _ctrlToken,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'GitHub 只读令牌'),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _checking ? null : _check,
+                  child: Text(_checking ? '正在检查…' : '检查更新'),
+                ),
+              ),
+            ],
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(_error!,
+                  style:
+                      const TextStyle(color: AppTheme.danger, fontSize: 13)),
+            ),
+          if (_upToDate && s.pendingUpdate == null)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('已是最新版本 ✓',
+                  style:
+                      TextStyle(color: AppTheme.primary, fontSize: 13)),
+            ),
+          ListenableBuilder(
+            listenable: s,
+            builder: (context, _) {
+              final release = s.pendingUpdate;
+              if (release == null) return const SizedBox.shrink();
+              final received = _received;
+              final total = _total;
+              final downloading = received != null;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Divider(height: 24),
+                  Text(
+                    '发现新版 ${release.title.isEmpty ? '构建 ${release.buildNumber}' : release.title}',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 15),
+                  ),
+                  if (release.notes.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(_briefNotes(release.notes),
+                          style: const TextStyle(
+                              color: AppTheme.textDim, fontSize: 12)),
+                    ),
+                  if (downloading) ...[
+                    const SizedBox(height: 10),
+                    LinearProgressIndicator(
+                      value: (total != null && total > 0)
+                          ? received / total
+                          : null,
+                      backgroundColor: AppTheme.cardHi,
+                      color: AppTheme.primary,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '下载中 ${(received / 1048576).toStringAsFixed(1)}MB'
+                      '${(total != null && total > 0) ? ' / ${(total / 1048576).toStringAsFixed(1)}MB' : ''}',
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 12),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 10),
+                    FilledButton(
+                      onPressed: _downloadAndInstall,
+                      child: const Text('下载并安装'),
+                    ),
+                  ],
+                  if (_needInstallPerm && _apkPath != null) ...[
+                    const SizedBox(height: 8),
+                    const Text('系统要求先允许本应用"安装未知应用"（只需授权一次）',
+                        style:
+                            TextStyle(color: AppTheme.warn, fontSize: 12)),
+                    TextButton(
+                      onPressed: () => UpdateService(s)
+                          .openInstallPermissionSettings(),
+                      child: const Text('去系统授权'),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
     );
   }
 }

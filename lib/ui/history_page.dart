@@ -242,6 +242,16 @@ class _HistoryPageState extends State<HistoryPage> {
     final ses = await c.db.sessionExercises(s.id!);
     final map = await c.db.setsOfSession(s.id!);
     final widgets = <Widget>[];
+    // 训练/休息净时长（新版本记录才有；老记录 rest/active 为 0 不显示）
+    if (s.restMs > 0 || s.activeMs > 0) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+            '训练 ${((s.activeMs) / 60000).ceil()} 分 · 休息 ${((s.restMs) / 60000).ceil()} 分'
+            '${s.restMs + s.activeMs > 0 ? '（休息占 ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%）' : ''}',
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13)),
+      ));
+    }
     for (final se in ses) {
       final sets = map[se.id!] ?? [];
       if (sets.isEmpty) continue;

@@ -200,6 +200,42 @@ class _OverviewTabState extends State<_OverviewTab> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            SectionCard(
+              title: '组间休息趋势（分钟 / 次）',
+              child: SizedBox(
+                height: 180,
+                child: d.restMinutes.length < 2
+                    ? const Center(
+                        child: Text('完成几次训练后，这里显示每次训练的休息总时长趋势',
+                            style: TextStyle(color: AppTheme.textDim)))
+                    : LineChart(
+                        LineChartData(
+                          gridData: const FlGridData(show: false),
+                          borderData: FlBorderData(show: false),
+                          titlesData: FlTitlesData(
+                            bottomTitles: AxisTitles(
+                              sideTitles: SideTitles(
+                                showTitles: true,
+                                reservedSize: 22,
+                                getTitlesWidget: (v, _) =>
+                                    _restLabel(d, v.toInt()),
+                              ),
+                            ),
+                          ),
+                          lineBarsData: [
+                            LineChartBarData(
+                              spots: d.restMinutes,
+                              isCurved: true,
+                              color: AppTheme.warn,
+                              barWidth: 3,
+                              dotData: const FlDotData(show: true),
+                            ),
+                          ],
+                        ),
+                      ),
+              ),
+            ),
             if (insights.isNotEmpty) ...[
               const SizedBox(height: 12),
               SectionCard(
@@ -241,11 +277,36 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
+  /// 组间休息趋势的 x 轴日期标签（约 5 个，避免拥挤）
+  Widget _restLabel(_OverviewData d, int i) {
+    if (i < 0 || i >= d.restDates.length) return const SizedBox.shrink();
+    final step = (d.restDates.length / 5).ceil();
+    if (i % step != 0 && i != d.restDates.length - 1) {
+      return const SizedBox.shrink();
+    }
+    final dt = parseDate(d.restDates[i]);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Text('${dt.month}/${dt.day}',
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 10)),
+    );
+  }
+
   /// 单次 JOIN 拉全部明细后内存聚合，避免逐 session 查询的 N+1。
   Future<_OverviewData> _load(AppContainer c) async {
     final now = DateTime.now();
     final from = fmtDate(now.subtract(const Duration(days: 365)));
     final rows = await c.db.sessionRowsBetween(from, fmtDate(now));
+    // 休息趋势：按会话取休息净时长（老记录为 0 跳过）
+    final sessionsForRest = await c.db.sessionsBetween(from, fmtDate(now));
+    final restMinutes = <FlSpot>[];
+    final restDates = <String>[];
+    for (var i = 0; i < sessionsForRest.length; i++) {
+      final s = sessionsForRest[i];
+      if (s.restMs <= 0) continue;
+      restMinutes.add(FlSpot(restMinutes.length.toDouble(), s.restMs / 60000));
+      restDates.add(s.date);
+    }
     final weekly = <int, double>{}; // 周一epoch天 -> 容量
     final setsByName = <String, List<SetEntry>>{};
     final big4 = <String, List<FlSpot>>{};
@@ -303,6 +364,8 @@ class _OverviewTabState extends State<_OverviewTab> {
       ],
       weekKeys: keys,
       topLifts: topLifts.take(4).toList(),
+      restMinutes: restMinutes,
+      restDates: restDates,
       big4: big4,
       setsByName: setsByName,
     );
@@ -317,12 +380,18 @@ class _OverviewData {
 
   /// 近一年正式组容量前 4 的动作名（动态"四大项"）
   final List<String> topLifts;
+
+  /// 每次训练的休息净时长（分钟，老记录为空）+ 对应日期
+  final List<FlSpot> restMinutes;
+  final List<String> restDates;
   final Map<String, List<FlSpot>> big4;
   final Map<String, List<SetEntry>> setsByName;
   _OverviewData({
     required this.weeklyVolume,
     required this.weekKeys,
     required this.topLifts,
+    required this.restMinutes,
+    required this.restDates,
     required this.big4,
     required this.setsByName,
   });
