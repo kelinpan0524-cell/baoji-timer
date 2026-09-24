@@ -676,7 +676,7 @@ class _PermissionCardState extends State<_PermissionCard>
   }
 }
 
-/// 应用更新：GitHub Releases 自更新（私仓需只读令牌）。
+/// 应用更新：GitHub Releases 自更新（公开仓库免令牌；私有部署可配只读令牌）。
 class _UpdateCard extends StatefulWidget {
   const _UpdateCard({required this.s});
 
@@ -813,14 +813,17 @@ class _UpdateCardState extends State<_UpdateCard>
           ),
           const SizedBox(height: 8),
           const Text(
-            '更新包发布在 GitHub 私有仓库，需粘贴一个只读令牌：GitHub → Settings → Developer settings → Fine-grained tokens（只勾选本仓库，权限 Contents: Read-only）。令牌只存手机本地。',
+            '更新包发布在 GitHub Releases：开源公开仓库免令牌，直接检查更新即可。'
+            '仅当你把仓库 fork 成私有仓库自用时，才需要粘贴只读令牌'
+            '（Fine-grained tokens，只勾选该仓库，权限 Contents: Read-only）。令牌只存手机本地。',
             style: TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _ctrlToken,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'GitHub 只读令牌'),
+            decoration: const InputDecoration(
+                labelText: 'GitHub 只读令牌（公开仓库可留空）'),
           ),
           const SizedBox(height: 12),
           Row(
