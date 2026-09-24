@@ -15,16 +15,16 @@ import '../services/settings.dart';
 
 /// 全局容器：App 启动时构造一次，经 AppScope 注入整棵 Widget 树。
 class AppContainer {
-  AppContainer({required this.prefs})
+  AppContainer({required this.prefs, Db? db})
       : settings = Settings(prefs),
-        db = Db.instance,
+        db = db ?? Db.instance,
         notify = NotifyService() {
     focus = FocusService(settings);
-    planRepo = PlanRepository(db, settings);
-    session = SessionController(db, settings, prefs, focus);
+    planRepo = PlanRepository(this.db, settings);
+    session = SessionController(this.db, settings, prefs, focus);
     ai = AiService(settings);
-    lark = LarkService(settings, db);
-    export = ExportService(db);
+    lark = LarkService(settings, this.db);
+    export = ExportService(this.db);
 
     // 训练开始/结束 → 专注模式动作
     session.onEnterFocus = _onEnterFocus;
@@ -46,11 +46,22 @@ class AppContainer {
 
   Future<void> init() async {
     // 通知插件初始化不挡首帧（只有进休息倒计时才需要），失败静默重试
-    unawaited(notify.init());
+    unawaited(notify.init().catchError((Object e) {}));
+    await ensureFirstRunSeeded();
     await planRepo.reload();
     await session.restore();
     // 联网补写飞书离线队列（失败静默，下轮再试）
     unawaited(lark.retryPending());
+  }
+
+  /// 首启播种：动作库为空时写入全量 74 动作的肌群/器械标注。
+  /// 只按"表为空"判断、不做每次启动重写——exercise_meta 的 upsert 是整行
+  /// REPLACE，老用户在编辑器里改过的肌群标注不能被启动时静默重置；
+  /// 引导页选了「先不选」的用户也由此拿到完整动作库（挑选页/热力图可用）。
+  Future<void> ensureFirstRunSeeded() async {
+    if (await db.exerciseMetaCount() == 0) {
+      await planRepo.seedExerciseLibrary();
+    }
   }
 
   Future<void> _onEnterFocus() async {
