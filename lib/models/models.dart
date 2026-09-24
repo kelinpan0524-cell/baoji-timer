@@ -387,8 +387,11 @@ class SetEntry {
     this.note = '',
   });
 
-  /// 训练容量 = 重量 × 次数（热身组不计入容量）
-  double get volume => kind == SetKind.warmup ? 0 : weightKg * reps;
+  /// 训练容量 = 重量 × 次数（热身组不计入容量）。
+  /// 负重量（辅助器械配重）与自重（0）一样按 0 容量计——
+  /// 辅助配重是"抵消负荷"，计入容量会把总容量往回减。
+  double get volume =>
+      kind == SetKind.warmup || weightKg <= 0 ? 0 : weightKg * reps;
 
   Map<String, dynamic> toMap() => {
         if (id != null) 'id': id,
