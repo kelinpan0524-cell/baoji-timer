@@ -644,6 +644,31 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                 (v) => setState(() => _repsMax = v)),
             _stepper('组间休息（秒）', _restSec, 15, 600, 15,
                 (v) => setState(() => _restSec = v)),
+            // 休息快捷档：不用从 15 一档一档点到 180
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                for (final sec in const [45, 60, 90, 120, 180, 240, 300])
+                  ActionChip(
+                    label: Text(
+                        sec >= 60 ? '${sec ~/ 60} 分${sec % 60 == 0 ? '' : ' ${sec % 60} 秒'}' : '$sec 秒',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: _restSec == sec
+                                ? AppTheme.primary
+                                : AppTheme.textDim,
+                            fontWeight: _restSec == sec
+                                ? FontWeight.w700
+                                : FontWeight.w400)),
+                    backgroundColor:
+                        _restSec == sec ? AppTheme.primary.withValues(alpha: 0.15) : AppTheme.cardHi,
+                    side: BorderSide.none,
+                    onPressed: () =>
+                        setState(() => _restSec = sec),
+                  ),
+              ],
+            ),
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,

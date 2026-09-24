@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app.dart';
+import '../services/focus_service.dart';
 import '../services/settings.dart';
 import '../services/update_service.dart';
 import 'theme.dart';
@@ -184,7 +185,7 @@ class SettingsPage extends StatelessWidget {
   }
 }
 
-/// 专注模式：分心 App 名单勾选（读取已装 App，点选切换）。
+/// 专注模式：分心 App 名单（带应用图标与名称的列表，支持搜索勾选）。
 class _FocusCard extends StatefulWidget {
   const _FocusCard({required this.s});
 
@@ -195,7 +196,9 @@ class _FocusCard extends StatefulWidget {
 }
 
 class _FocusCardState extends State<_FocusCard> {
-  List<String>? _apps;
+  List<AppEntry>? _apps;
+  final _searchCtrl = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
@@ -207,25 +210,29 @@ class _FocusCardState extends State<_FocusCard> {
     });
   }
 
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final c = app(context);
-    final list = await c.focus.installedLauncherApps();
+    final list = await c.focus.installedAppsWithIcons();
     // 过滤掉自己
-    final filtered = list.where((p) => p != 'com.arono.baoji_timer').toList()..sort();
+    final filtered = list
+        .where((a) => a.packageName != 'com.arono.baoji_timer')
+        .toList();
     if (mounted) setState(() => _apps = filtered);
   }
 
-  /// 包名 → 友好名（常见 App 映射，未知显示尾段）。
-  String _label(String pkg) {
-    const known = {
-      'com.smile.gifmaker': '抖音', 'com.ss.android.ugc.aweme': '抖音',
-      'com.kuaishou.app': '快手', 'com.xingin.xhs': '小红书',
-      'com.sina.weibo': '微博', 'tv.danmaku.bili': '哔哩哔哩',
-      'com.tencent.weishi': '微视', 'com.tencent.mm': '微信',
-      'com.eg.android.AlipayGphone': '支付宝', 'com.netease.cloudmusic': '网易云音乐',
-    };
-    if (known.containsKey(pkg)) return known[pkg]!;
-    return pkg.split('.').last;
+  void _toggle(String pkg, bool on) {
+    final s = widget.s;
+    final set = s.distractingAppsList.toSet();
+    on ? set.add(pkg) : set.remove(pkg);
+    s.distractingApps = set.join(',');
+    s.save();
+    setState(() {});
   }
 
   @override
@@ -233,14 +240,31 @@ class _FocusCardState extends State<_FocusCard> {
     final s = widget.s;
     final selected = s.distractingAppsList.toSet();
     final apps = _apps;
+    final q = _query.trim();
+    final filtered = (apps ?? const <AppEntry>[])
+        .where((a) =>
+            q.isEmpty ||
+            a.label.toLowerCase().contains(q.toLowerCase()) ||
+            a.packageName.toLowerCase().contains(q.toLowerCase()))
+        .toList();
     return SectionCard(
       title: '专注模式',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('训练中切到下面勾选的 App 后，回到本应用会提醒你。默认已含常见短视频/社交 App。',
+          const Text('勾选训练中不想刷的 App，切过去再回来会提醒你。',
               style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
           const SizedBox(height: 10),
+          TextField(
+            controller: _searchCtrl,
+            onChanged: (v) => setState(() => _query = v),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search, size: 20),
+              hintText: '搜索应用名…',
+              isDense: true,
+            ),
+          ),
+          const SizedBox(height: 6),
           if (apps == null)
             const Center(
                 child: Padding(
@@ -250,30 +274,75 @@ class _FocusCardState extends State<_FocusCard> {
                   height: 20,
                   child: CircularProgressIndicator(strokeWidth: 2)),
             ))
+          else if (filtered.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(8),
+              child: Text('没有匹配的应用',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            )
           else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final pkg in apps.take(60))
-                  FilterChip(
-                    label: Text(_label(pkg), style: const TextStyle(fontSize: 13)),
-                    selected: selected.contains(pkg),
-                    onSelected: (on) {
-                      final set = s.distractingAppsList.toSet();
-                      on ? set.add(pkg) : set.remove(pkg);
-                      s.distractingApps = set.join(',');
-                      s.save();
-                      setState(() {});
-                    },
-                    selectedColor: AppTheme.primary,
-                    checkmarkColor: const Color(0xFF06220F),
-                    backgroundColor: AppTheme.cardHi,
-                    side: BorderSide.none,
-                  ),
-              ],
-            ),
+            // 列表带图标：默认只铺前 12 行防卡片过长，搜索时展开全部匹配
+            ...[
+            const SizedBox(height: 2),
+            for (final a in filtered.take(q.isEmpty ? 12 : filtered.length))
+              _appRow(a, selected.contains(a.packageName)),
+            if (q.isEmpty && filtered.length > 12)
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 4),
+                child: Text('还有 ${filtered.length - 12} 个，输入名称搜索',
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12)),
+              ),
+          ],
         ],
+      ),
+    );
+  }
+
+  Widget _appRow(AppEntry a, bool selected) {
+    final icon = a.icon;
+    return InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: () => _toggle(a.packageName, !selected),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 38,
+              height: 38,
+              child: icon != null
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(9),
+                      child: Image.memory(icon,
+                          width: 38, height: 38, fit: BoxFit.cover),
+                    )
+                  : const Icon(Icons.android_outlined,
+                      size: 30, color: AppTheme.textDim),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(a.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600)),
+                  Text(a.packageName,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 11)),
+                ],
+              ),
+            ),
+            Checkbox(
+              value: selected,
+              activeColor: AppTheme.primary,
+              onChanged: (on) => _toggle(a.packageName, on == true),
+            ),
+          ],
+        ),
       ),
     );
   }

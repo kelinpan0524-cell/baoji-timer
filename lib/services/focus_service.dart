@@ -2,6 +2,15 @@ import 'package:flutter/services.dart';
 
 import 'settings.dart';
 
+/// 已安装应用条目（设置页分心名单用）。
+class AppEntry {
+  final String packageName;
+  final String label;
+  final Uint8List? icon; // PNG 字节，原生侧取不到时为 null
+
+  const AppEntry({required this.packageName, required this.label, this.icon});
+}
+
 /// Android 原生辅助：勿扰模式、使用情况访问、分心 App 检测、精确闹钟、电池优化。
 /// 实现在 android/app/src/main/kotlin/.../MainActivity.kt。
 class FocusService {
@@ -106,6 +115,25 @@ class FocusService {
       return r?.cast<String>() ?? [];
     } on PlatformException {
       return [];
+    }
+  }
+
+  /// 带应用名与图标的列表（分心名单展示用）。原生不支持时回退纯包名列表。
+  Future<List<AppEntry>> installedAppsWithIcons() async {
+    try {
+      final r = await _channel.invokeMethod<List>('launcherAppsWithIcons');
+      return (r ?? []).map((e) {
+        final m = e as Map;
+        final icon = m['icon'];
+        return AppEntry(
+          packageName: (m['package'] as String?) ?? '',
+          label: (m['label'] as String?) ?? '',
+          icon: icon is Uint8List && icon.isNotEmpty ? icon : null,
+        );
+      }).toList();
+    } on PlatformException {
+      final pkgs = await installedLauncherApps();
+      return [for (final p in pkgs) AppEntry(packageName: p, label: p)];
     }
   }
 }
