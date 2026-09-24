@@ -54,17 +54,24 @@ class SessionController extends ChangeNotifier {
   // ---------- 启动 / 恢复 ----------
 
   /// App 启动时调用：还原进行中的会话（含休息中状态）。
+  /// 任何异常（脏数据/半写会话）都不允许锁死启动：回退到空闲态并吞掉。
   Future<void> restore() async {
-    final active = await _db.activeSession();
-    if (active == null) return;
-    final ok = await _loadSession(active.id!);
-    if (!ok) return;
-    final restEnd = _prefs.getInt('rest.endAt') ?? 0;
-    final sid = _prefs.getInt('rest.sessionId') ?? 0;
-    if (sid == active.id && restEnd > DateTime.now().millisecondsSinceEpoch) {
-      _startRestAt(restEnd, notifyUi: false);
-    } else {
-      _setPhase(WorkoutPhase.lifting);
+    try {
+      final active = await _db.activeSession();
+      if (active == null) return;
+      final ok = await _loadSession(active.id!);
+      if (!ok) return;
+      final restEnd = _prefs.getInt('rest.endAt') ?? 0;
+      final sid = _prefs.getInt('rest.sessionId') ?? 0;
+      if (sid == active.id && restEnd > DateTime.now().millisecondsSinceEpoch) {
+        _startRestAt(restEnd, notifyUi: false);
+      } else {
+        _setPhase(WorkoutPhase.lifting);
+      }
+    } catch (_) {
+      session = null;
+      exercises = [];
+      phase = WorkoutPhase.idle;
     }
   }
 
@@ -73,6 +80,17 @@ class SessionController extends ChangeNotifier {
     if (s == null || s.status != 'active') return false;
     session = s;
     exercises = await _db.sessionExercises(sessionId);
+    if (exercises.isEmpty) {
+      // 零动作的孤儿会话（半写/进程被杀残留）：自动作废，
+      // 否则 currentEx! 解引用会让 App 启动即崩（restore 已把 session 置回 null，
+      // 避免回落后 hasActive 仍为 true 造成二次崩溃）。
+      session = null;
+      await _db.updateSession(sessionId, {
+        'ended_at': DateTime.now().millisecondsSinceEpoch,
+        'status': 'quit',
+      });
+      return false;
+    }
     setsByEx = await _db.setsOfSession(sessionId);
     // 找到第一个"正式组未做完"的动作（与 completeSet 的推进判据一致：
     // 只数 working 组，热身/力竭组不算完成进度）
@@ -129,29 +147,37 @@ class SessionController extends ChangeNotifier {
     required PlanDay day,
     required List<PlanExercise> planExercises,
   }) async {
+    if (planExercises.isEmpty) return; // 空计划日不允许开会话（防零动作孤儿）
     if (hasActive) return;
+    // 双击竞态兜底：内存态置 active 之前再查一次库，只放行一个并发调用
+    if (await _db.activeSession() != null) return;
     prHit.clear();
     final now = DateTime.now().millisecondsSinceEpoch;
-    session = await _db.insertSession(Session(
-      date: fmtDate(DateTime.now()),
-      planDayId: day.id,
-      planDayTitle: day.title,
-      startedAt: now,
-      status: 'active',
-    ));
-    exercises = [];
-    for (final pe in planExercises) {
-      final draft = SessionExercise(
-        sessionId: session!.id!,
-        name: pe.name,
-        orderIdx: pe.orderIdx,
-        kind: pe.kind,
-        restSec: pe.restSec,
-        rule: pe.rule,
-      );
-      final id = await _db.insertSessionExercise(draft);
-      exercises.add(draft.copyWithId(id));
-    }
+    // 会话与动作一个事务落库（sessionId 先占位，事务内回填真实 id），
+    // 消除"会话已落库、动作未落库"的半写窗口。
+    final drafts = [
+      for (final pe in planExercises)
+        SessionExercise(
+          sessionId: 0,
+          name: pe.name,
+          orderIdx: pe.orderIdx,
+          kind: pe.kind,
+          restSec: pe.restSec,
+          rule: pe.rule,
+        ),
+    ];
+    final (s, withIds) = await _db.insertSessionWithExercises(
+      Session(
+        date: fmtDate(DateTime.now()),
+        planDayId: day.id,
+        planDayTitle: day.title,
+        startedAt: now,
+        status: 'active',
+      ),
+      drafts,
+    );
+    session = s;
+    exercises = withIds;
     setsByEx = {};
     curExIdx = 0;
     curSetIdx = 0;
@@ -259,6 +285,8 @@ class SessionController extends ChangeNotifier {
     _tick?.cancel();
     _tick = Timer.periodic(const Duration(milliseconds: 250), (_) => _tickFn());
     _updateRemaining();
+    // 时间源统一：精确闹钟跟随 restEndAt（含恢复会话后补挂闹钟的场景）
+    onRestAlarmChanged?.call(endAtMs);
   }
 
   void _tickFn() {
@@ -308,10 +336,12 @@ class SessionController extends ChangeNotifier {
     _restRemainingWhenPaused = restRemainingMs.value;
     _tick?.cancel();
     _tick = null;
+    // 暂停即取消精确闹钟（否则暂停期间到点照响）
+    onRestAlarmChanged?.call(null);
     notifyListeners();
   }
 
-  /// 继续：从剩余时间重新起表。
+  /// 继续：从剩余时间重新起表（经 _startRestAt 自动重挂闹钟）。
   void resumeRest() {
     if (phase != WorkoutPhase.resting || !_restPaused) return;
     _restPaused = false;
@@ -323,10 +353,19 @@ class SessionController extends ChangeNotifier {
 
   void extendRest(int sec) {
     if (phase != WorkoutPhase.resting) return;
+    if (_restPaused) {
+      // 暂停态加时：只动冻结值与总时长，不写 prefs、不改 restEndAt
+      // （否则 resume 用冻结值重算时，加的秒数会被静默丢弃）
+      _restRemainingWhenPaused += sec * 1000;
+      restTotalMs += sec * 1000;
+      restRemainingMs.value = _restRemainingWhenPaused;
+      return;
+    }
     restEndAt += sec * 1000;
     restTotalMs += sec * 1000;
     _prefs.setInt('rest.endAt', restEndAt);
     _updateRemaining();
+    onRestAlarmChanged?.call(restEndAt);
   }
 
   /// 撤销最后一组（记错时用）。若当前动作还没有组而已完成上一动作，
@@ -348,8 +387,17 @@ class SessionController extends ChangeNotifier {
     await _db.deleteSet(last.id!);
     list.removeLast();
     curSetIdx = list.length;
-    if (last.kind == SetKind.working) workingSetsDone--;
-    prHit.remove(ex.name);
+    // 计数收敛到 DB 真值：同动作撤销与跨动作回退（_advanceToNextExercise
+    // 已把计数归 0，回退后无条件自减会变成 -1）统一按剩余正式组重算。
+    workingSetsDone = list.where((e) => e.kind == SetKind.working).length;
+    // PR 标记不随单组撤销丢项：仅当剩余正式组中已没有任何一组仍是
+    // 历史新高时才清除（逐组重判，任一剩余组仍超历史最佳就保留）。
+    if (prHit.contains(ex.name)) {
+      final history = historyBefore[ex.name] ?? const <SetEntry>[];
+      final anyStillPr = list
+          .any((e) => e.kind == SetKind.working && isPrWeight(e.weightKg, history));
+      if (!anyStillPr) prHit.remove(ex.name);
+    }
     notifyListeners();
   }
 
@@ -421,6 +469,11 @@ class SessionController extends ChangeNotifier {
 
   Future<void> Function()? onEnterFocus;
   Future<void> Function()? onExitFocus;
+
+  /// 休息精确闹钟的时间源回调：endAtMs 非 null = （重）挂 endAtMs 的闹钟，
+  /// null = 取消。由 App 容器接 NotifyService（开始休息/加时/继续时重挂，
+  /// 暂停时取消，恢复会话时补挂）。
+  Future<void> Function(int? endAtMs)? onRestAlarmChanged;
 
   Future<void> _enterFocus() async {
     WakelockPlus.enable();

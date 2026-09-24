@@ -78,8 +78,11 @@ class _OverviewTabState extends State<_OverviewTab> {
   @override
   void initState() {
     super.initState();
-    // 缓存 future：切 chip 等 setState 不再触发全量重查
-    _future = _load(app(context));
+    // initState 里不能同步读 InheritedWidget，延后一帧
+    // （缓存 future：切 chip 等 setState 不再触发全量重查）
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _future = _load(app(context)));
+    });
   }
 
   @override
@@ -239,7 +242,7 @@ class _OverviewTabState extends State<_OverviewTab> {
         reps: reps,
         rir: (r['rir'] as num?)?.toInt() ?? 2,
         kind: kind,
-        doneAt: 0,
+        doneAt: (r['done_at'] as num?)?.toInt() ?? 0,
       );
       final name = (r['name'] as String?) ?? '';
       final date = (r['date'] as String?) ?? '';
@@ -288,13 +291,16 @@ class _MuscleTab extends StatefulWidget {
 }
 
 class _MuscleTabState extends State<_MuscleTab> {
-  late final Future<Map<String, double>> _future;
+  Future<Map<String, double>>? _future;
   bool _front = true;
 
   @override
   void initState() {
     super.initState();
-    _future = _load(app(context));
+    // initState 里不能同步读 InheritedWidget，延后一帧
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _future = _load(app(context)));
+    });
   }
 
   @override
@@ -399,10 +405,12 @@ class _MuscleTabState extends State<_MuscleTab> {
     final monday = mondayOf(DateTime.now());
     final sessions = await c.db
         .sessionsBetween(fmtDate(monday), fmtDate(DateTime.now()));
-    final metaMap = <String, ExerciseMeta>{};
-    // 动作元数据以库内为准（内置 + AI 计划沉淀）
-    for (final m in kExerciseLibrary) {
-      metaMap[m.name] = m;
+    final metaMap = {for (final m in kExerciseLibrary) m.name: m};
+    // 内置词表 + DB 沉淀合并（与动作库页同口径）：
+    // AI 计划/编辑器沉淀的词表外动作才能在热力图与占比里正确归类
+    final known = metaMap.keys.toSet();
+    for (final m in await c.db.allExerciseMeta()) {
+      if (!known.contains(m.name)) metaMap[m.name] = m;
     }
     final byName = <String, List<SetEntry>>{};
     for (final s in sessions) {
@@ -436,16 +444,23 @@ class _BodyTab extends StatefulWidget {
   State<_BodyTab> createState() => _BodyTabState();
 }
 
-class _BodyTabState extends State<_BodyTab> {
+class _BodyTabState extends State<_BodyTab>
+    with AutomaticKeepAliveClientMixin {
   final _weightCtrl = TextEditingController();
   final _waistCtrl = TextEditingController();
   final _fatCtrl = TextEditingController();
-  late final Future<List<BodyMetric>> _future;
+  Future<List<BodyMetric>>? _future;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    _future = app(context).db.bodyMetrics();
+    // initState 里不能同步读 InheritedWidget，延后一帧
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _future = app(context).db.bodyMetrics());
+    });
   }
 
   @override
@@ -458,6 +473,7 @@ class _BodyTabState extends State<_BodyTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 必需
     final c = app(context);
     return FutureBuilder<List<BodyMetric>>(
       future: _future,

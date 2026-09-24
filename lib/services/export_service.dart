@@ -41,7 +41,7 @@ class ExportService {
       for (final se in ses) {
         for (final set in map[se.id!] ?? const <SetEntry>[]) {
           buf.writeln(
-              '${s.date},"${_csv(s.planDayTitle)}","${_csv(se.name)}",${set.weightKg},${set.reps},${set.rir},${set.kind},${set.doneAt}');
+              '${s.date},${_csv(s.planDayTitle)},${_csv(se.name)},${set.weightKg},${set.reps},${set.rir},${set.kind},${set.doneAt}');
         }
       }
     }
