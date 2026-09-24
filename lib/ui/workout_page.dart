@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
 import '../services/session_controller.dart';
+import 'exercise_picker_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -349,6 +350,11 @@ class _TopBarState extends State<_TopBar> {
                 style: const TextStyle(color: AppTheme.textDim, fontSize: 14)),
           ),
           TextButton(
+            onPressed: () => _showExerciseAdjustSheet(context),
+            child: const Text('换/加动作',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 14)),
+          ),
+          TextButton(
             onPressed: () {
               HapticFeedback.selectionClick();
               widget.s.skipExercise();
@@ -382,6 +388,69 @@ class _TopBarState extends State<_TopBar> {
       ),
     );
   }
+
+  /// 训练中临时调整动作：加动作到队尾 / 替换当前动作（器械被占时用）。
+  /// 只影响本次训练，不改计划；当前动作已记组时不可替换（防串名）。
+  Future<void> _showExerciseAdjustSheet(BuildContext context) async {
+    final s = widget.s;
+    final canReplace = s.currentSets.isEmpty;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.playlist_add, color: AppTheme.primary),
+              title: const Text('添加动作到队尾'),
+              subtitle: const Text('从动作库挑选，只进本次训练',
+                  style: TextStyle(fontSize: 12)),
+              onTap: () => Navigator.pop(ctx, 'append'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz, color: AppTheme.accent),
+              title: Text(canReplace
+                  ? '替换当前动作（${s.currentEx?.name ?? ''}）'
+                  : '替换当前动作'),
+              subtitle: Text(
+                  canReplace
+                      ? '沿用原组次规则，只换动作名'
+                      : '当前动作已记组，不能替换；可改用"跳过动作"',
+                  style: const TextStyle(fontSize: 12)),
+              onTap: canReplace ? () => Navigator.pop(ctx, 'replace') : null,
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    // 替换时把当前动作也标为已存在，防止挑到它自己
+    final existing = s.exercises.map((e) => e.name).toSet();
+    final picked = await Navigator.of(context).push<List<ExerciseMeta>>(
+      MaterialPageRoute(
+        builder: (_) => ExercisePickerPage(existingNames: existing),
+      ),
+    );
+    if (picked == null || picked.isEmpty || !mounted) return;
+    if (choice == 'append') {
+      await s.appendExercises(picked);
+      s.showFocusBanner('已加 ${picked.length} 个动作到队尾');
+    } else {
+      final ok = await s.replaceCurrentExercise(picked.first);
+      if (ok) {
+        s.showFocusBanner('已换成 ${picked.first.name}');
+      } else {
+        messenger.showSnackBar(SnackBar(
+            content: const Text('替换失败：该动作已在本次训练里'),
+            backgroundColor: AppTheme.cardHi,
+            behavior: SnackBarBehavior.floating));
+      }
+    }
+  }
 }
 
 class _ExerciseInfo extends StatelessWidget {
@@ -396,6 +465,11 @@ class _ExerciseInfo extends StatelessWidget {
     final lastText = last.isEmpty
         ? '首次训练这个动作'
         : '上次：${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}';
+    // 计划组练满后（加练态）进度行换成加练计数，不再显示"第 5 / 4 组"
+    final extraNo = s.workingSetsDone - ex.rule.workingSets + 1;
+    final progressText = s.workingSetsDone >= ex.rule.workingSets
+        ? '已练满 ${ex.rule.workingSets} 组 · 加练第 $extraNo 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次'
+        : '第 ${s.workingSetsDone + 1} / ${ex.rule.workingSets} 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次 · RIR ${ex.rule.rirTarget}';
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -406,8 +480,7 @@ class _ExerciseInfo extends StatelessWidget {
         Text(ex.name,
             style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
         const SizedBox(height: 8),
-        Text(
-            '第 ${s.workingSetsDone + 1} / ${ex.rule.workingSets} 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次 · RIR ${ex.rule.rirTarget}',
+        Text(progressText,
             style: const TextStyle(color: AppTheme.accent, fontSize: 16)),
         const SizedBox(height: 12),
         Text(lastText,
@@ -505,6 +578,36 @@ class _ActionPanelState extends State<_ActionPanel> {
                         color: AppTheme.textDim,
                         fontSize: 20,
                         fontWeight: FontWeight.w600)),
+              ),
+              // 自重/负重一键切换（长按清零的老入口保留，这里给可见入口）
+              Padding(
+                padding: const EdgeInsets.only(left: 12, bottom: 12),
+                child: Tooltip(
+                  message: '自重动作点这里：在自重和上次重量间切换',
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      s.toggleBodyweightDraft();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: s.weightDraft <= 0
+                            ? AppTheme.accent
+                            : AppTheme.cardHi,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text('自重',
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: s.weightDraft <= 0
+                                  ? const Color(0xFF06220F)
+                                  : AppTheme.textDim)),
+                    ),
+                  ),
+                ),
               ),
             ],
           ),
@@ -625,14 +728,13 @@ class _ActionPanelState extends State<_ActionPanel> {
               ),
           ],
           const SizedBox(height: 12),
-          // key 仅供 widget 测试定位（test/widget_layout_test.dart），无行为含义
+          // key 仅供 widget 测试定位（test/widget_layout_test.dart），无行为含义。
+          // 计划组练满后按钮变成"加练一组"（加练组按正式组记录），不再是死灰按钮。
           BigButton(
             key: const Key('workoutCompleteSet'),
-            label: doneAll ? '本动作已完成 ✓' : '完成本组',
-            color: doneAll
-                ? AppTheme.cardHi
-                : (_kind == SetKind.failure ? AppTheme.warn : AppTheme.primary),
-            onPressed: (doneAll || _saving)
+            label: doneAll ? '加练一组（正式组）' : '完成本组',
+            color: _kind == SetKind.failure ? AppTheme.warn : AppTheme.primary,
+            onPressed: _saving
                 ? null
                 : () async {
                     _saving = true;
@@ -689,8 +791,16 @@ class _ActionPanelState extends State<_ActionPanel> {
 
 // ================= 休息态 =================
 
-class _RestView extends StatelessWidget {
+class _RestView extends StatefulWidget {
   const _RestView();
+
+  @override
+  State<_RestView> createState() => _RestViewState();
+}
+
+class _RestViewState extends State<_RestView> {
+  bool _weightOpen = false; // 展开"下一组重量"步进（休息中可调重量）
+  static const _steps = [0.5, 1.25, 2.5, 5.0];
 
   @override
   Widget build(BuildContext context) {
@@ -701,7 +811,7 @@ class _RestView extends StatelessWidget {
     final plannedWorking = ex?.rule.workingSets ?? 0;
     final nextText = s.workingSetsDone >= plannedWorking
         ? (isLastEx ? '准备结束训练' : '下一个动作：${s.exercises[s.curExIdx + 1].name}')
-        : '下一组：${fmtWeight(s.weightDraft)}${s.weightDraft > 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次';
+        : '下一组：${fmtWeight(s.weightDraft)}${s.weightDraft > 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）';
 
     // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，
@@ -746,9 +856,51 @@ class _RestView extends StatelessWidget {
                         },
                       ),
                       const SizedBox(height: 12),
-                      Text(nextText,
-                          style: const TextStyle(
-                              color: AppTheme.text, fontSize: 18)),
+                      // 点"下一组"展开重量步进：休息中就能调下一组重量
+                      GestureDetector(
+                        onTap: () =>
+                            setState(() => _weightOpen = !_weightOpen),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.cardHi,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(nextText,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                  color: AppTheme.text, fontSize: 18)),
+                        ),
+                      ),
+                      if (_weightOpen) ...[
+                        const SizedBox(height: 10),
+                        Row(children: [
+                          for (final step in _steps)
+                            WeightStepButton(
+                                delta: step,
+                                onTap: () => s
+                                    .setWeightDraft(s.weightDraft + step)),
+                        ]),
+                        const SizedBox(height: 6),
+                        Row(children: [
+                          for (final step in _steps)
+                            WeightStepButton(
+                                delta: -step,
+                                onTap: () => s
+                                    .setWeightDraft(s.weightDraft - step)),
+                        ]),
+                        const SizedBox(height: 4),
+                        TextButton(
+                          onPressed: () => s.toggleBodyweightDraft(),
+                          child: Text(
+                              s.weightDraft <= 0
+                                  ? '当前：自重'
+                                  : '改为自重',
+                              style: const TextStyle(
+                                  color: AppTheme.textDim, fontSize: 13)),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -762,6 +914,29 @@ class _RestView extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (s.extraSetExerciseName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: OutlinedButton.icon(
+                              onPressed: () {
+                                HapticFeedback.selectionClick();
+                                c.notify.cancelRest();
+                                s.startExtraSet();
+                              },
+                              icon: const Icon(Icons.replay,
+                                  size: 18, color: AppTheme.primary),
+                              label: Text(
+                                  '「${s.extraSetExerciseName}」加练一组',
+                                  style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppTheme.primary)),
+                            ),
+                          ),
+                        ),
                       Row(
                         children: [
                           Expanded(
@@ -770,7 +945,7 @@ class _RestView extends StatelessWidget {
                               child: OutlinedButton(
                                 onPressed: () {
                                   HapticFeedback.selectionClick();
-                                  s.extendRest(30);
+                                  s.extendRest(-30);
                                   // 精确闹钟由控制器 onRestAlarmChanged 回调随
                                   // restEndAt 统一重排；暂停态 restEndAt 不更新
                                   // （加时改的是冻结值），只即时刷新常驻倒计时文案。
@@ -782,9 +957,32 @@ class _RestView extends StatelessWidget {
                                   backgroundColor: AppTheme.cardHi,
                                   side: BorderSide.none,
                                 ),
+                                child: const Text('-30 秒',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: SizedBox(
+                              height: 64,
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  HapticFeedback.selectionClick();
+                                  s.extendRest(30);
+                                  if (!s.isRestPaused) {
+                                    c.notify.showOngoing(s.restEndAt);
+                                  }
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  backgroundColor: AppTheme.cardHi,
+                                  side: BorderSide.none,
+                                ),
                                 child: const Text('+30 秒',
                                     style: TextStyle(
-                                        fontSize: 18,
+                                        fontSize: 16,
                                         fontWeight: FontWeight.w700)),
                               ),
                             ),

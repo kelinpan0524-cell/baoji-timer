@@ -1,6 +1,10 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../core/app.dart';
 import '../services/settings.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -56,7 +60,7 @@ class SettingsPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                  '手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；当前版本不支持从 JSON 一键恢复。',
+                  '手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；换手机或误清数据时可用 JSON 存档一键恢复。',
                   style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
               const SizedBox(height: 12),
               OutlinedButton(
@@ -75,6 +79,11 @@ class SettingsPage extends StatelessWidget {
                       filename: 'training_export.json');
                 },
                 child: const Text('导出 JSON（存档）'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton(
+                onPressed: () => _restoreFromJson(context, c),
+                child: const Text('从 JSON 存档恢复'),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -127,6 +136,47 @@ class SettingsPage extends StatelessWidget {
             icon: const Icon(Icons.add_circle_outline)),
       ],
     );
+  }
+
+  /// 从 JSON 存档恢复：先清空再导入（恢复 = 回到备份时点）。
+  /// 备份内容走剪贴板（分享出去的 .json 文件打开后全选复制即可）。
+  Future<void> _restoreFromJson(BuildContext context, AppContainer c) async {
+    final ok = await confirmDialog(
+        context,
+        '从 JSON 存档恢复？',
+        '手机上的现有数据会先清空，再导入备份内容。\n\n'
+            '步骤：先打开之前导出的 JSON 存档文件，全选复制全部内容到剪贴板，再回来点「恢复」。此操作无法撤销。',
+        okLabel: '恢复');
+    if (!ok || !context.mounted) return;
+    final clip = await Clipboard.getData('text/plain');
+    final text = (clip?.text ?? '').trim();
+    if (!context.mounted) return;
+    if (text.isEmpty) {
+      toast(context, '剪贴板是空的：请先复制 JSON 存档的全部内容');
+      return;
+    }
+    dynamic data;
+    try {
+      data = jsonDecode(text);
+    } catch (_) {
+      toast(context, '恢复失败：剪贴板内容不是有效的 JSON');
+      return;
+    }
+    if (data is! Map<String, dynamic>) {
+      toast(context, '恢复失败：内容不是本应用导出的备份格式');
+      return;
+    }
+    try {
+      // 恢复前先结束进行中的训练（恢复会清空会话表）
+      if (c.session.hasActive) await c.session.quit();
+      final n = await c.export.restoreFromJson(data);
+      await c.planRepo.reload();
+      if (context.mounted) toast(context, '已恢复 $n 次训练记录 ✓');
+    } on FormatException catch (e) {
+      if (context.mounted) toast(context, '恢复失败：${e.message}');
+    } catch (_) {
+      if (context.mounted) toast(context, '恢复失败：存档可能不完整，数据未改动');
+    }
   }
 }
 
