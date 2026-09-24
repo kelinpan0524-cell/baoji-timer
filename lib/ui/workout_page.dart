@@ -500,6 +500,83 @@ class _ExerciseInfo extends StatelessWidget {
   }
 }
 
+/// 重量键盘输入层：点重量数字 / 休息页「直接输入重量」唤起。
+/// 只在用户主动点按时出现、划掉或点空白处即取消，不属于训练中打断弹窗；
+/// 正数=负重，0=自重，负数=辅助器械配重。
+Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
+  final ctrl = TextEditingController(text: fmtKg(s.weightDraft));
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.card,
+    builder: (sheetCtx) => StatefulBuilder(
+      builder: (sheetCtx, setSheetState) {
+        void submit() {
+          final v = double.tryParse(ctrl.text.trim().replaceAll(',', '.'));
+          if (v == null) {
+            setSheetState(() {}); // 刷新 errorText 提示
+            return;
+          }
+          HapticFeedback.selectionClick();
+          s.setWeightDraft(v);
+          Navigator.pop(sheetCtx);
+        }
+
+        final invalid =
+            double.tryParse(ctrl.text.trim().replaceAll(',', '.')) == null;
+        return Padding(
+          padding: EdgeInsets.only(
+              bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('输入重量（kg）',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                const Text('正数 = 负重；0 = 自重；负数 = 辅助器械配重（如 -30）',
+                    style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true, signed: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(
+                        RegExp(r'^-?\d{0,3}(\.\d{0,2})?$')),
+                    LengthLimitingTextInputFormatter(7),
+                  ],
+                  onSubmitted: (_) => submit(),
+                  style: AppTheme.bigNum(30),
+                  decoration: InputDecoration(
+                    hintText: '如 62.5',
+                    errorText: invalid ? '请输入数字，如 62.5 或 -30' : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                BigButton(
+                  label: '确认',
+                  height: 64,
+                  onPressed: submit,
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(sheetCtx),
+                  child: const Text('取消',
+                      style: TextStyle(color: AppTheme.textDim)),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class _ActionPanel extends StatefulWidget {
   const _ActionPanel({
     super.key,
@@ -565,12 +642,25 @@ class _ActionPanelState extends State<_ActionPanel> {
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              GestureDetector(
-                onLongPress: () => s.setWeightDraft(0),
-                // 负值=辅助配重（辅30），0=自重，正值=常规负重（fmtLoad 统一口径）
-                child: Text(fmtLoad(s.weightDraft),
-                    style: AppTheme.bigNum(
-                        compact || s.weightDraft <= 0 ? 56 : 84)),
+              // Flexible+FittedBox：键盘可输任意值（999.5 / 辅 300），
+              // 数字放不下时等比缩小而不是溢出裁切；放得下保持原字号
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      showWeightInputSheet(context, s);
+                    },
+                    onLongPress: () => s.setWeightDraft(0),
+                    // 负值=辅助配重（辅30），0=自重，正值=常规负重（fmtLoad 统一口径）；
+                    // 点按弹数字键盘直输，长按清零（老入口保留）
+                    child: Text(fmtLoad(s.weightDraft),
+                        key: const ValueKey('weightDraftNum'),
+                        style: AppTheme.bigNum(
+                            compact || s.weightDraft <= 0 ? 56 : 84)),
+                  ),
+                ),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 6, bottom: 10),
@@ -585,7 +675,7 @@ class _ActionPanelState extends State<_ActionPanel> {
                 padding: const EdgeInsets.only(left: 12, bottom: 12),
                 child: Tooltip(
                   message: '自重/辅助动作点这里：在自重和上次重量间切换；'
-                      '辅助器械（引体向上等）用步进键把重量减到负值即为辅助配重',
+                      '点大数字可直接键入重量（负值 = 辅助器械配重，如 -30）',
                   child: GestureDetector(
                     onTap: () {
                       HapticFeedback.selectionClick();
@@ -877,6 +967,20 @@ class _RestViewState extends State<_RestView> {
                       ),
                       if (_weightOpen) ...[
                         const SizedBox(height: 10),
+                        // 键盘直输入口：步进微调之外的整段重量输入
+                        OutlinedButton(
+                          onPressed: () {
+                            HapticFeedback.selectionClick();
+                            showWeightInputSheet(context, s);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(48),
+                          ),
+                          child: const Text('直接输入重量',
+                              style: TextStyle(
+                                  fontSize: 15, fontWeight: FontWeight.w700)),
+                        ),
+                        const SizedBox(height: 6),
                         Row(children: [
                           for (final step in _steps)
                             WeightStepButton(
