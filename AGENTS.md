@@ -7,7 +7,7 @@
 
 - **无服务器**：全部功能手机本地运行，SQLite 本地存储、本地计算。
 - **联网只有三件事**：飞书日历读写（手机直连飞书开放接口）、AI 计划拆解（用户自配 OpenAI 兼容 API）、应用自更新检查（GitHub Releases：公开仓库免令牌；私有部署可配只读令牌。域名白名单仅 github.com / *.githubusercontent.com）。
-- 本期只出 Android APK；不写 iOS 特定代码路径（Flutter 跨端天然保留）。
+- 本期只出 Android APK；不写 iOS 特定代码路径（Flutter 跨端天然保留）。**iOS 由社区按根目录 `AI-BUILD-GUIDE.md` 自行适配**，该手册是写给用户手里的 AI 编程助手的操作指南（含编译/fork/iOS 适配/用户须知），改代码时如影响其准确性需同步更新。
 - lark-cli 只在开发期使用（配置飞书应用、验证），不进入 App 运行链路。
 
 ## 发布与应用内更新（2026-09 起）
