@@ -193,13 +193,26 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('恢复也是训练的一部分。看看本周计划：',
+            const Text('恢复也是训练的一部分。想加练或看看本周安排：',
                 style: TextStyle(color: AppTheme.textDim)),
             const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: () =>
-                  DefaultTabController.maybeOf(context)?.animateTo(1),
-              child: const Text('查看计划'),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () =>
+                        DefaultTabController.maybeOf(context)?.animateTo(1),
+                    child: const Text('查看计划'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _starting ? null : () => _pickExtraDay(context),
+                    child: const Text('今天加练'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -288,6 +301,58 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool _starting = false;
+
+  /// 休息日临时加练：弹出计划里有动作的训练日让用户挑一个开练。
+  Future<void> _pickExtraDay(BuildContext context) async {
+    final c = app(context);
+    final plan = c.planRepo.activePlan;
+    if (plan == null) return;
+    final days = await c.db.planDays(plan.id!);
+    final exByDay =
+        await c.db.daysExercisesMap(days.map((d) => d.id!).toList());
+    final trainable = [
+      for (final d in days)
+        if ((exByDay[d.id] ?? const <PlanExercise>[]).isNotEmpty) d,
+    ];
+    if (!context.mounted) return;
+    if (trainable.isEmpty) {
+      toast(context, '当前计划还没有编排动作，先去计划页添加');
+      return;
+    }
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          children: [
+            const Text('加练哪一天的内容？',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('加练按该日的完整动作清单开练，记录照常保存。',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            const SizedBox(height: 8),
+            for (final d in trainable)
+              ListTile(
+                leading: const Icon(Icons.fitness_center,
+                    color: AppTheme.primary),
+                title: Text(d.title),
+                subtitle: Text(
+                    '${(exByDay[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                    style: const TextStyle(fontSize: 12)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _start(context, d, exByDay[d.id!]!);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   /// 激活计划的未来训练日写入飞书日历（安装/导入计划后调用）。
   Future<void> _syncLarkDays(AppContainer c) async {
