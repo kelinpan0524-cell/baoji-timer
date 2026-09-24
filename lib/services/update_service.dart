@@ -18,7 +18,8 @@ class UpdateException implements Exception {
   String toString() => message;
 }
 
-/// 应用内自更新：查 GitHub Releases（私有仓库需令牌）→ 下载 APK → 调系统安装器。
+/// 应用内自更新：查 GitHub Releases（公开仓库免令牌；fork 到私有仓库自用时
+/// 可在设置里配只读令牌）→ 下载 APK → 调系统安装器。
 /// 联网范围仅限 https 的 GitHub 域名白名单；令牌只存手机本地，与 AI Key 同一存放策略。
 class UpdateService {
   UpdateService(this._settings, {http.Client? client})
@@ -31,7 +32,14 @@ class UpdateService {
   static const _timeout = Duration(seconds: 15);
   static const _channel = MethodChannel('baoji/updater');
 
-  bool get configured => _settings.ghUpdateToken.trim().isNotEmpty;
+  /// 带令牌的请求头；公开仓库匿名访问则不带 Authorization。
+  Map<String, String> _authHeaders(String accept) {
+    final token = _settings.ghUpdateToken.trim();
+    return {
+      'Accept': accept,
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+  }
 
   /// 当前安装的构建号（Android versionCode）。
   Future<int> installedBuildNumber() async {
@@ -40,20 +48,14 @@ class UpdateService {
   }
 
   /// 拉最新 Release；已是最新返回 null，有新版返回元数据。
+  /// 公开仓库匿名可查；私有仓库需在设置里配令牌（401 时提示重新生成）。
   Future<AppRelease?> checkLatest() async {
-    final token = _settings.ghUpdateToken.trim();
-    if (token.isEmpty) {
-      throw const UpdateException('未配置 GitHub 令牌，无法访问私有仓库的更新');
-    }
     final http.Response resp;
     try {
       resp = await _client
           .get(
             Uri.parse('https://api.github.com/repos/$_repo/releases/latest'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Accept': 'application/vnd.github+json',
-            },
+            headers: _authHeaders('application/vnd.github+json'),
           )
           .timeout(_timeout);
     } on TimeoutException {
@@ -88,17 +90,14 @@ class UpdateService {
   }
 
   /// 下载 APK 到应用缓存目录，返回文件路径。
-  /// 私仓下载走 Releases asset API（browser_download_url 带 token 恒 404）：
-  /// 第一跳 api.github.com 带令牌 302 到签名 CDN，第二跳不能再带令牌。
+  /// 走 Releases asset API（browser_download_url 带 token 恒 404）：
+  /// 第一跳 api.github.com（有令牌则带上）302 到签名 CDN，第二跳不能再带令牌。
   Future<String> downloadApk(AppRelease release,
       {void Function(int received, int total)? onProgress}) async {
-    final token = _settings.ghUpdateToken.trim();
-    if (token.isEmpty) throw const UpdateException('未配置 GitHub 令牌');
     final assetApiUrl =
         'https://api.github.com/repos/$_repo/releases/assets/${release.assetId}';
     final first = http.Request('GET', Uri.parse(assetApiUrl))
-      ..headers['Authorization'] = 'Bearer $token'
-      ..headers['Accept'] = 'application/octet-stream'
+      ..headers.addAll(_authHeaders('application/octet-stream'))
       ..followRedirects = false;
     final redirected = await _client.send(first).timeout(_timeout);
     var url = assetApiUrl;
