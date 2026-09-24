@@ -55,7 +55,7 @@
 
 1. 到 [Releases](https://github.com/kelinpan0524-cell/baoji-timer/releases) 下载最新 APK 安装（Android 8.0+）
 2. 装好即用：内置薄肌计划，不注册、不登录、不要权限
-3. 想要 App 内一键更新？见 [docs/update-setup.md](docs/update-setup.md)（约 3 分钟一次性配置）
+3. 想要 App 内一键更新？见 [docs/update-setup.md](docs/update-setup.md)（首次授权一次即可，无需令牌）
 
 ## 🔒 隐私设计
 

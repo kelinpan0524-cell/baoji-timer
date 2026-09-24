@@ -1,12 +1,12 @@
 # AGENTS.md — 薄肌训练计时器
 
-个人使用的 Flutter Android App：防分心的力量训练计时器与记录工具，围绕"薄肌计划"设计。
-PRD 见 `/Users/arono/Downloads/薄肌训练计时器_App_需求文档（PRD）.docx`（原始需求）。
+开源的 Flutter Android App：防分心的力量训练计时器与记录工具，围绕"薄肌计划"设计。
+（原始 PRD 为本地个人文档，不随仓库发布；仓库内文档即现状权威描述。）
 
 ## 形态约束（不要违背）
 
 - **无服务器**：全部功能手机本地运行，SQLite 本地存储、本地计算。
-- **联网只有三件事**：飞书日历读写（手机直连飞书开放接口）、AI 计划拆解（用户自配 OpenAI 兼容 API）、应用自更新检查（GitHub Releases，私仓只读令牌，域名白名单仅 github.com / *.githubusercontent.com）。
+- **联网只有三件事**：飞书日历读写（手机直连飞书开放接口）、AI 计划拆解（用户自配 OpenAI 兼容 API）、应用自更新检查（GitHub Releases：公开仓库免令牌；私有部署可配只读令牌。域名白名单仅 github.com / *.githubusercontent.com）。
 - 本期只出 Android APK；不写 iOS 特定代码路径（Flutter 跨端天然保留）。
 - lark-cli 只在开发期使用（配置飞书应用、验证），不进入 App 运行链路。
 
