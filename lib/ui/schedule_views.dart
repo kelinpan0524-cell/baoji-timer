@@ -198,13 +198,16 @@ class _ScheduleViewsState extends State<ScheduleViews> {
         else
           _dayList(cells, days: _mode == _Mode.d3 ? 3 : 7),
         const SizedBox(height: 4),
-        const Text('长按拖动可把某天的训练挪到别的日期；点日期管理当天安排。',
+        const Text('长按拖动挪训练：拖到空日子＝移动，拖到有训练的日子＝互换。点日期管理当天安排。',
             style: TextStyle(color: AppTheme.textDim, fontSize: 11)),
       ],
     );
   }
 
   int get _step => _mode == _Mode.d3 ? 3 : 7;
+
+  /// 「9月24日」式短日期，拖拽反馈文案用。
+  String _md(DateTime d) => '${d.month}月${d.day}日';
 
   String _windowLabel() {
     final s = _windowStart;
@@ -384,12 +387,58 @@ class _ScheduleViewsState extends State<ScheduleViews> {
       onWillAcceptWithDetails: (details) => details.data != d,
       onAcceptWithDetails: (details) async {
         HapticFeedback.selectionClick();
+        final from = details.data;
+        final messenger = ScaffoldMessenger.of(context);
         final c = app(context);
-        await c.planRepo.moveScheduleDay(widget.plan, details.data, d);
+        await c.planRepo.moveScheduleDay(widget.plan, from, d);
         widget.onChanged();
         await _reload();
+        // 放下后的肉眼确认：空目标＝移动，有训练的目标＝互换
+        final fromTitle = _cells?[fmtDate(from)]?.day?.title ?? '训练';
+        final msg = cell.day == null
+            ? '已移动：${_md(from)}「$fromTitle」→ ${_md(d)}（原日期改休息）'
+            : '已互换：${_md(from)}「$fromTitle」⇄ ${_md(d)}「${cell.day!.title}」';
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(
+            content: Text(msg),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: '撤销',
+              onPressed: () async {
+                messenger.hideCurrentSnackBar();
+                if (!mounted) return;
+                final c2 = app(context);
+                await c2.planRepo.moveScheduleDay(widget.plan, d, from);
+                widget.onChanged();
+                await _reload();
+              },
+            ),
+          ));
       },
-      builder: (ctx, cand, rej) => child,
+      // 悬停高亮：琥珀＝目标有训练（将互换），绿＝空日期（将移动）。
+      // 用 Stack 叠边框而不是改格子本体，避免影响原有布局尺寸。
+      builder: (ctx, cand, _) {
+        final hovering = cand.isNotEmpty;
+        final hl = cell.day != null ? AppTheme.warn : AppTheme.primary;
+        return Stack(children: [
+          child,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: hovering ? hl.withValues(alpha: 0.10) : null,
+                  border:
+                      Border.all(color: hovering ? hl : Colors.transparent, width: 2),
+                ),
+              ),
+            ),
+          ),
+        ]);
+      },
     );
     if (cell.day != null) {
       w = LongPressDraggable<DateTime>(
