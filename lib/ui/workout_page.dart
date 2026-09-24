@@ -567,7 +567,8 @@ class _ActionPanelState extends State<_ActionPanel> {
             children: [
               GestureDetector(
                 onLongPress: () => s.setWeightDraft(0),
-                child: Text(s.weightDraft <= 0 ? '自重' : fmtKg(s.weightDraft),
+                // 负值=辅助配重（辅30），0=自重，正值=常规负重（fmtLoad 统一口径）
+                child: Text(fmtLoad(s.weightDraft),
                     style: AppTheme.bigNum(
                         compact || s.weightDraft <= 0 ? 56 : 84)),
               ),
@@ -583,7 +584,8 @@ class _ActionPanelState extends State<_ActionPanel> {
               Padding(
                 padding: const EdgeInsets.only(left: 12, bottom: 12),
                 child: Tooltip(
-                  message: '自重动作点这里：在自重和上次重量间切换',
+                  message: '自重/辅助动作点这里：在自重和上次重量间切换；'
+                      '辅助器械（引体向上等）用步进键把重量减到负值即为辅助配重',
                   child: GestureDetector(
                     onTap: () {
                       HapticFeedback.selectionClick();
@@ -593,16 +595,16 @@ class _ActionPanelState extends State<_ActionPanel> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: s.weightDraft <= 0
+                        color: s.weightDraft == 0
                             ? AppTheme.accent
                             : AppTheme.cardHi,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text('自重',
+                      child: Text(s.weightDraft == 0 ? '自重' : '自重?',
                           style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
-                              color: s.weightDraft <= 0
+                              color: s.weightDraft == 0
                                   ? const Color(0xFF06220F)
                                   : AppTheme.textDim)),
                     ),
@@ -811,7 +813,7 @@ class _RestViewState extends State<_RestView> {
     final plannedWorking = ex?.rule.workingSets ?? 0;
     final nextText = s.workingSetsDone >= plannedWorking
         ? (isLastEx ? '准备结束训练' : '下一个动作：${s.exercises[s.curExIdx + 1].name}')
-        : '下一组：${fmtWeight(s.weightDraft)}${s.weightDraft > 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）';
+        : '下一组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）';
 
     // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，
@@ -894,9 +896,11 @@ class _RestViewState extends State<_RestView> {
                         TextButton(
                           onPressed: () => s.toggleBodyweightDraft(),
                           child: Text(
-                              s.weightDraft <= 0
+                              s.weightDraft == 0
                                   ? '当前：自重'
-                                  : '改为自重',
+                                  : (s.weightDraft < 0
+                                      ? '当前：辅 ${fmtKg(-s.weightDraft)}（点切自重）'
+                                      : '改为自重'),
                               style: const TextStyle(
                                   color: AppTheme.textDim, fontSize: 13)),
                         ),
@@ -914,6 +918,7 @@ class _RestViewState extends State<_RestView> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // 组间/练满都常显：休息中觉得状态好就回刚完成的动作再来一组
                       if (s.extraSetExerciseName != null)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
@@ -929,7 +934,7 @@ class _RestViewState extends State<_RestView> {
                               icon: const Icon(Icons.replay,
                                   size: 18, color: AppTheme.primary),
                               label: Text(
-                                  '「${s.extraSetExerciseName}」加练一组',
+                                  '再来一组 · ${s.extraSetExerciseName}（继承上次重量）',
                                   style: const TextStyle(
                                       fontSize: 15,
                                       fontWeight: FontWeight.w700,
@@ -1126,67 +1131,73 @@ class _SummaryPage extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppTheme.bg,
       body: SafeArea(
-        child: ListView(
+        // 非惰性滚动（SingleChildScrollView）：总结页内容一页半以内，全部
+        // 构建没开销，且保证「收工」永远可被 find/ensureVisible 命中——
+        // ListView 惰性构建在大字号下会把按钮留出构建边界。
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          children: [
-            const SizedBox(height: 24),
-            const Text('训练完成 💪',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
-            const SizedBox(height: 8),
-            Text(title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textDim, fontSize: 16)),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                _statCell('总容量', fmtVolume(stats.volume)),
-                _statCell('正式组', '${stats.workingSets}'),
-                _statCell('动作数', '${stats.exercises.length}'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text('训练时长 $durationMin 分钟',
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: AppTheme.textDim)),
-            const SizedBox(height: 24),
-            if (prNames.isNotEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppTheme.warn.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Text('🏆 PR 突破：${prNames.join('、')}',
-                    style: const TextStyle(
-                        color: AppTheme.warn,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(height: 16),
-            ],
-            SectionCard(
-              title: '渐进建议（下次训练）',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 24),
+              const Text('训练完成 💪',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 8),
+              Text(title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 16)),
+              const SizedBox(height: 24),
+              Row(
                 children: [
-                  for (final v in verdicts)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child:
-                          Text('· $v', style: const TextStyle(fontSize: 15)),
-                    ),
+                  _statCell('总容量', fmtVolume(stats.volume)),
+                  _statCell('正式组', '${stats.workingSets}'),
+                  _statCell('动作数', '${stats.exercises.length}'),
                 ],
               ),
-            ),
-            const SizedBox(height: 24),
-            BigButton(
-              label: '收工',
-              height: 72,
-              onPressed: () =>
-                  Navigator.of(context).popUntil((r) => r.isFirst),
-            ),
-          ],
+              const SizedBox(height: 8),
+              Text('训练时长 $durationMin 分钟',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: AppTheme.textDim)),
+              const SizedBox(height: 24),
+              if (prNames.isNotEmpty) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warn.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text('🏆 PR 突破：${prNames.join('、')}',
+                      style: const TextStyle(
+                          color: AppTheme.warn,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
+                ),
+                const SizedBox(height: 16),
+              ],
+              SectionCard(
+                title: '渐进建议（下次训练）',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    for (final v in verdicts)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child:
+                            Text('· $v', style: const TextStyle(fontSize: 15)),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              BigButton(
+                label: '收工',
+                height: 72,
+                onPressed: () =>
+                    Navigator.of(context).popUntil((r) => r.isFirst),
+              ),
+            ],
+          ),
         ),
       ),
     );
