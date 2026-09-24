@@ -36,10 +36,13 @@ ProgressionVerdict evaluateProgression({
     return ProgressionVerdict(
         ProgressionAction.hold, 0, '本次无正式组记录，重量保持不变');
   }
-  // 只统计当前重量附近的正式组（重量波动 >5% 视为另一档）
+  // 只统计当前重量附近的正式组（重量波动 >5% 视为另一档）。
+  // 负重量（辅助配重）下 5% 容差同样取绝对值，否则阈值变负、
+  // 过滤恒为空 → 辅助器械动作永远判不出渐进。
   final near = ws
-      .where((s) => (s.weightKg - currentWeight).abs() <= currentWeight * 0.05)
-      .toList();
+      .where((s) =>
+          (s.weightKg - currentWeight).abs() <= currentWeight.abs() * 0.05)
+      .toList(growable: false);
   if (near.isEmpty) {
     return ProgressionVerdict(
         ProgressionAction.hold, 0, '本次重量与历史档位不同，重量保持不变');
@@ -52,13 +55,14 @@ ProgressionVerdict evaluateProgression({
 
   if (allReachedMax && lastSetRirOk) {
     return ProgressionVerdict(
-      ProgressionAction.increase,
-      rule.incrementKg,
-      '${near.length} 组全部达到 ${rule.repsMax} 次，末组余力 ${lastSet.rir} 次 → 下次加重 ${rule.incrementKg}kg',
+        ProgressionAction.increase,
+        rule.incrementKg,
+        '${near.length} 组全部达到 ${rule.repsMax} 次，末组余力 ${lastSet.rir} 次 → 下次加重 ${rule.incrementKg}kg',
     );
   }
   if (anyBelowMin) {
-    final cut = -_round05(currentWeight * 0.05);
+    // 减重方向对负重量同样成立：delta 为负 = 正重量更轻 / 辅助配重更多
+    final cut = -_round05(currentWeight.abs() * 0.05);
     return ProgressionVerdict(
       ProgressionAction.decrease,
       cut,
