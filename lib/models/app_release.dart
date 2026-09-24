@@ -10,13 +10,23 @@ class AppRelease {
     required this.title,
     required this.notes,
     required this.apkUrl,
+    required this.assetId,
     required this.apkSize,
   });
 
   final int buildNumber;
   final String title;
   final String notes;
+
+  /// APK 资产的浏览器下载页地址（github.com 域，仅供人打开；
+  /// 程序下载必须走 asset API——私仓的 browser_download_url
+  /// 带 token 请求恒 404，GitHub 不在该域做 API 认证）。
   final String apkUrl;
+
+  /// APK 资产在 Releases API 里的 id：下载地址由
+  /// `https://api.github.com/repos/<repo>/releases/assets/<id>` 拼出，
+  /// 带令牌请求 302 到签名 CDN。
+  final int assetId;
   final int apkSize;
 
   /// 从 GitHub Releases API 的 release JSON 解析。
@@ -38,11 +48,16 @@ class AppRelease {
     if (apk == null) {
       throw const FormatException('release 里没有 APK 文件');
     }
+    final assetId = apk['id'] as int? ?? 0;
+    if (assetId <= 0) {
+      throw const FormatException('APK 资产缺少 id，无法构造下载地址');
+    }
     return AppRelease(
       buildNumber: int.parse(match.group(1)!),
       title: (json['name'] as String? ?? '').trim(),
       notes: (json['body'] as String? ?? '').trim(),
       apkUrl: apk['browser_download_url'] as String? ?? '',
+      assetId: assetId,
       apkSize: apk['size'] as int? ?? 0,
     );
   }

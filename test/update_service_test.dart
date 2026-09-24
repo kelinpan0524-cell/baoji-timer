@@ -17,6 +17,7 @@ void main() {
         };
 
     const apkAsset = {
+      'id': 987,
       'name': 'baoji-timer-b42.apk',
       'browser_download_url':
           'https://github.com/kelinpan0524-cell/baoji-timer/releases/download/b42/baoji-timer-b42.apk',
@@ -33,6 +34,21 @@ void main() {
       expect(rel.notes, contains('最近变更'));
       expect(rel.apkSize, 27000000);
       expect(rel.apkUrl, endsWith('baoji-timer-b42.apk'));
+      expect(rel.assetId, 987,
+          reason: '下载走 asset API（browser_download_url 私仓带 token 恒 404）');
+    });
+
+    test('APK 资产缺 id 抛 FormatException（无法构造下载地址）', () {
+      expect(
+        () => AppRelease.fromGithub(release(assets: [
+          {
+            'name': 'a.apk',
+            'browser_download_url': 'https://x/a.apk',
+            'size': 10,
+          },
+        ])),
+        throwsFormatException,
+      );
     });
 
     test('tag 不是 b<构建号> 抛 FormatException', () {
