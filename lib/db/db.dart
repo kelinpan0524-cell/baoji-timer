@@ -300,6 +300,14 @@ class Db {
     return rows.map(ExerciseMeta.fromMap).toList();
   }
 
+  /// 动作库行数（首启播种判断用）。
+  Future<int> exerciseMetaCount() async {
+    final db = await database;
+    final rows =
+        await db.rawQuery('SELECT COUNT(*) AS n FROM exercise_meta');
+    return (rows.first['n'] as num).toInt();
+  }
+
   Future<int> insertPlanExercise(PlanExercise ex) async =>
       (await database).insert('plan_exercises', ex.toMap());
 
@@ -427,6 +435,13 @@ class Db {
   // ---------- session exercises / sets ----------
   Future<int> insertSessionExercise(SessionExercise se) async =>
       (await database).insert('session_exercises', se.toMap());
+
+  /// 更新会话动作行（训练中替换动作：只换名字，规则/排序随行整体写回）。
+  Future<void> updateSessionExercise(SessionExercise se) async {
+    final db = await database;
+    await db.update('session_exercises', se.toMap(),
+        where: 'id = ?', whereArgs: [se.id]);
+  }
 
   Future<List<SessionExercise>> sessionExercises(int sessionId) async {
     final db = await database;
@@ -667,6 +682,52 @@ class Db {
         'sync_queue',
       ]) {
         await tx.delete(t);
+      }
+    });
+  }
+
+  /// 从导出的全量 JSON 恢复（先清空再写入，事务保证要么全成要么不动）。
+  /// 行按备份里的原 id 插入，训练/计划的外键关系原样保留；
+  /// lark_sync / sync_queue 不在备份里，清空后留空（下次同步自动重建）。
+  Future<void> restoreAll(Map<String, dynamic> data) async {
+    final db = await database;
+    await db.transaction((tx) async {
+      for (final t in [
+        'sets',
+        'session_exercises',
+        'sessions',
+        'plan_exercises',
+        'plan_days',
+        'plans',
+        'body_metrics',
+        'lark_sync',
+        'sync_queue',
+      ]) {
+        await tx.delete(t);
+      }
+      // 父表先插，满足外键约束；exercise_meta 主键冲突时以备份为准
+      for (final t in [
+        'plans',
+        'plan_days',
+        'plan_exercises',
+        'sessions',
+        'session_exercises',
+        'sets',
+        'body_metrics',
+        'exercise_meta',
+      ]) {
+        final rows = data[t];
+        if (rows is! List) continue;
+        for (final row in rows) {
+          if (row is! Map) continue;
+          await tx.insert(
+            t,
+            Map<String, Object?>.from(row),
+            conflictAlgorithm: t == 'exercise_meta'
+                ? ConflictAlgorithm.replace
+                : ConflictAlgorithm.abort,
+          );
+        }
       }
     });
   }
