@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>baoji-timer banner</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width:1280px; height:640px; overflow:hidden; position:relative;
+    font-family:-apple-system,"PingFang SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+    background:#0E1116; display:flex; align-items:center;
+  }
+  .glow  { position:absolute; width:900px; height:900px; left:-220px; top:-320px;
+           background:radial-gradient(circle, rgba(74,222,128,.13) 0%, transparent 62%); }
+  .glow2 { position:absolute; width:760px; height:760px; right:-180px; bottom:-280px;
+           background:radial-gradient(circle, rgba(96,165,250,.10) 0%, transparent 62%); }
+  .wrap  { display:flex; align-items:center; gap:64px; padding:0 84px; width:100%; }
+  .icon  { width:212px; height:212px; border-radius:52px;
+           box-shadow:0 24px 64px rgba(74,222,128,.22), 0 0 0 1px rgba(255,255,255,.06); }
+  .mid   { flex:1; }
+  .kicker{ font-size:24px; color:#60A5FA; letter-spacing:6px; margin-bottom:14px; font-weight:600; }
+  .title { font-size:72px; font-weight:800; color:#E5E7EB; letter-spacing:2px; line-height:1.15; }
+  .title em { font-style:normal; color:#4ADE80; }
+  .tagline { margin-top:16px; font-size:28px; color:#9CA3AF; letter-spacing:1px; }
+  .pills { margin-top:38px; display:flex; gap:14px; flex-wrap:wrap; max-width:560px; }
+  .pill  { display:flex; align-items:center; gap:10px; padding:12px 22px; border-radius:999px;
+           background:#1A2028; border:1px solid #2A313C; color:#E5E7EB; font-size:23px; white-space:nowrap; }
+  .dot   { width:10px; height:10px; border-radius:50%; background:#4ADE80; flex:none; }
+  .dot.b { background:#60A5FA; }
+  .timer { margin-left:12px; text-align:right; flex:none; }
+  .t-label { font-size:23px; color:#9CA3AF; letter-spacing:4px; }
+  .t-num  { font-size:118px; font-weight:700; color:#4ADE80; line-height:1.05;
+            font-variant-numeric:tabular-nums; letter-spacing:3px;
+            text-shadow:0 0 44px rgba(74,222,128,.35); }
+  .t-sub  { font-size:23px; color:#60A5FA; margin-top:8px; }
+</style>
+</head>
+<body>
+  <div class="glow"></div><div class="glow2"></div>
+  <div class="wrap">
+    <img class="icon" src="icon.png" alt="">
+    <div class="mid">
+      <div class="kicker">BAOJI TIMER</div>
+      <div class="title">薄肌训练<br><em>计时器</em></div>
+      <div class="tagline">防分心 · 会记录 · 懂渐进超负荷</div>
+      <div class="pills">
+        <span class="pill"><span class="dot"></span>组间自动倒计时</span>
+        <span class="pill"><span class="dot"></span>渐进超负荷引擎</span>
+        <span class="pill"><span class="dot b"></span>容量 / 1RM 图表</span>
+        <span class="pill"><span class="dot b"></span>AI 计划拆解</span>
+        <span class="pill"><span class="dot"></span>数据 100% 本地</span>
+      </div>
+    </div>
+    <div class="timer">
+      <div class="t-label">组间休息</div>
+      <div class="t-num">02:47</div>
+      <div class="t-sub">下一组　卧推 62.5kg × 8</div>
+    </div>
+  </div>
+</body>
+</html>
