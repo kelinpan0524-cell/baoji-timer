@@ -182,17 +182,30 @@ class LarkService {
             body: body,
           )
           .timeout(const Duration(seconds: 20));
+      final patchData =
+          jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+      if (patchData['code'] != 0) {
+        // patch 失败常见原因：用户在飞书端把这条日程手动删了，本地映射成了死链。
+        // GET 探测确认：事件确实不存在 → 清掉死映射，用同一 body 重建（POST）；
+        // GET 抛网络异常则维持 throw → 入离线队列，下次再试。
+        final probe = await http.get(
+          Uri.parse(
+              '$_base/open-apis/calendar/v4/calendars/$cid/events/${exist.larkEventId}'),
+          headers: {'Authorization': 'Bearer $token'},
+        ).timeout(const Duration(seconds: 20));
+        final probeData =
+            jsonDecode(utf8.decode(probe.bodyBytes)) as Map<String, dynamic>;
+        if (probeData['code'] != 0) {
+          // exist 非空必然 planDayId 非空（映射按 planDayId 查的）
+          await _db.removeLarkSync('plan_day', planDayId!);
+          resp = await _postDayEvent(cid, token, body);
+        } else {
+          // 事件还在：真正的权限/参数问题，按原失败路径抛出入队
+          throw LarkException('${patchData['msg']}');
+        }
+      }
     } else {
-      resp = await http
-          .post(
-            Uri.parse('$_base/open-apis/calendar/v4/calendars/$cid/events'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json'
-            },
-            body: body,
-          )
-          .timeout(const Duration(seconds: 20));
+      resp = await _postDayEvent(cid, token, body);
     }
     final data = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
     if (data['code'] != 0) throw LarkException('${data['msg']}');
@@ -207,6 +220,20 @@ class LarkService {
         syncedAt: DateTime.now().millisecondsSinceEpoch,
       ));
     }
+  }
+
+  /// POST 新建日历事件（upsert 与"事件被手动删后重建"共用）。
+  Future<http.Response> _postDayEvent(String cid, String token, String body) {
+    return http
+        .post(
+          Uri.parse('$_base/open-apis/calendar/v4/calendars/$cid/events'),
+          headers: {
+            'Authorization': 'Bearer $token',
+            'Content-Type': 'application/json'
+          },
+          body: body,
+        )
+        .timeout(const Duration(seconds: 20));
   }
 
   /// 训练完成 → 回填摘要到当天事件描述（失败入队）。
@@ -255,7 +282,11 @@ class LarkService {
         break;
       }
     }
-    if (eventId == null) return;
+    if (eventId == null) {
+      // 找不到事件不能静默当成功：主路径要入队、离线行要保留重试，
+      // 等日程补写成功后摘要随之补上
+      throw const LarkException('当天未找到训练日程（可能尚未同步或被手动删除）');
+    }
     // 已回填过就跳过，避免重试时摘要重复追加
     if (prevDesc.contains(_doneMarker)) return;
     final newDesc = prevDesc.isEmpty
@@ -271,28 +302,42 @@ class LarkService {
     ).timeout(const Duration(seconds: 20));
   }
 
-  /// 删除某计划日对应的日历事件（切计划/删日时清未来日程）。
-  /// 尽力而为：失败静默忽略，本地同步记录仍然清除。
+  /// 删除某计划日对应的日历事件（切计划/删计划时撤下日程）。
+  /// ① 过去的日历事件是训练历史（带「—— 训练完成 ——」摘要回填），永不触碰：
+  ///    eventDate 与 fmtYmd 同为 YYYY-MM-DD，字符串比较即可。
+  /// ② 只有日历侧确认删掉（2xx 且 code==0）或事件本已不存在（404）才清本地映射；
+  ///    其余失败（网络异常/token 失效/权限拒绝）保留映射，交给下次同步或离线队列，
+  ///    不让事件变成 App 再也定位不到的孤儿。
   Future<void> removePlanDayEvent(int planDayId) async {
     final sync = await _db.larkSyncFor('plan_day', planDayId);
     if (sync == null) return;
+    if (sync.eventDate.compareTo(fmtYmd(DateTime.now())) < 0) return;
     try {
       final token = await ensureToken();
-      if (token == null) return;
+      if (token == null) return; // 凭证不可用：保留映射，等下次同步
       final cid = _settings.larkCalendarId.isNotEmpty
           ? _settings.larkCalendarId
           : await fetchPrimaryCalendar();
-      await http
+      final resp = await http
           .delete(
             Uri.parse(
                 '$_base/open-apis/calendar/v4/calendars/$cid/events/${sync.larkEventId}'),
             headers: {'Authorization': 'Bearer $token'},
           )
           .timeout(const Duration(seconds: 20));
+      final data =
+          jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
+      final deleted = (resp.statusCode >= 200 &&
+              resp.statusCode < 300 &&
+              data['code'] == 0) ||
+          resp.statusCode == 404; // 事件已被手动删：同样算清理完成
+      if (deleted) {
+        await _db.removeLarkSync('plan_day', planDayId);
+      }
+      // 其余失败（403 权限拒绝、网关错误页等）：保留映射，下次再试
     } catch (_) {
-      // 日历侧可能已手动删除/网络不可用：忽略
+      // 网络不可用/响应体异常：保留映射，交给下次同步或离线队列
     }
-    await _db.removeLarkSync('plan_day', planDayId);
   }
 
   /// 把激活计划的训练日写入未来 14 天的飞书日历（计划安装/导入后调用）。
@@ -318,7 +363,10 @@ class LarkService {
   }
 
   /// 启动/联网时补写离线队列。
-  /// 重试走 Raw 路径（失败不重新入队），失败项留在原队列行下次再试。
+  /// 重试走 Raw 路径（失败不重新入队）；失败行带自增 attempts 重新入队，
+  /// 超过上限的行放弃删除——避免"当天本不在计划内"之类注定失败的行永久空转。
+  static const maxRetryAttempts = 10;
+
   Future<int> retryPending() async {
     if (!configured) return 0;
     final pending = await _db.pendingSync();
@@ -344,7 +392,14 @@ class LarkService {
         await _db.removeSync(row['id'] as int);
         done++;
       } catch (_) {
-        // 仍失败，留在队列下次再试
+        // 仍失败：带 attempts 计数重新入队（插到队尾）；超上限的行放弃删除。
+        // 先 enqueue 再 removeSync：中途崩溃宁可留重复行也不丢操作。
+        final attempts = (payload['attempts'] as num?)?.toInt() ?? 0;
+        if (attempts < maxRetryAttempts) {
+          await _db.enqueueSync(
+              op, jsonEncode({...payload, 'attempts': attempts + 1}));
+        }
+        await _db.removeSync(row['id'] as int);
       }
     }
     return done;

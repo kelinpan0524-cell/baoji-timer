@@ -111,16 +111,20 @@ class PlanRepository extends ChangeNotifier {
   }
 
   /// 安装计划模板（三分化/五分化/功能性/居家…）。
-  /// 同名模板已存在则直接启用返回；否则建计划、写动作、可选激活。
-  Future<Plan> installTemplate(PlanTemplate template,
+  /// 查重带来源校验（对齐 installBaojiPlan）：只有同名**且同源（preset）**的模板
+  /// 已存在才算已安装；用户自建（manual）的同名计划不受影响。
+  /// 返回 (计划, 是否新建)——命中同名返回 (same, false)，新建返回 (plan, true)。
+  Future<(Plan, bool)> installTemplate(PlanTemplate template,
       {bool activate = true}) async {
     await seedExerciseLibrary();
     final existing = await _db.allPlans();
-    final same = existing.where((p) => p.name == template.name).firstOrNull;
+    final same = existing
+        .where((p) => p.source == template.source && p.name == template.name)
+        .firstOrNull;
     if (same != null) {
       if (activate) await _db.setActivePlan(same.id!);
       await reload(includeAll: true);
-      return same;
+      return (same, false);
     }
     final plan = await _db.insertPlan(Plan(
       name: template.name,
@@ -128,14 +132,19 @@ class PlanRepository extends ChangeNotifier {
       createdAt: fmtDate(DateTime.now()),
       isActive: 0,
     ));
-    for (final entry in template.byWeekday.entries) {
+    // 按星期升序编号：「第 N 练」是模板内第几个训练日，
+    // 非连练模板（如 1/3/5）不再出现序号=星期数的错误
+    var seq = 0;
+    final weekdays = template.byWeekday.keys.toList()..sort();
+    for (final weekday in weekdays) {
+      seq++;
       final dayId = await _db.insertPlanDay(PlanDay(
         planId: plan.id!,
-        weekday: entry.key,
-        title: _templateDayTitle(entry.key),
+        weekday: weekday,
+        title: _templateDayTitle(weekday, seq),
       ));
       var i = 0;
-      for (final pe in entry.value) {
+      for (final pe in template.byWeekday[weekday]!) {
         await _db.insertPlanExercise(
             pe.toPlanExercise(dayId, i++));
       }
@@ -144,19 +153,13 @@ class PlanRepository extends ChangeNotifier {
       await _db.setActivePlan(plan.id!);
     }
     await reload(includeAll: true);
-    return plan;
+    return (plan, true);
   }
 
-  /// 模板训练日标题（推/拉/腿…按模板日程生成友好名）。
-  String _templateDayTitle(int weekday) {
+  /// 模板训练日标题：'周X · 第 seq 练'（seq = 模板内第几个训练日，按星期升序）。
+  String _templateDayTitle(int weekday, int seq) {
     const wd = '一二三四五六日';
-    // 从模板第一个动作推断部位重点，简单起见用固定映射不够通用——
-    // 这里统一用"第 N 练"形式，用户可自行改标题。
-    var count = 0;
-    for (var i = 1; i <= weekday; i++) {
-      count++;
-    }
-    return '周${wd[weekday - 1]} · 第 $count 练';
+    return '周${wd[weekday - 1]} · 第 $seq 练';
   }
 
   /// 首次安装内置薄肌计划。已装过（同名 preset）则直接启用它，防双击装两份。
@@ -273,9 +276,8 @@ class PlanRepository extends ChangeNotifier {
         ));
       }
     }
-    for (final m in metaMap.values) {
-      await _db.upsertExerciseMeta(m);
-    }
+    // 注意：这里不做 metaMap 全量落库——词表外新动作已在上面逐条沉淀，
+    // 全量 REPLACE 会把用户在编辑器改过的肌群/器械标注静默重置回内置默认。
     if (activate) {
       await _db.setActivePlan(plan.id!);
     }

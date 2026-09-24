@@ -72,8 +72,15 @@ $planText
 ''';
   }
 
-  Future<String> _chat(String prompt) async {
-    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+  /// Base URL 协议校验（可见于测试）：返回给用户的错误文案，合法返回 null。
+  /// 缺 scheme（如 Ollama 官方写法 localhost:11434）单独提示——此时
+  /// Uri.tryParse 会把 'localhost' 当 scheme、host 为空，若直接走
+  /// "公网必须 https" 分支会误导用户加 https 前缀，反而连不上明文本地服务。
+  @visibleForTesting
+  static String? baseUrlSchemeError(String base) {
+    if (!base.contains('://')) {
+      return '地址缺少 http:// 或 https:// 前缀，请补全（局域网自建模型可用 http://）';
+    }
     if (!base.startsWith('https://')) {
       // 公网必须 https（Key 在请求头，明文会被中间人截获）；
       // 局域网/本机自建模型（Ollama、LM Studio 等）允许 http。
@@ -81,8 +88,17 @@ $planText
       final host = Uri.tryParse(base)?.host ?? '';
       final isPrivate = isLocalHost(host);
       if (!isPrivate) {
-        throw const AiException('公网地址必须 https://（局域网自建模型可用 http）');
+        return '公网地址必须 https://（局域网自建模型可用 http）';
       }
+    }
+    return null;
+  }
+
+  Future<String> _chat(String prompt) async {
+    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final schemeError = baseUrlSchemeError(base);
+    if (schemeError != null) {
+      throw AiException(schemeError);
     }
     final url = '$base/chat/completions';
     try {
@@ -173,6 +189,8 @@ $planText
 
   /// AI 输出集中清洗（可见于测试）：weekday 越界丢日、数字安全转换、
   /// sets/reps/rest 钳制、reps 倒挂交换、同 weekday 合并。
+  /// jsonDecode 与字段强转的异常统一归一为 AiException，
+  /// 让 UI 侧走中文友好文案而不是英文原始报错。
   @visibleForTesting
   List<AiDaySpec> parseResponse(String content) {
     var text = content.trim();
@@ -184,70 +202,103 @@ $planText
     if (start < 0 || end <= start) {
       throw const AiException('AI 返回格式无法解析，请重试或换模型');
     }
-    final list = jsonDecode(text.substring(start, end + 1)) as List;
-    final specs = <AiDaySpec>[];
-    final byWeekday = <int, int>{}; // weekday -> specs 下标（同日合并）
-    for (final item in list) {
-      final day = Map<String, dynamic>.from(item as Map);
-      final weekday = _asInt(day['weekday'], 0);
-      if (weekday < 1 || weekday > 7) continue; // 越界日丢弃
-      final title = (day['title'] as String?) ?? '训练日';
-      final exList = <AiExerciseSpec>[];
-      for (final raw in (day['exercises'] as List?) ?? []) {
-        final ex = Map<String, dynamic>.from(raw as Map);
-        final name = _normalizeName((ex['name'] as String?) ?? '');
-        if (name.isEmpty) continue;
-        var sets = _asInt(ex['sets'], 3).clamp(1, 20);
-        var repsMin = _asInt(ex['reps_min'], 5).clamp(1, 50);
-        var repsMax = _asInt(ex['reps_max'], 8).clamp(1, 50);
-        if (repsMin > repsMax) {
-          final t = repsMin;
-          repsMin = repsMax;
-          repsMax = t;
+    try {
+      final list = jsonDecode(text.substring(start, end + 1)) as List;
+      final specs = <AiDaySpec>[];
+      final byWeekday = <int, int>{}; // weekday -> specs 下标（同日合并）
+      for (final item in list) {
+        if (item is! Map) continue;
+        final day = Map<String, dynamic>.from(item);
+        final weekday = _asInt(day['weekday'], 0);
+        if (weekday < 1 || weekday > 7) continue; // 越界日丢弃
+        final rawTitle = day['title'];
+        final title = rawTitle is String ? rawTitle : '训练日';
+        final exList = <AiExerciseSpec>[];
+        final rawList = day['exercises'];
+        if (rawList is! List) continue;
+        for (final raw in rawList) {
+          if (raw is! Map) continue;
+          final ex = Map<String, dynamic>.from(raw);
+          final rawName = ex['name'];
+          final name = _normalizeName(rawName is String ? rawName : '');
+          if (name.isEmpty) continue;
+          var sets = _asInt(ex['sets'], 3).clamp(1, 20);
+          var repsMin = _asInt(ex['reps_min'], 5).clamp(1, 50);
+          var repsMax = _asInt(ex['reps_max'], 8).clamp(1, 50);
+          if (repsMin > repsMax) {
+            final t = repsMin;
+            repsMin = repsMax;
+            repsMax = t;
+          }
+          // 缺失或 0 都视为缺失：让 saveAiPlan 的 defaultRestSec
+          // 按用户休息偏好兜底，DB 不落 rest_sec=0 脏数据
+          final rs = _asInt(ex['rest_sec'], 0);
+          final rawKind = ex['kind'];
+          final rawMuscle = ex['main_muscle'];
+          exList.add(AiExerciseSpec(
+            name: name,
+            sets: sets,
+            repsMin: repsMin,
+            repsMax: repsMax,
+            restSec: rs <= 0 ? null : rs.clamp(0, 600),
+            kind: rawKind is String ? rawKind : null,
+            mainMuscle: rawMuscle is String ? rawMuscle : null,
+          ));
         }
-        exList.add(AiExerciseSpec(
-          name: name,
-          sets: sets,
-          repsMin: repsMin,
-          repsMax: repsMax,
-          restSec: _asInt(ex['rest_sec'], 0).clamp(0, 600),
-          kind: ex['kind'] as String?,
-          mainMuscle: ex['main_muscle'] as String?,
-        ));
+        if (exList.isEmpty) continue;
+        final existing = byWeekday[weekday];
+        if (existing == null) {
+          byWeekday[weekday] = specs.length;
+          specs.add(AiDaySpec(weekday, title, exList));
+        } else {
+          // 同 weekday 的两个训练日合并到一天（保持"一周一天"不变量）
+          final old = specs[existing];
+          specs[existing] = AiDaySpec(old.weekday, old.title, [
+            ...old.exercises,
+            ...exList,
+          ]);
+        }
       }
-      if (exList.isEmpty) continue;
-      final existing = byWeekday[weekday];
-      if (existing == null) {
-        byWeekday[weekday] = specs.length;
-        specs.add(AiDaySpec(weekday, title, exList));
-      } else {
-        // 同 weekday 的两个训练日合并到一天（保持"一周一天"不变量）
-        final old = specs[existing];
-        specs[existing] = AiDaySpec(old.weekday, old.title, [
-          ...old.exercises,
-          ...exList,
-        ]);
-      }
+      if (specs.isEmpty) throw const AiException('没有解析出任何训练日，请检查文本');
+      return specs;
+    } on AiException {
+      rethrow;
+    } catch (_) {
+      // jsonDecode 的 FormatException、字段强转的 TypeError 等
+      // 统一归一，避免英文原始报错透传到 UI
+      throw const AiException('AI 返回格式无法解析，请重试或换模型');
     }
-    if (specs.isEmpty) throw const AiException('没有解析出任何训练日，请检查文本');
-    return specs;
   }
 
-  /// 名称归一 + 内置词表模糊匹配（包含式，更长的词优先避免误命中）。
+  /// 名称归一 + 内置词表匹配：先精确匹配；模糊轮收集候选后取
+  /// 「与输入长度最接近」者，避免泛称被吸到最长变体。
+  /// 反向包含（词表名含输入）设 3 字门槛，挡住「卧推」「划船」这类
+  /// 泛称落成「上斜杠铃卧推（轻）」「弹力带坐姿划船」；无候选保留
+  /// 原名，走 exercise_meta 沉淀兜底。
   String _normalizeName(String raw) {
     final rawTrim = raw.trim();
     if (rawTrim.isEmpty) return rawTrim;
     for (final m in _sortedMeta) {
       if (m.name == rawTrim) return m.name;
     }
+    ExerciseMeta? best;
+    var bestDiff = -1;
     for (final m in _sortedMeta) {
       final core = m.name.replaceAll(RegExp(r'[（(].*[)）]'), '');
-      if (rawTrim.contains(core) || core.contains(rawTrim)) return m.name;
+      final hit = rawTrim.contains(core) ||
+          (core.contains(rawTrim) && rawTrim.length >= 3);
+      if (!hit) continue;
+      final diff = (core.length - rawTrim.length).abs();
+      if (best == null || diff < bestDiff) {
+        best = m;
+        bestDiff = diff;
+      }
     }
-    return rawTrim;
+    return best?.name ?? rawTrim;
   }
 
-  /// 名称越长越具体，优先匹配（"上斜杠铃卧推"不应命中"杠铃卧推"）。
+  /// 词表快照。长度降序仅影响同长度差的并列候选谁先命中
+  /// （更具体的变体优先）；「卧推」等短泛称不再因降序被吸成长变体。
   static final List<ExerciseMeta> _sortedMeta = [
     ...kExerciseLibrary.toList()..sort((a, b) => b.name.length.compareTo(a.name.length)),
   ];

@@ -86,11 +86,16 @@ class _PlanPageState extends State<PlanPage> {
                           '（${viewingActive ? '使用中' : '未启用'}）',
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.w700),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                      const Icon(Icons.expand_more,
-                          size: 20, color: AppTheme.textDim),
+                      const Icon(
+                        Icons.expand_more,
+                        size: 20,
+                        color: AppTheme.textDim,
+                      ),
                     ],
                   ),
                 ),
@@ -111,34 +116,49 @@ class _PlanPageState extends State<PlanPage> {
               itemBuilder: (_) => [
                 if (!viewingActive)
                   const PopupMenuItem(
-                      value: 'activate',
-                      child: Row(children: [
+                    value: 'activate',
+                    child: Row(
+                      children: [
                         Icon(Icons.play_circle_outline, size: 18),
                         SizedBox(width: 8),
                         Text('设为使用中'),
-                      ])),
+                      ],
+                    ),
+                  ),
                 const PopupMenuItem(
-                    value: 'rename',
-                    child: Row(children: [
+                  value: 'rename',
+                  child: Row(
+                    children: [
                       Icon(Icons.edit_outlined, size: 18),
                       SizedBox(width: 8),
                       Text('重命名'),
-                    ])),
+                    ],
+                  ),
+                ),
                 const PopupMenuItem(
-                    value: 'duplicate',
-                    child: Row(children: [
+                  value: 'duplicate',
+                  child: Row(
+                    children: [
                       Icon(Icons.copy_all_outlined, size: 18),
                       SizedBox(width: 8),
                       Text('复制一份'),
-                    ])),
+                    ],
+                  ),
+                ),
                 const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(children: [
-                      Icon(Icons.delete_outline,
-                          size: 18, color: AppTheme.danger),
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: AppTheme.danger,
+                      ),
                       SizedBox(width: 8),
                       Text('删除计划', style: TextStyle(color: AppTheme.danger)),
-                    ])),
+                    ],
+                  ),
+                ),
               ],
             ),
           ],
@@ -157,8 +177,9 @@ class _PlanPageState extends State<PlanPage> {
               borderRadius: BorderRadius.circular(10),
             ),
             child: const Text(
-                '此计划未启用：编辑不会影响今天的训练，设为使用中后才生效。',
-                style: TextStyle(color: AppTheme.warn, fontSize: 13)),
+              '此计划未启用：编辑不会影响今天的训练，设为使用中后才生效。',
+              style: TextStyle(color: AppTheme.warn, fontSize: 13),
+            ),
           ),
         ],
         const SizedBox(height: 8),
@@ -177,8 +198,10 @@ class _PlanPageState extends State<PlanPage> {
                   ? null
                   : () async {
                       final changed = await Navigator.of(context).push(
-                          MaterialPageRoute<bool>(
-                              builder: (_) => PlanEditorPage(day: day)));
+                        MaterialPageRoute<bool>(
+                          builder: (_) => PlanEditorPage(day: day),
+                        ),
+                      );
                       // 有修改才刷新；只同步「使用中」的计划（见 _syncLarkDays）
                       if (changed != true) return;
                       if (!context.mounted) return;
@@ -192,40 +215,52 @@ class _PlanPageState extends State<PlanPage> {
                   children: [
                     SizedBox(
                       width: 44,
-                      child: Text('周${'一二三四五六日'[i]}',
-                          style: TextStyle(
-                              color: isToday
-                                  ? AppTheme.primary
-                                  : AppTheme.textDim,
-                              fontWeight: FontWeight.w700)),
+                      child: Text(
+                        '周${'一二三四五六日'[i]}',
+                        style: TextStyle(
+                          color: isToday ? AppTheme.primary : AppTheme.textDim,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                     Expanded(
                       child: day == null
-                          ? const Text('休息',
-                              style: TextStyle(color: AppTheme.textDim))
+                          ? const Text(
+                              '休息',
+                              style: TextStyle(color: AppTheme.textDim),
+                            )
                           : Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: Text(day.title,
-                                          style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600)),
-                                    ),
-                                    Text('${exs.length} 个动作',
+                                      child: Text(
+                                        day.title,
                                         style: const TextStyle(
-                                            color: AppTheme.textDim,
-                                            fontSize: 12)),
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '${exs.length} 个动作',
+                                      style: const TextStyle(
+                                        color: AppTheme.textDim,
+                                        fontSize: 12,
+                                      ),
+                                    ),
                                   ],
                                 ),
                                 const SizedBox(height: 4),
                                 if (exs.isEmpty)
-                                  const Text('点此编排动作',
-                                      style: TextStyle(
-                                          color: AppTheme.accent,
-                                          fontSize: 13))
+                                  const Text(
+                                    '点此编排动作',
+                                    style: TextStyle(
+                                      color: AppTheme.accent,
+                                      fontSize: 13,
+                                    ),
+                                  )
                                 else
                                   Wrap(
                                     spacing: 6,
@@ -237,16 +272,20 @@ class _PlanPageState extends State<PlanPage> {
                                               ? exs[k].name
                                               : '${exs[k].name} ·',
                                           style: const TextStyle(
-                                              color: AppTheme.textDim,
-                                              fontSize: 13),
+                                            color: AppTheme.textDim,
+                                            fontSize: 13,
+                                          ),
                                         ),
                                     ],
                                   ),
                               ],
                             ),
                     ),
-                    const Icon(Icons.chevron_right,
-                        size: 18, color: AppTheme.textDim),
+                    const Icon(
+                      Icons.chevron_right,
+                      size: 18,
+                      color: AppTheme.textDim,
+                    ),
                   ],
                 ),
               ),
@@ -263,8 +302,9 @@ class _PlanPageState extends State<PlanPage> {
             backgroundColor: AppTheme.cardHi,
             foregroundColor: AppTheme.text,
             minimumSize: const Size.fromHeight(48),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         ),
         const SizedBox(height: 8),
@@ -290,8 +330,9 @@ class _PlanPageState extends State<PlanPage> {
         const SizedBox(height: 8),
         Center(
           child: TextButton.icon(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const ExerciseLibraryPage())),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const ExerciseLibraryPage()),
+            ),
             icon: const Icon(Icons.fitness_center, size: 16),
             label: const Text('浏览动作库（肌群 · 居家/健身房）'),
           ),
@@ -305,8 +346,10 @@ class _PlanPageState extends State<PlanPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('还没有计划',
-              style: TextStyle(fontSize: 18, color: AppTheme.textDim)),
+          const Text(
+            '还没有计划',
+            style: TextStyle(fontSize: 18, color: AppTheme.textDim),
+          ),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () async {
@@ -315,10 +358,13 @@ class _PlanPageState extends State<PlanPage> {
               await container.planRepo.installBaojiPlan();
               await _syncLarkDays(container);
               if (mounted) {
-                messenger.showSnackBar(const SnackBar(
+                messenger.showSnackBar(
+                  const SnackBar(
                     content: Text('薄肌计划已安装'),
                     backgroundColor: AppTheme.cardHi,
-                    behavior: SnackBarBehavior.floating));
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
                 await _refresh();
               }
             },
@@ -369,31 +415,41 @@ class _PlanPageState extends State<PlanPage> {
       context: context,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => SafeArea(
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            const Text('切换计划',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Text(
+              '切换计划',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 4),
-            const Text('点计划查看/编辑；「使用中」的计划决定每天的训练安排。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            const Text(
+              '点计划查看/编辑；「使用中」的计划决定每天的训练安排。',
+              style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+            ),
             const SizedBox(height: 8),
             for (final p in plans)
               ListTile(
                 leading: p.id == c.planRepo.activePlan?.id
                     ? const Icon(Icons.check_circle, color: AppTheme.primary)
-                    : const Icon(Icons.radio_button_unchecked,
-                        color: AppTheme.textDim),
+                    : const Icon(
+                        Icons.radio_button_unchecked,
+                        color: AppTheme.textDim,
+                      ),
                 title: Text(p.name),
                 subtitle: Text(
-                    '${dayCounts[p.id] ?? 0} 个训练日 · ${exCounts[p.id] ?? 0} 个动作',
-                    style: const TextStyle(fontSize: 12)),
+                  '${dayCounts[p.id] ?? 0} 个训练日 · ${exCounts[p.id] ?? 0} 个动作',
+                  style: const TextStyle(fontSize: 12),
+                ),
                 trailing: p.id == _view?.id
-                    ? const Text('查看中',
-                        style: TextStyle(color: AppTheme.accent, fontSize: 12))
+                    ? const Text(
+                        '查看中',
+                        style: TextStyle(color: AppTheme.accent, fontSize: 12),
+                      )
                     : null,
                 onTap: () {
                   Navigator.pop(ctx);
@@ -407,18 +463,34 @@ class _PlanPageState extends State<PlanPage> {
     );
   }
 
+  /// 「撤旧 + 写新」唯一入口：更换使用中计划的全部路径（切换/安装/保存）都走这里。
+  /// 先记下旧使用中计划的训练日 → 执行 action（action 内须完成切换并 reload，
+  /// 使 activePlan 已指向新计划）→ 撤下旧计划的日历日程 → 把新使用中计划写上日历。
+  Future<T> _switchActivePlanAndSync<T>(
+    AppContainer c,
+    Future<T> Function() action,
+  ) async {
+    final oldId = c.planRepo.activePlan?.id;
+    final oldDayIds = oldId == null
+        ? <int>[]
+        : (await c.db.planDays(oldId)).map((d) => d.id!).toList();
+    final result = await action();
+    unawaited(_removeOldEvents(oldDayIds));
+    await _syncLarkDays(c);
+    return result;
+  }
+
   Future<void> _activateViewed() async {
     final c = app(context);
     if (_view == null) return;
-    // 原启用计划的未来日程从日历撤下，新计划日程写入
-    final oldDays = await c.db.planDays(c.planRepo.activePlan?.id ?? 0);
-    await c.db.setActivePlan(_view!.id!);
-    await c.planRepo.reload(includeAll: true);
-    unawaited(_removeOldEvents(oldDays.map((d) => d.id!).toList()));
-    await _syncLarkDays(c);
+    final view = _view!;
+    await _switchActivePlanAndSync(c, () async {
+      await c.db.setActivePlan(view.id!);
+      await c.planRepo.reload(includeAll: true);
+    });
     if (mounted) {
-      toast(context, '已设为使用中「${_view!.name}」');
-      await _refresh(view: _view);
+      toast(context, '已设为使用中「${view.name}」');
+      await _refresh(view: view);
     }
   }
 
@@ -440,13 +512,13 @@ class _PlanPageState extends State<PlanPage> {
         content: TextField(controller: ctrl, autofocus: true),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child:
-                  const Text('取消', style: TextStyle(color: AppTheme.textDim))),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child:
-                  const Text('保存', style: TextStyle(color: AppTheme.primary))),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('保存', style: TextStyle(color: AppTheme.primary)),
+          ),
         ],
       ),
     );
@@ -460,8 +532,10 @@ class _PlanPageState extends State<PlanPage> {
   Future<void> _duplicatePlan() async {
     if (_view == null) return;
     final c = app(context);
-    final newId =
-        await c.planRepo.duplicatePlan(_view!.id!, '${_view!.name}（副本）');
+    final newId = await c.planRepo.duplicatePlan(
+      _view!.id!,
+      '${_view!.name}（副本）',
+    );
     final plans = await c.db.allPlans();
     final copy = plans.where((p) => p.id == newId).firstOrNull;
     await _refresh(view: copy);
@@ -472,9 +546,12 @@ class _PlanPageState extends State<PlanPage> {
     if (_view == null) return;
     final planId = _view!.id!;
     final planName = _view!.name;
-    final ok = await confirmDialog(context, '删除「$planName」？',
-        '计划的全部训练日和动作将被删除；历史训练记录保留。此操作无法撤销。',
-        okLabel: '删除');
+    final ok = await confirmDialog(
+      context,
+      '删除「$planName」？',
+      '计划的全部训练日和动作将被删除；历史训练记录保留。此操作无法撤销。',
+      okLabel: '删除',
+    );
     if (!ok || !mounted) return;
     final c = app(context);
     final dayIds = (await c.db.planDays(planId)).map((d) => d.id!).toList();
@@ -483,6 +560,10 @@ class _PlanPageState extends State<PlanPage> {
     unawaited(_removeOldEvents(dayIds));
     _view = null;
     await _refresh();
+    // 删除后自动顶上的新使用中计划，把它的日程补写上日历
+    if (c.planRepo.activePlan != null) {
+      await _syncLarkDays(c);
+    }
     if (mounted) toast(context, '已删除');
   }
 
@@ -496,35 +577,40 @@ class _PlanPageState extends State<PlanPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('创建后可自行编排每周训练日与动作。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            const Text(
+              '创建后可自行编排每周训练日与动作。',
+              style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
             const SizedBox(height: 12),
             TextField(controller: ctrl, autofocus: true),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child:
-                  const Text('取消', style: TextStyle(color: AppTheme.textDim))),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child:
-                  const Text('创建', style: TextStyle(color: AppTheme.primary))),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('创建', style: TextStyle(color: AppTheme.primary)),
+          ),
         ],
       ),
     );
     if (name == null || !mounted || name.isEmpty) return;
     final c = app(context);
-    final plan = await c.db.insertPlan(Plan(
-      name: name,
-      source: 'manual',
-      createdAt: fmtDate(DateTime.now()),
-      isActive: 0,
-    ));
+    final plan = await c.db.insertPlan(
+      Plan(
+        name: name,
+        source: 'manual',
+        createdAt: fmtDate(DateTime.now()),
+        isActive: 0,
+      ),
+    );
     for (var wd = 1; wd <= 7; wd++) {
-      await c.db
-          .insertPlanDay(PlanDay(planId: plan.id!, weekday: wd, title: '训练日'));
+      await c.db.insertPlanDay(
+        PlanDay(planId: plan.id!, weekday: wd, title: '训练日'),
+      );
     }
     final created =
         (await c.db.allPlans()).where((p) => p.id == plan.id).firstOrNull;
@@ -541,7 +627,8 @@ class _PlanPageState extends State<PlanPage> {
       backgroundColor: AppTheme.card,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.7,
@@ -549,34 +636,51 @@ class _PlanPageState extends State<PlanPage> {
           controller: scroll,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            const Text('选择计划模板',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const Text(
+              '选择计划模板',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(height: 4),
-            const Text('安装后可逐日修改动作与组数；同模板重复安装不会重复建。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            const Text(
+              '安装后可逐日修改动作与组数；同模板重复安装不会重复建。',
+              style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+            ),
             const SizedBox(height: 12),
-            _templateCard(ctx,
-                name: kBaojiPlanName,
-                intro: '每周三练（推/拉/腿），四大项渐进超负荷，为本 App 量身设计',
-                note: '适合按邵艾伦薄肌计划训练的人',
-                install: () async {
-                  await c.planRepo.installBaojiPlan();
-                }),
+            _templateCard(
+              ctx,
+              name: kBaojiPlanName,
+              intro: '每周三练（推/拉/腿），四大项渐进超负荷，为本 App 量身设计',
+              note: '适合按邵艾伦薄肌计划训练的人',
+              install: () async {
+                final plan = await _switchActivePlanAndSync(
+                  c,
+                  () => c.planRepo.installBaojiPlan(),
+                );
+                return '已安装并设为使用中「${plan.name}」，可在编辑器微调';
+              },
+            ),
             for (final t in kPlanTemplates)
-              _templateCard(ctx,
-                  name: t.name,
-                  intro: t.intro,
-                  note: t.note,
-                  install: () async {
-                    await c.planRepo.installTemplate(t);
-                  }),
+              _templateCard(
+                ctx,
+                name: t.name,
+                intro: t.intro,
+                note: t.note,
+                install: () async {
+                  final (plan, created) = await _switchActivePlanAndSync(
+                    c,
+                    () => c.planRepo.installTemplate(t),
+                  );
+                  return created
+                      ? '已安装并设为使用中「${plan.name}」，可在编辑器微调'
+                      : '已存在同名模板计划，已设为使用中（未重复安装）';
+                },
+              ),
           ],
         ),
       ),
     );
     if (mounted) {
       await _refresh(view: null);
-      if (mounted) await _syncLarkDays(app(context));
     }
   }
 
@@ -585,7 +689,7 @@ class _PlanPageState extends State<PlanPage> {
     required String name,
     required String intro,
     required String note,
-    required Future<void> Function() install,
+    required Future<String> Function() install, // 返回 SnackBar 文案
   }) {
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 5),
@@ -594,34 +698,46 @@ class _PlanPageState extends State<PlanPage> {
         onTap: () async {
           final navigator = Navigator.of(ctx);
           final messenger = ScaffoldMessenger.of(ctx);
-          await install();
+          final message = await install();
           navigator.pop();
-          messenger.showSnackBar(SnackBar(
-            content: Text('已安装并设为使用中「$name」，可在编辑器微调'),
-            backgroundColor: AppTheme.cardHi,
-            behavior: SnackBarBehavior.floating,
-          ));
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: AppTheme.cardHi,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
         },
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
-                Expanded(
-                  child: Text(name,
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      name,
                       style: const TextStyle(
-                          fontSize: 16, fontWeight: FontWeight.w700)),
-                ),
-                const Icon(Icons.add_circle_outline,
-                    size: 20, color: AppTheme.primary),
-              ]),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.add_circle_outline,
+                    size: 20,
+                    color: AppTheme.primary,
+                  ),
+                ],
+              ),
               const SizedBox(height: 6),
               Text(intro, style: const TextStyle(fontSize: 13)),
               const SizedBox(height: 4),
-              Text('适合：$note',
-                  style: const TextStyle(
-                      color: AppTheme.textDim, fontSize: 12)),
+              Text(
+                '适合：$note',
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -640,70 +756,80 @@ class _PlanPageState extends State<PlanPage> {
       isScrollControlled: true,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) => Padding(
           padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 16,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('AI 计划',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 10),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('原文导入')),
-                  ButtonSegment(value: true, label: Text('描述生成')),
-                ],
-                selected: {genMode},
-                onSelectionChanged: (s) => setSheet(() => genMode = s.first),
-                showSelectedIcon: false,
-                style: ButtonStyle(
-                  backgroundColor: WidgetStateProperty.resolveWith(
+            left: 16,
+            right: 16,
+            top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'AI 计划',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: false, label: Text('原文导入')),
+                    ButtonSegment(value: true, label: Text('描述生成')),
+                  ],
+                  selected: {genMode},
+                  onSelectionChanged: (s) => setSheet(() => genMode = s.first),
+                  showSelectedIcon: false,
+                  style: ButtonStyle(
+                    backgroundColor: WidgetStateProperty.resolveWith(
                       (st) => st.contains(WidgetState.selected)
                           ? AppTheme.primary
-                          : AppTheme.cardHi),
-                  foregroundColor: WidgetStateProperty.resolveWith(
+                          : AppTheme.cardHi,
+                    ),
+                    foregroundColor: WidgetStateProperty.resolveWith(
                       (st) => st.contains(WidgetState.selected)
                           ? const Color(0xFF06220F)
-                          : AppTheme.textDim),
-                  side: const WidgetStatePropertyAll(
-                      BorderSide(color: Colors.transparent)),
+                          : AppTheme.textDim,
+                    ),
+                    side: const WidgetStatePropertyAll(
+                      BorderSide(color: Colors.transparent),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                genMode
-                    ? '用大白话描述你想要什么，AI 直接设计计划。例："每周四练，练背、胸、腿，增肌，家里只有哑铃"。'
-                    : '粘贴现成计划原文（如"周一 卧推 3×5-8 …"），AI 逐字转成结构化计划。',
-                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: ctrl,
-                maxLines: genMode ? 4 : 8,
-                decoration: InputDecoration(
-                    hintText: genMode
-                        ? '描述你的目标、频率、部位、器械…'
-                        : '在此粘贴计划原文…'),
-              ),
-              const SizedBox(height: 12),
-              if (!c.settings.aiConfigured)
-                const Text('尚未配置 AI 接口：请先到 设置 → AI 配置 填写。',
-                    style: TextStyle(color: AppTheme.warn)),
-              const SizedBox(height: 8),
-              FilledButton(
-                onPressed: ctrl.text.trim().isEmpty
-                    ? null
-                    : () => Navigator.pop(ctx, true),
-                child: Text(genMode ? '生成计划' : '开始拆解'),
-              ),
-            ],
+                const SizedBox(height: 8),
+                Text(
+                  genMode
+                      ? '用大白话描述你想要什么，AI 直接设计计划。例："每周四练，练背、胸、腿，增肌，家里只有哑铃"。'
+                      : '粘贴现成计划原文（如"周一 卧推 3×5-8 …"），AI 逐字转成结构化计划。',
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  maxLines: genMode ? 4 : 8,
+                  decoration: InputDecoration(
+                    hintText: genMode ? '描述你的目标、频率、部位、器械…' : '在此粘贴计划原文…',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (!c.settings.aiConfigured)
+                  const Text(
+                    '尚未配置 AI 接口：请先到 设置 → AI 配置 填写。',
+                    style: TextStyle(color: AppTheme.warn),
+                  ),
+                const SizedBox(height: 8),
+                FilledButton(
+                  onPressed: ctrl.text.trim().isEmpty
+                      ? null
+                      : () => Navigator.pop(ctx, true),
+                  child: Text(genMode ? '生成计划' : '开始拆解'),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -728,12 +854,12 @@ class _PlanPageState extends State<PlanPage> {
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 14),
-                  const Text('正在让 AI 处理计划…',
-                      style: TextStyle(fontSize: 15)),
+                  const Text('正在让 AI 处理计划…', style: TextStyle(fontSize: 15)),
                   const SizedBox(height: 4),
-                  Text('通常 10-30 秒，可关闭稍等',
-                      style: TextStyle(
-                          color: AppTheme.textDim, fontSize: 12)),
+                  Text(
+                    '通常 10-30 秒，可关闭稍等',
+                    style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -748,31 +874,34 @@ class _PlanPageState extends State<PlanPage> {
       if (nav.canPop()) nav.pop();
 
       if (genMode) {
-        // 生成模式：先预览，用户同意才保存
+        // 生成模式：先预览，用户同意才保存（撤旧+写新由 helper 统一处理）
         if (!mounted) return;
         final name = await _showPlanPreview(specs);
         if (name == null || !mounted) return;
-        final plan = await c.planRepo.saveAiPlan(
-          name: name.isEmpty ? 'AI 生成 ${fmtDate(DateTime.now())}' : name,
-          specs: specs,
-          metaMap: c.ai.metaMap(),
+        final plan = await _switchActivePlanAndSync(
+          c,
+          () => c.planRepo.saveAiPlan(
+            name: name.isEmpty ? 'AI 生成 ${fmtDate(DateTime.now())}' : name,
+            specs: specs,
+            metaMap: c.ai.metaMap(),
+          ),
         );
         await _refresh();
-        await _syncLarkDays(c);
         if (!mounted) return;
         toast(context, '已保存并设为使用中「${plan.name}」，点任意一天可微调');
       } else {
         // 原文导入：逐字转成计划直接保存
-        final plan = await c.planRepo.saveAiPlan(
-          name: 'AI 计划 ${fmtDate(DateTime.now())}',
-          specs: specs,
-          metaMap: c.ai.metaMap(),
+        final plan = await _switchActivePlanAndSync(
+          c,
+          () => c.planRepo.saveAiPlan(
+            name: 'AI 计划 ${fmtDate(DateTime.now())}',
+            specs: specs,
+            metaMap: c.ai.metaMap(),
+          ),
         );
         await _refresh();
-        await _syncLarkDays(c);
         if (!mounted) return;
-        toast(context,
-            '拆解完成：${specs.length} 个训练日，已设为使用中「${plan.name}」');
+        toast(context, '拆解完成：${specs.length} 个训练日，已设为使用中「${plan.name}」');
       }
     } on AiException catch (e) {
       if (nav.canPop()) nav.pop();
@@ -785,8 +914,9 @@ class _PlanPageState extends State<PlanPage> {
 
   /// 生成结果预览：用户看完点「保存为计划」才落库。返回计划名（放弃返回 null）。
   Future<String?> _showPlanPreview(List<AiDaySpec> specs) async {
-    final nameCtrl =
-        TextEditingController(text: 'AI 生成 ${fmtDate(DateTime.now())}');
+    final nameCtrl = TextEditingController(
+      text: 'AI 生成 ${fmtDate(DateTime.now())}',
+    );
     return showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -794,10 +924,10 @@ class _PlanPageState extends State<PlanPage> {
       enableDrag: false,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: SizedBox(
           height: MediaQuery.of(ctx).size.height * 0.82,
           child: Column(
@@ -807,9 +937,13 @@ class _PlanPageState extends State<PlanPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('计划预览（${specs.length} 个训练日）',
-                        style: const TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.w700)),
+                    Text(
+                      '计划预览（${specs.length} 个训练日）',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     TextField(
                       controller: nameCtrl,
@@ -827,19 +961,21 @@ class _PlanPageState extends State<PlanPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                              '周${'一二三四五六日'[spec.weekday - 1]} · ${spec.title}',
-                              style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppTheme.primary)),
+                            '周${'一二三四五六日'[spec.weekday - 1]} · ${spec.title}',
+                            style: const TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: AppTheme.primary,
+                            ),
+                          ),
                           const SizedBox(height: 4),
                           for (final ex in spec.exercises)
                             Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 2),
+                              padding: const EdgeInsets.symmetric(vertical: 2),
                               child: Text(
-                                  '· ${ex.name}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
-                                  style: const TextStyle(fontSize: 14)),
+                                '· ${ex.name}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
+                                style: const TextStyle(fontSize: 14),
+                              ),
                             ),
                           const SizedBox(height: 10),
                         ],
@@ -856,8 +992,10 @@ class _PlanPageState extends State<PlanPage> {
                         child: OutlinedButton(
                           onPressed: () async {
                             final ok = await confirmDialog(
-                                ctx, '丢弃刚生成的计划？',
-                                '放弃后需要重新让 AI 生成一遍。');
+                              ctx,
+                              '丢弃刚生成的计划？',
+                              '放弃后需要重新让 AI 生成一遍。',
+                            );
                             if (ok && ctx.mounted) Navigator.pop(ctx);
                           },
                           child: const Text('放弃'),

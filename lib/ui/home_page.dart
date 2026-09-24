@@ -265,20 +265,25 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _start(BuildContext context, PlanDay day, List<PlanExercise> exs) async {
+    if (_starting) return; // 双击第二击直接忽略（禁用态靠 setState 重建才真实生效）
     final c = app(context);
     if (c.session.hasActive) {
       // 已有进行中的会话：直接继续，防止双击产生孤儿会话
       await _openWorkout(context);
       return;
     }
-    _starting = true;
+    setState(() => _starting = true);
     try {
       await c.planRepo.refreshRecommendations(exs.map((e) => e.name));
       await c.session.startFromDay(day: day, planExercises: exs);
       if (!context.mounted) return;
       await _openWorkout(context);
     } finally {
-      _starting = false;
+      if (mounted) {
+        setState(() => _starting = false);
+      } else {
+        _starting = false;
+      }
     }
   }
 

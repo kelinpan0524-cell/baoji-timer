@@ -29,6 +29,24 @@ class FocusService {
   Future<bool> isUsageAccessGranted() async =>
       await _channel.invokeMethod<bool>('usageGranted') ?? false;
 
+  /// 勿扰访问的授权开关在系统专属设置页，openAppSettings 打不开它。
+  Future<void> openDndAccessSettings() async {
+    try {
+      await _channel.invokeMethod('openDndSettings');
+    } on PlatformException {
+      // 部分ROM无此设置页，忽略
+    }
+  }
+
+  /// 使用情况访问同上。
+  Future<void> openUsageAccessSettings() async {
+    try {
+      await _channel.invokeMethod('openUsageSettings');
+    } on PlatformException {
+      // 部分ROM无此设置页，忽略
+    }
+  }
+
   /// 最近 [seconds] 秒内是否用过列在 distractingApps 里的 App。
   /// 返回 (包名, 使用秒数)；没有则 null。
   Future<(String, int)?> recentDistractingApp({int seconds = 90}) async {
