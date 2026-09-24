@@ -63,13 +63,29 @@ class Plan {
   final String createdAt; // yyyy-MM-dd
   final int isActive; // 0/1
 
+  /// 排程模式：weekly=按星期（固定周几）；cycle=循环「练 N 休 M」。
+  final String pattern;
+
+  /// cycle 模式的推导锚点：从这天起第 0 天开始 练N休M（空 = 首次设置时写今天）。
+  final String patternStart;
+
+  /// cycle 模式参数：连练 N 天、休 M 天（如"隔两天休息一天"= 练2休1）。
+  final int cycleTrain;
+  final int cycleRest;
+
   const Plan({
     this.id,
     required this.name,
     required this.source,
     required this.createdAt,
     this.isActive = 1,
+    this.pattern = 'weekly',
+    this.patternStart = '',
+    this.cycleTrain = 0,
+    this.cycleRest = 0,
   });
+
+  bool get isCycle => pattern == 'cycle';
 
   Map<String, dynamic> toMap() => {
         if (id != null) 'id': id,
@@ -77,6 +93,10 @@ class Plan {
         'source': source,
         'created_at': createdAt,
         'is_active': isActive,
+        'pattern': pattern,
+        'pattern_start': patternStart,
+        'cycle_train': cycleTrain,
+        'cycle_rest': cycleRest,
       };
 
   factory Plan.fromMap(Map<String, dynamic> m) => Plan(
@@ -85,14 +105,31 @@ class Plan {
         source: (m['source'] as String?) ?? 'manual',
         createdAt: (m['created_at'] as String?) ?? '',
         isActive: (m['is_active'] as int?) ?? 0,
+        pattern: (m['pattern'] as String?) ?? 'weekly',
+        patternStart: (m['pattern_start'] as String?) ?? '',
+        cycleTrain: (m['cycle_train'] as num?)?.toInt() ?? 0,
+        cycleRest: (m['cycle_rest'] as num?)?.toInt() ?? 0,
       );
 
-  Plan copyWith({int? id, String? name, int? isActive}) => Plan(
+  Plan copyWith({
+    int? id,
+    String? name,
+    int? isActive,
+    String? pattern,
+    String? patternStart,
+    int? cycleTrain,
+    int? cycleRest,
+  }) =>
+      Plan(
         id: id ?? this.id,
         name: name ?? this.name,
         source: source,
         createdAt: createdAt,
         isActive: isActive ?? this.isActive,
+        pattern: pattern ?? this.pattern,
+        patternStart: patternStart ?? this.patternStart,
+        cycleTrain: cycleTrain ?? this.cycleTrain,
+        cycleRest: cycleRest ?? this.cycleRest,
       );
 }
 
@@ -125,6 +162,39 @@ class PlanDay {
         weekday: (m['weekday'] as num).toInt(),
         title: (m['title'] as String?) ?? '',
         notes: (m['notes'] as String?) ?? '',
+      );
+}
+
+/// 某具体日期的排程覆盖行：这天练 dayId 对应的模板日。
+/// dayId = null 表示"显式休息"（循环推导本该练，但用户手动挪走/清掉了）。
+/// 只在用户手动改期/添加/清空时写入——纯按星期或循环推导的日子不落行，
+/// 这样改模板/改循环参数后未手动动过的日子自动跟随新规则。
+class PlanScheduleEntry {
+  final int? id;
+  final int planId;
+  final String date; // yyyy-MM-dd
+  final int? dayId; // plan_days.id，null = 显式休息
+
+  const PlanScheduleEntry({
+    this.id,
+    required this.planId,
+    required this.date,
+    this.dayId,
+  });
+
+  Map<String, dynamic> toMap() => {
+        if (id != null) 'id': id,
+        'plan_id': planId,
+        'date': date,
+        'day_id': dayId,
+      };
+
+  factory PlanScheduleEntry.fromMap(Map<String, dynamic> m) =>
+      PlanScheduleEntry(
+        id: m['id'] as int?,
+        planId: (m['plan_id'] as num).toInt(),
+        date: (m['date'] as String?) ?? '',
+        dayId: m['day_id'] as int?,
       );
 }
 
@@ -270,6 +340,10 @@ class Session {
   final String status; // active | done | quit
   final String notes;
 
+  /// 休息/训练净时长（毫秒，结束時計入；老记录为 0）。
+  final int restMs;
+  final int activeMs;
+
   const Session({
     this.id,
     required this.date,
@@ -279,6 +353,8 @@ class Session {
     this.endedAt,
     required this.status,
     this.notes = '',
+    this.restMs = 0,
+    this.activeMs = 0,
   });
 
   Map<String, dynamic> toMap() => {
@@ -290,6 +366,8 @@ class Session {
         'ended_at': endedAt,
         'status': status,
         'notes': notes,
+        'rest_ms': restMs,
+        'active_ms': activeMs,
       };
 
   factory Session.fromMap(Map<String, dynamic> m) => Session(
@@ -301,6 +379,8 @@ class Session {
         endedAt: m['ended_at'] as int?,
         status: (m['status'] as String?) ?? 'active',
         notes: (m['notes'] as String?) ?? '',
+        restMs: (m['rest_ms'] as num?)?.toInt() ?? 0,
+        activeMs: (m['active_ms'] as num?)?.toInt() ?? 0,
       );
 
   /// 训练时长（分钟，不足 1 分钟按 1 分钟计）。

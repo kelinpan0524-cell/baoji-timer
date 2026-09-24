@@ -10,6 +10,7 @@ import '../services/ai_service.dart';
 import '../services/plan_repository.dart';
 import 'exercise_library_page.dart';
 import 'plan_editor_page.dart';
+import 'schedule_views.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -26,8 +27,6 @@ class _PlanPageState extends State<PlanPage> {
   bool _loading = true;
   List<Plan> _plans = [];
   Plan? _view; // 正在查看的计划（可为未启用计划）
-  List<PlanDay> _days = [];
-  Map<int, List<PlanExercise>> _exByDay = {};
 
   @override
   void initState() {
@@ -44,13 +43,7 @@ class _PlanPageState extends State<PlanPage> {
             ? c.planRepo.activePlan
             : _plans.where((p) => p.id == _view!.id).firstOrNull ??
                 c.planRepo.activePlan);
-    if (_view == null) {
-      _days = [];
-      _exByDay = {};
-    } else {
-      _days = await c.db.planDays(_view!.id!);
-      _exByDay = await c.db.daysExercisesMap(_days.map((d) => d.id!).toList());
-    }
+
     if (!mounted) return;
     setState(() => _loading = false);
   }
@@ -183,115 +176,39 @@ class _PlanPageState extends State<PlanPage> {
           ),
         ],
         const SizedBox(height: 8),
-        ...List.generate(7, (i) {
-          final wd = i + 1;
-          final day = _days.where((d) => d.weekday == wd).firstOrNull;
-          final exs = day == null
-              ? const <PlanExercise>[]
-              : (_exByDay[day.id] ?? const <PlanExercise>[]);
-          final isToday = DateTime.now().weekday == wd;
-          return Card(
-            margin: const EdgeInsets.symmetric(vertical: 5),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: day == null
-                  ? null
-                  : () async {
-                      final changed = await Navigator.of(context).push(
-                        MaterialPageRoute<bool>(
-                          builder: (_) => PlanEditorPage(day: day),
-                        ),
-                      );
-                      // 有修改才刷新；只同步「使用中」的计划（见 _syncLarkDays）
-                      if (changed != true) return;
-                      if (!context.mounted) return;
-                      final container = app(context);
-                      await _refresh();
-                      await _syncLarkDays(container);
-                    },
-              child: Padding(
-                padding: const EdgeInsets.all(14),
-                child: Row(
-                  children: [
-                    SizedBox(
-                      width: 44,
-                      child: Text(
-                        '周${'一二三四五六日'[i]}',
-                        style: TextStyle(
-                          color: isToday ? AppTheme.primary : AppTheme.textDim,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: day == null
-                          ? const Text(
-                              '休息',
-                              style: TextStyle(color: AppTheme.textDim),
-                            )
-                          : Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        day.title,
-                                        style: const TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                    Text(
-                                      '${exs.length} 个动作',
-                                      style: const TextStyle(
-                                        color: AppTheme.textDim,
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                if (exs.isEmpty)
-                                  const Text(
-                                    '点此编排动作',
-                                    style: TextStyle(
-                                      color: AppTheme.accent,
-                                      fontSize: 13,
-                                    ),
-                                  )
-                                else
-                                  Wrap(
-                                    spacing: 6,
-                                    runSpacing: 2,
-                                    children: [
-                                      for (var k = 0; k < exs.length; k++)
-                                        Text(
-                                          k == exs.length - 1
-                                              ? exs[k].name
-                                              : '${exs[k].name} ·',
-                                          style: const TextStyle(
-                                            color: AppTheme.textDim,
-                                            fontSize: 13,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                              ],
-                            ),
-                    ),
-                    const Icon(
-                      Icons.chevron_right,
-                      size: 18,
-                      color: AppTheme.textDim,
-                    ),
-                  ],
+        // 排程模式 + 模板日编辑（日期化的排程视图见下方 ScheduleViews）
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _showPatternSheet,
+                icon: const Icon(Icons.event_repeat, size: 18),
+                label: Text(
+                  _view?.isCycle == true
+                      ? '循环：练${_view!.cycleTrain}休${_view!.cycleRest}'
+                      : '按星期排程',
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ),
-          );
-        }),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _showTemplateDaysSheet,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                label: const Text('编辑模板日',
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        // 日期化排程：3日/周/月视图 + 拖拉改期（手动改动写覆盖行）
+        if (_view != null)
+          ScheduleViews(
+            plan: _view!,
+            onChanged: _onScheduleChanged,
+          ),
         const SizedBox(height: 8),
         // 添加计划三入口：模板（推荐）/ AI / 空白
         FilledButton.tonalIcon(
@@ -401,6 +318,197 @@ class _PlanPageState extends State<PlanPage> {
       default:
         return '自定义计划';
     }
+  }
+
+  // ================= 排程模式与模板日 =================
+
+  /// 排程视图改动后：刷新缓存并重同步飞书日历。
+  Future<void> _onScheduleChanged() async {
+    final container = app(context);
+    await _refresh();
+    await _syncLarkDays(container);
+  }
+
+  /// 切换排程模式：按星期（固定周几）/ 循环（练 N 休 M，如"隔两天休息一天"）。
+  /// 手动改期过的覆盖行保留，不受模式切换影响。
+  Future<void> _showPatternSheet() async {
+    final plan = _view;
+    if (plan == null || plan.id == null) return;
+    bool cycle = plan.isCycle;
+    int train = plan.cycleTrain > 0 ? plan.cycleTrain : 2;
+    int rest = plan.cycleRest > 0 ? plan.cycleRest : 1;
+    DateTime start = plan.patternStart.isNotEmpty
+        ? parseDate(plan.patternStart)
+        : DateTime.now();
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('排程方式',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text('改的是"没有手动调整过的日子"怎么排；已手动改期的日子保持不变。',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+              const SizedBox(height: 12),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: false, label: Text('按星期')),
+                  ButtonSegment(value: true, label: Text('循环练休')),
+                ],
+                selected: {cycle},
+                onSelectionChanged: (s) => setSheet(() => cycle = s.first),
+                showSelectedIcon: false,
+                style: ButtonStyle(
+                  backgroundColor: WidgetStateProperty.resolveWith((st) =>
+                      st.contains(WidgetState.selected)
+                          ? AppTheme.primary
+                          : AppTheme.cardHi),
+                  foregroundColor: WidgetStateProperty.resolveWith((st) =>
+                      st.contains(WidgetState.selected)
+                          ? const Color(0xFF06220F)
+                          : AppTheme.textDim),
+                  side: const WidgetStatePropertyAll(
+                      BorderSide(color: Colors.transparent)),
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (cycle) ...[
+                _numStepper('连练天数', train, 1, 7, setSheet, (v) => train = v),
+                _numStepper('休息天数', rest, 1, 7, setSheet, (v) => rest = v),
+                Text('循环示例：练 $train 休 $rest —— 从起始日开始每 ${train + rest} 天一轮。',
+                    style:
+                        const TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Text('起始日  ',
+                        style: TextStyle(color: AppTheme.textDim)),
+                    TextButton(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: ctx,
+                          initialDate: start,
+                          firstDate:
+                              DateTime.now().subtract(const Duration(days: 365)),
+                          lastDate:
+                              DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) setSheet(() => start = picked);
+                      },
+                      child: Text('${start.year}/${start.month}/${start.day}'),
+                    ),
+                  ],
+                ),
+              ] else
+                const Text(
+                    '按星期模式：训练跟固定周几走（编辑模板日里改）。日期视图里也可以临时把某天挪走。',
+                    style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('保存'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await app(context).planRepo.updateSchedulePattern(
+          planId: plan.id!,
+          pattern: cycle ? 'cycle' : 'weekly',
+          patternStart: cycle
+              ? (plan.patternStart.isNotEmpty ? plan.patternStart : fmtDate(start))
+              : plan.patternStart,
+          cycleTrain: train,
+          cycleRest: rest,
+        );
+    await _refresh();
+    if (mounted) {
+      toast(context,
+          cycle ? '已切为循环练$train休$rest' : '已切为按星期排程');
+    }
+  }
+
+  Widget _numStepper(String label, int value, int min, int max,
+      void Function(void Function()) setSheet, ValueChanged<int> on) {
+    return Row(
+      children: [
+        Expanded(child: Text(label)),
+        IconButton(
+          onPressed: value - 1 < min ? null : () => setSheet(() => on(value - 1)),
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
+        SizedBox(
+            width: 44,
+            child: Text('$value', textAlign: TextAlign.center)),
+        IconButton(
+          onPressed: value + 1 > max ? null : () => setSheet(() => on(value + 1)),
+          icon: const Icon(Icons.add_circle_outline),
+        ),
+      ],
+    );
+  }
+
+  /// 模板日编辑：星期是"模板槽位"，具体哪天练由排程（星期/循环/手动改期）决定。
+  Future<void> _showTemplateDaysSheet() async {
+    final plan = _view;
+    if (plan == null || plan.id == null) return;
+    final c = app(context);
+    final days = await c.db.planDays(plan.id!);
+    final exMap = await c.db.daysExercisesMap(days.map((d) => d.id!).toList());
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          children: [
+            const Text('模板日',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text(
+                '这里是计划的内容骨架；具体哪天练哪个由排程决定（按星期/循环/手动拖动）。',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            const SizedBox(height: 8),
+            for (final d in days)
+              ListTile(
+                leading: const Icon(Icons.fitness_center,
+                    color: AppTheme.primary),
+                title: Text(d.title),
+                subtitle: Text(
+                    '周${'一二三四五六日'[d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                    style: const TextStyle(fontSize: 12)),
+                trailing: const Icon(Icons.chevron_right, size: 18),
+                onTap: () async {
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  final changed = await Navigator.of(context).push(
+                    MaterialPageRoute<bool>(
+                        builder: (_) => PlanEditorPage(day: d)),
+                  );
+                  if (changed == true && mounted) {
+                    await _refresh();
+                  }
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ================= 计划级操作 =================
