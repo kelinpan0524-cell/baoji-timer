@@ -34,6 +34,23 @@ flutter build apk --release
 
 环境要求：Flutter 3.35+ / JDK 17 / Android SDK 35 / minSdk 26。
 
+## 自动出包与应用内更新（日常迭代流程）
+
+**电脑上**：改动合并到 main 后，GitHub Actions 自动跑检查 → 构建签名 APK → 发布为 GitHub Release（tag = `b<构建号>`，构建号即 App 的 versionCode，自动递增）。什么都不用做。
+
+**手机上（一次性配置，约 3 分钟）**：
+
+1. 生成只读令牌：GitHub 网页 → 右上头像 → Settings → Developer settings（最底）→ Personal access tokens → Fine-grained tokens → Generate new token：
+   - Repository access 选 **Only select repositories** → 勾选 `baoji-timer`
+   - Permissions → Repository permissions → **Contents: Read-only**
+   - 生成后复制令牌（只显示一次）
+2. 手机 App → 设置 → 最下方「应用更新」→ 粘贴令牌 → 检查更新
+3. 首次下载安装时，系统会要求授权"安装未知应用"（只此一次），按引导点「去系统授权」即可
+
+之后每次迭代：push 到 main → 等几分钟 CI 出包 → 打开 App（设置入口会亮红点）→ 设置页点「下载并安装」→ 原地升级，训练数据不丢。
+
+说明：CI 签名与本地构建一致（同一签名密钥，存 GitHub 机密），因此 CI 包和本地包可互相覆盖安装；本地直接 `flutter build apk --release` 的习惯不受影响。
+
 ## 飞书日历联动配置（一次性，约 10 分钟）
 
 App 运行时手机直连飞书，需要 3 个凭证（只存手机本地，不进仓库）：

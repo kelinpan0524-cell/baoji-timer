@@ -14,6 +14,7 @@ dependencies:
   path_provider: ^2.1.5
   shared_preferences: ^2.3.4
   intl: ^0.20.1
+  package_info_plus: ^8.0.0
   fl_chart: ^0.70.2
   flutter_svg: ^2.0.10
   wakelock_plus: ^1.2.10

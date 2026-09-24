@@ -10,16 +10,38 @@ import android.os.VibrationEffect
 import android.os.PowerManager
 import android.provider.Settings
 import android.app.usage.UsageStatsManager
+import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
 
 class MainActivity : FlutterActivity() {
     private val channelName = "baoji/focus"
+    private val updaterChannelName = "baoji/updater"
     private var dndFilterBeforeTraining: Int? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannelName)
+            .setMethodCallHandler { call, result ->
+                try {
+                    when (call.method) {
+                        "canRequestInstall" -> result.success(canRequestPackageInstalls())
+                        "openInstallPermissionSettings" -> {
+                            openInstallPermissionSettings()
+                            result.success(null)
+                        }
+                        "installApk" -> {
+                            installApk(call.argument<String>("path"))
+                            result.success(null)
+                        }
+                        else -> result.notImplemented()
+                    }
+                } catch (e: Exception) {
+                    result.error("NATIVE_ERROR", e.message, null)
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName)
             .setMethodCallHandler { call, result ->
                 try {
@@ -203,5 +225,40 @@ class MainActivity : FlutterActivity() {
             .map { it.activityInfo.packageName }
             .distinct()
             .sorted()
+    }
+
+    // ---- 应用内自更新安装 ----
+    private fun canRequestPackageInstalls(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O ||
+            packageManager.canRequestPackageInstalls()
+
+    private fun openInstallPermissionSettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !canRequestPackageInstalls()) {
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:$packageName"))
+                )
+            } catch (e: Exception) {
+                startActivity(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES))
+            }
+        }
+    }
+
+    /** 唤起系统安装器安装缓存目录里的 APK（Android 8+ 需先授权"安装未知应用"）。 */
+    private fun installApk(path: String?) {
+        if (path == null) return
+        val file = File(path)
+        if (!file.exists()) return
+        if (!canRequestPackageInstalls()) {
+            openInstallPermissionSettings()
+            return
+        }
+        val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        startActivity(intent)
     }
 }
