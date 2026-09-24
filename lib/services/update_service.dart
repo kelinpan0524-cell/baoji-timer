@@ -88,17 +88,20 @@ class UpdateService {
   }
 
   /// 下载 APK 到应用缓存目录，返回文件路径。
-  /// 私仓资产：带令牌请求后 GitHub 302 到签名 CDN，第二跳不能再带令牌。
+  /// 私仓下载走 Releases asset API（browser_download_url 带 token 恒 404）：
+  /// 第一跳 api.github.com 带令牌 302 到签名 CDN，第二跳不能再带令牌。
   Future<String> downloadApk(AppRelease release,
       {void Function(int received, int total)? onProgress}) async {
     final token = _settings.ghUpdateToken.trim();
     if (token.isEmpty) throw const UpdateException('未配置 GitHub 令牌');
-    final first = http.Request('GET', Uri.parse(release.apkUrl))
+    final assetApiUrl =
+        'https://api.github.com/repos/$_repo/releases/assets/${release.assetId}';
+    final first = http.Request('GET', Uri.parse(assetApiUrl))
       ..headers['Authorization'] = 'Bearer $token'
       ..headers['Accept'] = 'application/octet-stream'
       ..followRedirects = false;
     final redirected = await _client.send(first).timeout(_timeout);
-    var url = release.apkUrl;
+    var url = assetApiUrl;
     final status = redirected.statusCode;
     if (status == 301 || status == 302) {
       await redirected.stream.drain<void>();
