@@ -53,6 +53,25 @@ class ExportService {
     return const JsonEncoder.withIndent('  ').convert(all);
   }
 
+  /// 从全量 JSON 恢复（清空后写入）。返回恢复的训练次数；
+  /// 缺关键数据段时抛 FormatException，行损坏交给 Db.restoreAll 的事务兜底。
+  Future<int> restoreFromJson(Map<String, dynamic> data) async {
+    for (final k in const [
+      'plans',
+      'plan_days',
+      'plan_exercises',
+      'sessions',
+      'session_exercises',
+      'sets',
+    ]) {
+      if (data[k] is! List) {
+        throw FormatException('备份缺少必要数据段（$k）');
+      }
+    }
+    await _db.restoreAll(data);
+    return (data['sessions'] as List).length;
+  }
+
   /// AI 分析包：人类可读摘要 + 预制提示词 + 精简 JSON 数据。
   /// 目标：直接整段复制给任意大模型，即可获得训练分析与总结。
   Future<String> buildAiPack({int weeks = 8}) async {

@@ -95,34 +95,38 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                       final m = _filtered[i];
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 3),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(m.name,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => _showDetail(m),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(m.name,
+                                          style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600)),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '主练 ${m.muscles.main}'
+                                        '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.join('/')}'}'
+                                        ' · ${m.isCompound ? '复合' : '单关节'}',
                                         style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600)),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      '主练 ${m.muscles.main}'
-                                      '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.join('/')}'}'
-                                      ' · ${m.isCompound ? '复合' : '单关节'}',
-                                      style: const TextStyle(
-                                          color: AppTheme.textDim,
-                                          fontSize: 12),
-                                    ),
-                                  ],
+                                            color: AppTheme.textDim,
+                                            fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              _equipmentTag(m),
-                            ],
+                                _equipmentTag(m),
+                              ],
+                            ),
                           ),
                         ),
                       );
@@ -148,6 +152,122 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
       ),
       child: Text(m.equipmentLabel,
           style: TextStyle(fontSize: 11, color: color)),
+    );
+  }
+
+  /// 动作详情：元信息 + 历史最佳（1RM/最大重量）+ 最近几次训练记录。
+  Future<void> _showDetail(ExerciseMeta m) async {
+    final c = app(context);
+    final rows = await c.db.sessionRowsBetween(
+        '0000-01-01', fmtDate(DateTime.now()));
+    // 该动作按日期分组的正式组（同一 session 只取一次日期）
+    final byDate = <String, List<SetEntry>>{};
+    var curSid = -1;
+    var curDate = '';
+    double bestRm = 0, bestW = 0;
+    String bestRmDesc = '';
+    for (final r in rows) {
+      if ((r['name'] as String?) != m.name) continue;
+      final sid = (r['session_id'] as num).toInt();
+      if (sid != curSid) {
+        curSid = sid;
+        curDate = (r['date'] as String?) ?? '';
+      }
+      final w = (r['weight_kg'] as num?)?.toDouble();
+      final reps = (r['reps'] as num?)?.toInt();
+      if (w == null || reps == null) continue;
+      if (((r['kind'] as String?) ?? '') != SetKind.working) continue;
+      byDate.putIfAbsent(curDate, () => []).add(SetEntry(
+        sessionExerciseId: 0,
+        weightKg: w,
+        reps: reps,
+        rir: (r['rir'] as num?)?.toInt() ?? 2,
+        kind: SetKind.working,
+        doneAt: (r['done_at'] as num?)?.toInt() ?? 0,
+      ));
+      final rm = estimate1RM(w, reps);
+      if (rm > bestRm) {
+        bestRm = rm;
+        bestRmDesc = '${fmtKg(w)}kg × $reps 次';
+      }
+      if (w > bestW) bestW = w;
+    }
+    final dates = byDate.keys.toList()..sort((a, b) => b.compareTo(a));
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          children: [
+            Text(m.name,
+                style: const TextStyle(
+                    fontSize: 19, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              '主练 ${m.muscles.main}'
+              '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.join('/')}'}'
+              ' · ${m.isCompound ? '复合动作' : '单关节动作'} · ${m.equipmentLabel}',
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+            const SizedBox(height: 14),
+            if (dates.isEmpty)
+              const Text('还没练过这个动作——加进计划后，这里会显示历史最好成绩。',
+                  style: TextStyle(color: AppTheme.textDim))
+            else ...[
+              Row(children: [
+                _bestCell('估算 1RM', '${fmtKg(bestRm)}kg'),
+                _bestCell('最佳一组', bestRmDesc),
+                _bestCell('最大重量', '${fmtKg(bestW)}kg'),
+              ]),
+              const SizedBox(height: 14),
+              const Text('最近训练',
+                  style: TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              for (final d in dates.take(3))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Text(
+                    '$d：${byDate[d]!.map((x) => '${fmtKg(x.weightKg)}×${x.reps}').join('  ')}',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              if (dates.length > 3)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('共 ${dates.length} 次练过，更多见历史页',
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 12)),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _bestCell(String label, String value) {
+    return Expanded(
+      child: Column(
+        children: [
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(value,
+                style: TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    color: AppTheme.primary)),
+          ),
+          const SizedBox(height: 2),
+          Text(label,
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 12)),
+        ],
+      ),
     );
   }
 }
