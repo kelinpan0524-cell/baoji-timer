@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/db/db.dart';
 import 'package:baoji_timer/engine/engine.dart';
 import 'package:baoji_timer/services/export_service.dart';
+import 'package:baoji_timer/services/rest_cue.dart';
 import 'package:baoji_timer/services/session_controller.dart';
 import 'package:baoji_timer/services/settings.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,8 +27,9 @@ void main() {
       ..setUint8(1, 1)
       ..setUint8(2, 0);
     binding.defaultBinaryMessenger.setMockMessageHandler(
-        'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle',
-        (data) async => pigeonNullReply);
+      'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle',
+      (data) async => pigeonNullReply,
+    );
   });
 
   late Db db;
@@ -40,8 +42,7 @@ void main() {
     prefs = await SharedPreferences.getInstance();
     // 微秒时间戳唯一路径 = 每个测试独立数据库（ffi 对同路径会复用连接）
     final dir = await databaseFactory.getDatabasesPath();
-    final path =
-        '$dir/test_sess_${DateTime.now().microsecondsSinceEpoch}.db';
+    final path = '$dir/test_sess_${DateTime.now().microsecondsSinceEpoch}.db';
     rawDb = await databaseFactory.openDatabase(path);
     await Db.instance.createSchema(rawDb);
     db = Db.forTesting(rawDb);
@@ -62,19 +63,28 @@ void main() {
   }
 
   Future<PlanDay> makePlanDay(String title) async {
-    final plan = await db.insertPlan(Plan(
+    final plan = await db.insertPlan(
+      Plan(
         name: '测试计划-$title',
         source: 'manual',
         createdAt: '2026-09-24',
-        isActive: 1));
+        isActive: 1,
+      ),
+    );
     final dayId = await db.insertPlanDay(
-        PlanDay(planId: plan.id!, weekday: 3, title: title));
-    return PlanDay(
-        id: dayId, planId: plan.id!, weekday: 3, title: title);
+      PlanDay(planId: plan.id!, weekday: 3, title: title),
+    );
+    return PlanDay(id: dayId, planId: plan.id!, weekday: 3, title: title);
   }
 
-  Future<PlanExercise> addPlanEx(PlanDay day, String name, int order,
-      {int sets = 3, int restSec = 120, int workingSets = 3}) async {
+  Future<PlanExercise> addPlanEx(
+    PlanDay day,
+    String name,
+    int order, {
+    int sets = 3,
+    int restSec = 120,
+    int workingSets = 3,
+  }) async {
     final pe = PlanExercise(
       dayId: day.id!,
       name: name,
@@ -92,24 +102,33 @@ void main() {
 
   test('A1-1：跨动作回退撤销后计数收敛到 DB 真值，剩余组仍是 PR 则保留标记', () async {
     // 前置历史：深蹲 在一次 done 会话里推过 60kg（62.5 即历史新高）
-    final s0 = await db.insertSession(Session(
+    final s0 = await db.insertSession(
+      Session(
         date: '2026-09-01',
         planDayTitle: '旧训练',
         startedAt: 1,
         endedAt: 2,
-        status: 'done'));
-    final se0 = await db.insertSessionExercise(SessionExercise(
+        status: 'done',
+      ),
+    );
+    final se0 = await db.insertSessionExercise(
+      SessionExercise(
         sessionId: s0.id!,
         name: '深蹲',
         orderIdx: 0,
         kind: 'compound',
-        rule: const ProgressionRule(repsMin: 5, repsMax: 8, workingSets: 3)));
-    await db.insertSet(SetEntry(
+        rule: const ProgressionRule(repsMin: 5, repsMax: 8, workingSets: 3),
+      ),
+    );
+    await db.insertSet(
+      SetEntry(
         sessionExerciseId: se0,
         weightKg: 60,
         reps: 8,
         kind: SetKind.working,
-        doneAt: 1000));
+        doneAt: 1000,
+      ),
+    );
 
     final day = await makePlanDay('腿日');
     final a = await addPlanEx(day, '深蹲', 0, workingSets: 3);
@@ -122,8 +141,7 @@ void main() {
 
     // 记满 A 的 3 个正式组 → 自动推进到 B 并进入休息
     for (var i = 0; i < 3; i++) {
-      await c.completeSet(
-          weight: 62.5, reps: 8, rir: 2, kind: SetKind.working);
+      await c.completeSet(weight: 62.5, reps: 8, rir: 2, kind: SetKind.working);
     }
     expect(c.curExIdx, 1, reason: 'A 记满 3 组已推进到 B');
     expect(c.prHit, contains('深蹲'));
@@ -133,8 +151,7 @@ void main() {
     expect(c.workingSetsDone, 2, reason: '按剩余正式组重算，不再出现 -1');
     expect(c.curExIdx, 0, reason: '回退到动作 A');
     expect(c.currentSets.length, 2, reason: 'A 只剩 2 组');
-    expect(c.prHit, contains('深蹲'),
-        reason: '剩余两组 62.5 仍高于历史 60，PR 标记保留');
+    expect(c.prHit, contains('深蹲'), reason: '剩余两组 62.5 仍高于历史 60，PR 标记保留');
 
     // 继续撤销直到 A 一个正式组不剩：已无任何"历史新高"组 → 标记清除
     await c.undoLastSet();
@@ -142,16 +159,18 @@ void main() {
     await c.undoLastSet();
     expect(c.workingSetsDone, 0);
     expect(c.currentSets, isEmpty);
-    expect(c.prHit, isNot(contains('深蹲')),
-        reason: '剩余正式组全删后 PR 标记应清除');
+    expect(c.prHit, isNot(contains('深蹲')), reason: '剩余正式组全删后 PR 标记应清除');
   });
 
   test('A1-2：零动作 active 脏会话 restore 自动作废，不再锁死启动', () async {
-    await db.insertSession(Session(
+    await db.insertSession(
+      Session(
         date: '2026-09-24',
         planDayTitle: '脏会话',
         startedAt: 1,
-        status: 'active'));
+        status: 'active',
+      ),
+    );
     final dirty = await db.activeSession();
     expect(dirty, isNotNull);
 
@@ -176,29 +195,44 @@ void main() {
   });
 
   test('A5-2：historySets 超 2000 行时截掉最旧、保留最新且仍按时间升序', () async {
-    final s = await db.insertSession(Session(
+    final s = await db.insertSession(
+      Session(
         date: '2026-09-01',
         planDayTitle: 't',
         startedAt: 1,
         endedAt: 2,
-        status: 'done'));
-    final se = await db.insertSessionExercise(SessionExercise(
+        status: 'done',
+      ),
+    );
+    final se = await db.insertSessionExercise(
+      SessionExercise(
         sessionId: s.id!,
         name: '卧推',
         orderIdx: 0,
         kind: 'compound',
-        rule: const ProgressionRule(repsMin: 5, repsMax: 8)));
+        rule: const ProgressionRule(repsMin: 5, repsMax: 8),
+      ),
+    );
     const base = 1700000000000;
-    var latest = 0;
+    // 备数用单事务 batch：2001 次逐行 insertSet（每次 ffi isolate 往返）
+    // 在 CI runner 上会撞 30 秒单测超时；被超时打断的残留循环还会撞上
+    // tearDown 清库报外键错。被测对象是 historySets 的截断查询，不是
+    // 逐行插入路径，batch 备数不削弱断言。
+    final batch = rawDb.batch();
     for (var i = 0; i < 2001; i++) {
-      latest = base + i * 1000;
-      await db.insertSet(SetEntry(
+      batch.insert(
+        'sets',
+        SetEntry(
           sessionExerciseId: se,
           weightKg: 60,
           reps: 8,
           kind: SetKind.working,
-          doneAt: latest));
+          doneAt: base + i * 1000,
+        ).toMap(),
+      );
     }
+    await batch.commit(noResult: true);
+    final latest = base + 2000 * 1000;
 
     final list = await db.historySets('卧推');
     expect(list.length, 2000, reason: '封顶 2000 行');
@@ -207,8 +241,14 @@ void main() {
   });
 
   test('A5-3：exportAllJson 导出包含 exercise_meta', () async {
-    await db.upsertExerciseMeta(const ExerciseMeta(
-        '词表外动作', MuscleGroups(main: '胸', secondary: ['肩']), true, 'gym'));
+    await db.upsertExerciseMeta(
+      const ExerciseMeta(
+        '词表外动作',
+        MuscleGroups(main: '胸', secondary: ['肩']),
+        true,
+        'gym',
+      ),
+    );
 
     final data = await db.exportAllJson();
     expect(data.containsKey('exercise_meta'), isTrue);
@@ -245,8 +285,7 @@ void main() {
     final c = makeController();
     c.onRestAlarmChanged = (endAtMs) async => alarmCalls.add(endAtMs);
     await c.startFromDay(day: day, planExercises: [e]);
-    await c.completeSet(
-        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
     expect(c.phase, WorkoutPhase.resting);
     final endAfterStart = c.restEndAt;
     expect(alarmCalls.last, endAfterStart, reason: '开始休息即挂精确闹钟');
@@ -258,21 +297,32 @@ void main() {
     final remainingBefore = c.restRemainingMs.value;
     final prefsEndAtBefore = prefs.getInt('rest.endAt');
     c.extendRest(30);
-    expect(c.restRemainingMs.value, remainingBefore + 30000,
-        reason: '暂停态加时立即反映在剩余时间上');
-    expect(prefs.getInt('rest.endAt'), prefsEndAtBefore,
-        reason: '暂停态加时不写 prefs');
+    expect(
+      c.restRemainingMs.value,
+      remainingBefore + 30000,
+      reason: '暂停态加时立即反映在剩余时间上',
+    );
+    expect(
+      prefs.getInt('rest.endAt'),
+      prefsEndAtBefore,
+      reason: '暂停态加时不写 prefs',
+    );
     expect(c.restEndAt, endAfterStart, reason: '暂停态不改动 restEndAt');
 
     c.resumeRest();
     expect(c.isRestPaused, isFalse);
-    expect(c.restEndAt, greaterThan(endAfterStart),
-        reason: '继续后按冻结剩余+加时重算结束时刻');
+    expect(
+      c.restEndAt,
+      greaterThan(endAfterStart),
+      reason: '继续后按冻结剩余+加时重算结束时刻',
+    );
     expect(prefs.getInt('rest.endAt'), c.restEndAt);
     expect(alarmCalls.last, c.restEndAt, reason: '恢复时重挂闹钟到新时刻');
-    expect(c.restEndAt - DateTime.now().millisecondsSinceEpoch,
-        closeTo(remainingBefore + 30000, 2000),
-        reason: 'resume 保留暂停态加的 30 秒，不再被静默丢弃');
+    expect(
+      c.restEndAt - DateTime.now().millisecondsSinceEpoch,
+      closeTo(remainingBefore + 30000, 2000),
+      reason: 'resume 保留暂停态加的 30 秒，不再被静默丢弃',
+    );
 
     // 等 completeSet → _beginRestFor 的异步续体（预载下一动作上下文）跑完，
     // 避免它在 tearDown dispose 之后才 notifyListeners 报"used after dispose"。
@@ -288,20 +338,21 @@ void main() {
     await c.startFromDay(day: day, planExercises: [a, b]);
     // 推荐值是内置起始 20：手动加重后做一组
     c.setWeightDraft(62.5);
-    await c.completeSet(
-        weight: 62.5, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 62.5, reps: 8, rir: 2, kind: SetKind.working);
     expect(c.phase, WorkoutPhase.resting);
     await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect(c.weightDraft, 62.5,
-        reason: '同动作继续：手动调过的重量不被推荐值冲掉');
+    expect(c.weightDraft, 62.5, reason: '同动作继续：手动调过的重量不被推荐值冲掉');
 
     // 记满动作甲 → 推进到动作乙：换动作才刷新推荐重量
     await c.completeSet(
-        weight: c.weightDraft, reps: 8, rir: 2, kind: SetKind.working);
+      weight: c.weightDraft,
+      reps: 8,
+      rir: 2,
+      kind: SetKind.working,
+    );
     await Future<void>.delayed(const Duration(milliseconds: 100));
     expect(c.curExIdx, 1);
-    expect(c.weightDraft, presetStartOf('动作乙'),
-        reason: '无历史的动作用内置起始重量');
+    expect(c.weightDraft, presetStartOf('动作乙'), reason: '无历史的动作用内置起始重量');
   });
 
   test('B2：动作练满进休息可回退加练一组，加练按正式组记录', () async {
@@ -311,8 +362,7 @@ void main() {
 
     final c = makeController();
     await c.startFromDay(day: day, planExercises: [a, b]);
-    await c.completeSet(
-        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
     expect(c.curExIdx, 1, reason: '动作甲练满已推进');
     expect(c.extraSetExerciseName, '动作甲', reason: '休息页应有加练入口');
 
@@ -323,8 +373,7 @@ void main() {
     expect(c.workingSetsDone, 1);
 
     // 加练一组：作为正式组落库
-    await c.completeSet(
-        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
     final map = await db.setsOfSession(c.session!.id!);
     final working = (map[c.exercises[0].id] ?? [])
         .where((e) => e.kind == SetKind.working)
@@ -341,17 +390,14 @@ void main() {
     final c = makeController();
     await c.startFromDay(day: day, planExercises: [a]);
     c.setWeightDraft(52.5); // 手调重量（推荐 20）
-    await c.completeSet(
-        weight: 52.5, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 52.5, reps: 8, rir: 2, kind: SetKind.working);
     expect(c.phase, WorkoutPhase.resting);
     expect(c.workingSetsDone, 1, reason: '只做了 1/3 组，未练满');
-    expect(c.extraSetExerciseName, '动作甲',
-        reason: '组间休息也提供「再来一组」回到本动作');
+    expect(c.extraSetExerciseName, '动作甲', reason: '组间休息也提供「再来一组」回到本动作');
 
     await c.startExtraSet();
     expect(c.phase, WorkoutPhase.lifting);
-    expect(c.weightDraft, 52.5,
-        reason: '再来一组继承最后一组实际重量，不被推荐值冲回');
+    expect(c.weightDraft, 52.5, reason: '再来一组继承最后一组实际重量，不被推荐值冲回');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
@@ -364,8 +410,7 @@ void main() {
 
     c.setWeightDraft(-30); // 辅助配重 30kg：从自重 0 往下减
     expect(c.weightDraft, -30, reason: '负值保留，不再被钳到 0');
-    await c.completeSet(
-        weight: -30, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: -30, reps: 8, rir: 2, kind: SetKind.working);
     final stats = await c.stats();
     expect(stats.volume, 0, reason: '辅助配重按 0 容量计（不回减总容量）');
 
@@ -373,8 +418,7 @@ void main() {
     await c.finish();
     final c2 = makeController();
     await c2.startFromDay(day: day, planExercises: [a]);
-    expect(c2.weightDraft, -27.5,
-        reason: '负重量同样渐进，不再卡死在原配重');
+    expect(c2.weightDraft, -27.5, reason: '负重量同样渐进，不再卡死在原配重');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
@@ -401,9 +445,17 @@ void main() {
     final base = c.weightDraft; // 无历史：内置起始重量
     c.setWeightDraft(base + 40); // 手动加 40kg（换器械/个人偏好）
     await c.completeSet(
-        weight: c.weightDraft, reps: 7, rir: 2, kind: SetKind.working);
+      weight: c.weightDraft,
+      reps: 7,
+      rir: 2,
+      kind: SetKind.working,
+    );
     await c.completeSet(
-        weight: c.weightDraft, reps: 7, rir: 2, kind: SetKind.working);
+      weight: c.weightDraft,
+      reps: 7,
+      rir: 2,
+      kind: SetKind.working,
+    );
     await c.finish();
     await Future<void>.delayed(const Duration(milliseconds: 100));
 
@@ -411,8 +463,7 @@ void main() {
     // 推荐重量 = 上次实际重量——手动调整无需每次重来
     final c2 = makeController();
     await c2.startFromDay(day: day, planExercises: [a]);
-    expect(c2.weightDraft, base + 40,
-        reason: '下次训练从上次实际重量开始，手动调整被记住');
+    expect(c2.weightDraft, base + 40, reason: '下次训练从上次实际重量开始，手动调整被记住');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
@@ -429,24 +480,30 @@ void main() {
     expect(c.exercises.length, 2);
     expect(c.exercises.last.name, '临时动作');
     expect(c.exercises.last.orderIdx, 1, reason: '追加到队尾');
-    final added = await rawDb
-        .query('session_exercises', where: "name = '临时动作'");
+    final added = await rawDb.query(
+      'session_exercises',
+      where: "name = '临时动作'",
+    );
     expect(added.length, 1, reason: '追加动作落库');
 
     // 当前动作还没记组：可替换（沿用规则只换名）
     final ok = await c.replaceCurrentExercise(
-        const ExerciseMeta('替换动作', MuscleGroups(main: '背'), false));
+      const ExerciseMeta('替换动作', MuscleGroups(main: '背'), false),
+    );
     expect(ok, isTrue);
     expect(c.exercises[0].name, '替换动作');
-    final renamed = await rawDb.query('session_exercises',
-        where: 'id = ?', whereArgs: [c.exercises[0].id]);
+    final renamed = await rawDb.query(
+      'session_exercises',
+      where: 'id = ?',
+      whereArgs: [c.exercises[0].id],
+    );
     expect(renamed.first['name'], '替换动作');
 
     // 已记组：不可替换（防把已记的组串到别的动作名下）
-    await c.completeSet(
-        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
     final ok2 = await c.replaceCurrentExercise(
-        const ExerciseMeta('再换一个', MuscleGroups(main: '肩'), false));
+      const ExerciseMeta('再换一个', MuscleGroups(main: '肩'), false),
+    );
     expect(ok2, isFalse);
     expect(c.exercises[0].name, '替换动作');
     await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -454,18 +511,25 @@ void main() {
 
   test('B4：休息减时有 5 秒地板，不把剩余时间减穿（暂停态同理）', () async {
     final day = await makePlanDay('日');
-    final a = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final a = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
 
     final c = makeController();
     await c.startFromDay(day: day, planExercises: [a]);
-    await c.completeSet(
-        weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
     expect(c.phase, WorkoutPhase.resting);
 
     c.extendRest(-118); // 120 - 118 ≈ 2s → 地板抬到 5s
-    expect(c.restEndAt - DateTime.now().millisecondsSinceEpoch,
-        closeTo(5000, 1500));
+    expect(
+      c.restEndAt - DateTime.now().millisecondsSinceEpoch,
+      closeTo(5000, 1500),
+    );
 
     c.pauseRest();
     c.extendRest(-30); // 剩余 ≈5s，减 30 也被地板挡住
@@ -475,11 +539,14 @@ void main() {
   });
 
   test('B5：restoreFromJson 清空恢复后外键关系完整，缺段报错且不动数据', () async {
-    final plan = await db.insertPlan(Plan(
-        name: '计划', source: 'manual', createdAt: '2026-09-24', isActive: 1));
+    final plan = await db.insertPlan(
+      Plan(name: '计划', source: 'manual', createdAt: '2026-09-24', isActive: 1),
+    );
     final dayId = await db.insertPlanDay(
-        PlanDay(planId: plan.id!, weekday: 1, title: '推日'));
-    await db.insertPlanExercise(PlanExercise(
+      PlanDay(planId: plan.id!, weekday: 1, title: '推日'),
+    );
+    await db.insertPlanExercise(
+      PlanExercise(
         dayId: dayId,
         name: '卧推',
         orderIdx: 0,
@@ -488,28 +555,40 @@ void main() {
         repsMax: 8,
         restSec: 120,
         kind: 'compound',
-        rule: ProgressionRule.fallback));
-    final s = await db.insertSession(Session(
+        rule: ProgressionRule.fallback,
+      ),
+    );
+    final s = await db.insertSession(
+      Session(
         date: '2026-09-20',
         planDayTitle: '推日',
         startedAt: 1,
         endedAt: 2,
-        status: 'done'));
-    final se = await db.insertSessionExercise(SessionExercise(
+        status: 'done',
+      ),
+    );
+    final se = await db.insertSessionExercise(
+      SessionExercise(
         sessionId: s.id!,
         name: '卧推',
         orderIdx: 0,
         kind: 'compound',
-        rule: ProgressionRule.fallback));
-    await db.insertSet(SetEntry(
+        rule: ProgressionRule.fallback,
+      ),
+    );
+    await db.insertSet(
+      SetEntry(
         sessionExerciseId: se,
         weightKg: 60,
         reps: 8,
         kind: SetKind.working,
         doneAt: 1000,
-        note: '状态好'));
-    await db.upsertBodyMetric(const BodyMetric(
-        date: '2026-09-21', weightKg: 70.5));
+        note: '状态好',
+      ),
+    );
+    await db.upsertBodyMetric(
+      const BodyMetric(date: '2026-09-21', weightKg: 70.5),
+    );
 
     final data = await db.exportAllJson();
     final svc = ExportService(db);
@@ -528,26 +607,31 @@ void main() {
     expect((await db.bodyMetrics()).length, 1);
 
     // 缺关键段：抛 FormatException，且在清库之前校验（现有数据不动）
-    expect(() => svc.restoreFromJson({'sessions': []}),
-        throwsFormatException);
+    expect(() => svc.restoreFromJson({'sessions': []}), throwsFormatException);
     expect((await db.recentSessions(limit: 100)).length, 1);
   });
 
   // ============ 训练态计时可靠化（调研条目 1：心跳恢复 + 训练卡） ============
 
   Future<int> seedActiveSession(PlanDay day, String name) async {
-    final s = await db.insertSession(Session(
+    final s = await db.insertSession(
+      Session(
         date: '2026-09-25',
         planDayId: day.id,
         planDayTitle: day.title,
         startedAt: DateTime.now().millisecondsSinceEpoch,
-        status: 'active'));
-    await db.insertSessionExercise(SessionExercise(
+        status: 'active',
+      ),
+    );
+    await db.insertSessionExercise(
+      SessionExercise(
         sessionId: s.id!,
         name: name,
         orderIdx: 0,
         kind: 'compound',
-        rule: const ProgressionRule(repsMin: 5, repsMax: 8, workingSets: 3)));
+        rule: const ProgressionRule(repsMin: 5, repsMax: 8, workingSets: 3),
+      ),
+    );
     return s.id!;
   }
 
@@ -604,15 +688,20 @@ void main() {
 
   test('T-N4：相位切换时心跳落盘，结束训练清空心跳并停训练卡', () async {
     final day = await makePlanDay('日');
-    final e = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
     final c = makeController();
     final cards = <TrainingCard>[];
     c.onCardChanged = cards.add;
     await c.startFromDay(day: day, planExercises: [e]);
 
-    expect(prefs.getInt('sess.sid'), c.session!.id,
-        reason: '开始训练即落心跳');
+    expect(prefs.getInt('sess.sid'), c.session!.id, reason: '开始训练即落心跳');
     expect(prefs.getInt('sess.phase'), 0);
 
     await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
@@ -621,15 +710,20 @@ void main() {
 
     await c.finish();
     expect(prefs.getInt('sess.sid'), 0, reason: '结束清空心跳');
-    expect(cards.last.active, isFalse,
-        reason: '结束后最后一张卡为 inactive（停前台服务）');
+    expect(cards.last.active, isFalse, reason: '结束后最后一张卡为 inactive（停前台服务）');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
   test('T-N5：训练卡内容对齐三要素（动作/目标/剩余+进度/按钮语义）', () async {
     final day = await makePlanDay('日');
-    final e = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
     final c = makeController();
     final cards = <TrainingCard>[];
     c.onCardChanged = cards.add;
@@ -639,15 +733,21 @@ void main() {
     expect(card.resting, isFalse);
     expect(card.title, '动作甲', reason: '三要素之当前动作');
     expect(card.text, contains('20kg×5-8 次'), reason: '三要素之本组目标');
-    expect(card.chronoStartMs, c.session!.startedAt,
-        reason: '动作态走系统 chronometer（从会话开始计时）');
+    expect(
+      card.chronoStartMs,
+      c.session!.startedAt,
+      reason: '动作态走系统 chronometer（从会话开始计时）',
+    );
 
     await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
     card = cards.last;
     expect(card.resting, isTrue);
     expect(card.title, '组间休息中');
-    expect(card.remaining, inInclusiveRange(115, 120),
-        reason: '三要素之剩余时间（进度条当前值）');
+    expect(
+      card.remaining,
+      inInclusiveRange(115, 120),
+      reason: '三要素之剩余时间（进度条当前值）',
+    );
     expect(card.total, inInclusiveRange(118, 122));
     expect(card.paused, isFalse);
 
@@ -660,11 +760,16 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
-  test('T-N6：空闲提醒——训练态连续超阈值触发一次，休息中断，恢复重计，可关',
-      () async {
+  test('T-N6：空闲提醒——训练态连续超阈值触发一次，休息中断，恢复重计，可关', () async {
     final day = await makePlanDay('日');
-    final e = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
     final settings = Settings(prefs)
       ..idleNudgeEnabled = true
       ..idleNudgeMinutes = 10;
@@ -706,11 +811,16 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
-  test('T-N7：休息提前跳过会取消精确提醒；自然到点不取消（双通道不漏）',
-      () async {
+  test('T-N7：休息提前跳过会取消精确提醒；自然到点不取消（双通道不漏）', () async {
     final day = await makePlanDay('日');
-    final e = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
     // 关提示音：自然到点走 SystemSound 通道，测试环境无宿主插件
     final settings = Settings(prefs)..soundOn = false;
     final c = SessionController(db, settings, prefs, null);
@@ -731,15 +841,20 @@ void main() {
     c.restEndAt -= 121000;
     await Future<void>.delayed(const Duration(milliseconds: 400));
     expect(c.phase, WorkoutPhase.lifting, reason: '到点回动作态');
-    expect(alarmCalls.last, endAt,
-        reason: '自然到点不取消闹钟：人在后台时系统提醒是唯一通道');
+    expect(alarmCalls.last, endAt, reason: '自然到点不取消闹钟：人在后台时系统提醒是唯一通道');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
   test('T-N8：暂停态被杀恢复——冻结倒计时还原，暂停不被静默吞掉', () async {
     final day = await makePlanDay('日');
-    final e = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
     final c1 = makeController();
     await c1.startFromDay(day: day, planExercises: [e]);
     await c1.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
@@ -750,7 +865,9 @@ void main() {
     // 手动补齐被杀前的最后心跳（pauseRest 已 force 落盘一次，这里固化场景）
     await prefs.setInt('sess.sid', sid);
     await prefs.setInt(
-        'sess.since', DateTime.now().millisecondsSinceEpoch - 10000);
+      'sess.since',
+      DateTime.now().millisecondsSinceEpoch - 10000,
+    );
     await prefs.setInt('sess.phase', 1);
     await prefs.setInt('sess.restMs', 5000);
     await prefs.setInt('sess.activeMs', 90000);
@@ -762,8 +879,11 @@ void main() {
     await c2.restore();
     expect(c2.phase, WorkoutPhase.resting);
     expect(c2.isRestPaused, isTrue, reason: '暂停态被杀后还原暂停，不再静默吞掉');
-    expect(c2.restRemainingMs.value, closeTo(frozen, 2000),
-        reason: '冻结的剩余时间原样还原');
+    expect(
+      c2.restRemainingMs.value,
+      closeTo(frozen, 2000),
+      reason: '冻结的剩余时间原样还原',
+    );
     expect(alarm2, isEmpty, reason: '暂停态恢复不挂精确闹钟');
 
     c2.resumeRest();
@@ -772,11 +892,16 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 
-  test('T-N9：最后一个动作练满——训练卡瞬时文案不越界（无「第 4/3 组」）',
-      () async {
+  test('T-N9：最后一个动作练满——训练卡瞬时文案不越界（无「第 4/3 组」）', () async {
     final day = await makePlanDay('日');
-    final e = await addPlanEx(day, '动作甲', 0,
-        sets: 3, workingSets: 3, restSec: 120);
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
     final c = makeController();
     final cards = <TrainingCard>[];
     c.onCardChanged = cards.add;
@@ -789,11 +914,162 @@ void main() {
     expect(c.hasActive, isFalse, reason: '唯一动作练满自动结束');
     for (final card in cards) {
       if (card.active && !card.resting) {
-        expect(card.text, isNot(contains('第 4/3')),
-            reason: '组数封顶在本动作组数上，finish 前的瞬时推卡不越界');
+        expect(
+          card.text,
+          isNot(contains('第 4/3')),
+          reason: '组数封顶在本动作组数上，finish 前的瞬时推卡不越界',
+        );
       }
     }
     expect(cards.last.active, isFalse, reason: '结束后最后一张卡为 inactive');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  // ---------- 调研条目 6/7/10 ----------
+
+  test('T-B1：常亮纯函数——训练/未暂停休息常亮，暂停与空闲灭屏（条目 6）', () {
+    const lifting = WorkoutPhase.lifting;
+    const resting = WorkoutPhase.resting;
+    const idle = WorkoutPhase.idle;
+    expect(
+      SessionController.shouldKeepScreenOn(
+        hasActive: true,
+        phase: lifting,
+        restPaused: false,
+      ),
+      isTrue,
+    );
+    expect(
+      SessionController.shouldKeepScreenOn(
+        hasActive: true,
+        phase: resting,
+        restPaused: false,
+      ),
+      isTrue,
+    );
+    expect(
+      SessionController.shouldKeepScreenOn(
+        hasActive: true,
+        phase: resting,
+        restPaused: true,
+      ),
+      isFalse,
+      reason: '暂停即灭屏：只有真在计时才耗电',
+    );
+    expect(
+      SessionController.shouldKeepScreenOn(
+        hasActive: false,
+        phase: idle,
+        restPaused: false,
+      ),
+      isFalse,
+    );
+    expect(
+      SessionController.shouldKeepScreenOn(
+        hasActive: false,
+        phase: lifting,
+        restPaused: false,
+      ),
+      isFalse,
+    );
+  });
+
+  test('T-B2：休息音效四层（条目 10）——完成组进休息播 start，'
+      '加时重置后重新经过窗口重播，开关关闭整体静音', () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(
+      day,
+      '动作甲',
+      0,
+      sets: 3,
+      workingSets: 3,
+      restSec: 120,
+    );
+    final c = makeController();
+    final cues = <RestCue>[];
+    c.onRestCue = cues.add;
+    await c.startFromDay(day: day, planExercises: [e]);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+    expect(cues, [RestCue.start], reason: '进入休息播开始音');
+
+    // 减时保留已播状态：剩余仍落在 start 窗口（59.75s / total 59s 量级）
+    // 也不重播（去重），跳过的层不补播——半程/倒数窗口由 rest_cue_test 覆盖
+    c.extendRest(-60);
+    expect(cues, [RestCue.start], reason: '减时不重置已播层');
+
+    // 加时重新获得一段等待：清层，start 重新可触发
+    c.extendRest(30);
+    expect(cues, [
+      RestCue.start,
+      RestCue.start,
+    ], reason: '加时 reset 后 start 重新播一声');
+
+    // 开关关掉：不播（结束音走 _onRestFinished 原有通道，不经此回调）
+    c.skipRest();
+    cues.clear();
+    c.settings.restCueEnabled = false;
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+    expect(cues, isEmpty, reason: '整体开关关闭时四层都不触发');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('T-B3：上次成绩行数据源（条目 7）——取上次首个正式组，'
+      '重量/次数/RIR 整套可带入', () async {
+    // 前置历史：动作甲 上次训练第一组 60kg×8 R2、第二组 62.5kg×7 R1
+    final s0 = await db.insertSession(
+      Session(
+        date: '2026-09-20',
+        planDayTitle: '旧训练',
+        startedAt: 1,
+        endedAt: 2,
+        status: 'done',
+      ),
+    );
+    final se0 = await db.insertSessionExercise(
+      SessionExercise(
+        sessionId: s0.id!,
+        name: '动作甲',
+        orderIdx: 0,
+        kind: 'compound',
+        rule: const ProgressionRule(repsMin: 5, repsMax: 8, workingSets: 3),
+      ),
+    );
+    await db.insertSet(
+      SetEntry(
+        sessionExerciseId: se0,
+        weightKg: 60,
+        reps: 8,
+        rir: 2,
+        kind: SetKind.working,
+        doneAt: 1000,
+      ),
+    );
+    await db.insertSet(
+      SetEntry(
+        sessionExerciseId: se0,
+        weightKg: 62.5,
+        reps: 7,
+        rir: 1,
+        kind: SetKind.working,
+        doneAt: 2000,
+      ),
+    );
+
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0, workingSets: 3);
+    final c = makeController();
+    await c.startFromDay(day: day, planExercises: [e]);
+
+    final last = c.lastPerformance('动作甲');
+    expect(last, isNotNull);
+    expect(last!.weightKg, 60, reason: '取首个正式组（重现起点），非最后一组');
+    expect(last.reps, 8);
+    expect(last.rir, 2, reason: 'RIR 一并带入');
+
+    // 无历史动作返回 null（首次训练该动作不显示上次行）
+    expect(c.lastPerformance('从没练过的动作'), isNull);
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 }

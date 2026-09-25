@@ -49,9 +49,39 @@ class SettingsPage extends StatelessWidget {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
+                title: const Text('休息提示音'),
+                subtitle: const Text(
+                  '组间休息的开始/半程/最后3秒提示音',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
+                value: s.restCueEnabled,
+                activeThumbColor: AppTheme.primary,
+                onChanged: (v) {
+                  s.restCueEnabled = v;
+                  s.save();
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('锁屏时保持显示'),
+                subtitle: const Text(
+                  '锁屏后训练计时仍显示在锁屏上，下次开始训练生效',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
+                value: s.lockScreenKeepOn,
+                activeThumbColor: AppTheme.primary,
+                onChanged: (v) {
+                  s.lockScreenKeepOn = v;
+                  s.save();
+                },
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
                 title: const Text('空闲提醒'),
-                subtitle: const Text('训练中放下手机太久，发通知拉你回来',
-                    style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                subtitle: const Text(
+                  '训练中放下手机太久，发通知拉你回来',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
                 value: s.idleNudgeEnabled,
                 activeThumbColor: AppTheme.primary,
                 onChanged: (v) {
@@ -82,14 +112,18 @@ class SettingsPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                  '手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；换手机或误清数据时可用 JSON 存档一键恢复。',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                '手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；换手机或误清数据时可用 JSON 存档一键恢复。',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () async {
                   final csv = await c.export.buildCsv();
-                  await c.export.shareText('训练记录 CSV', csv,
-                      filename: 'training_export.csv');
+                  await c.export.shareText(
+                    '训练记录 CSV',
+                    csv,
+                    filename: 'training_export.csv',
+                  );
                 },
                 child: const Text('导出 CSV（备份/表格）'),
               ),
@@ -97,8 +131,11 @@ class SettingsPage extends StatelessWidget {
               OutlinedButton(
                 onPressed: () async {
                   final json = await c.export.buildJson();
-                  await c.export.shareText('训练记录 JSON', json,
-                      filename: 'training_export.json');
+                  await c.export.shareText(
+                    '训练记录 JSON',
+                    json,
+                    filename: 'training_export.json',
+                  );
                 },
                 child: const Text('导出 JSON（存档）'),
               ),
@@ -111,19 +148,26 @@ class SettingsPage extends StatelessWidget {
               OutlinedButton(
                 onPressed: () async {
                   final pack = await c.export.buildAiPack();
-                  await c.export.shareText('AI 分析包', pack,
-                      filename: 'ai_analysis_pack.md');
+                  await c.export.shareText(
+                    'AI 分析包',
+                    pack,
+                    filename: 'ai_analysis_pack.md',
+                  );
                 },
                 child: const Text('生成 AI 分析包（给 AI 做总结）'),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
                 style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.danger),
+                  foregroundColor: AppTheme.danger,
+                ),
                 onPressed: () async {
                   final ok = await confirmDialog(
-                      context, '清空全部数据？', '所有训练记录、计划和身体数据将被删除且无法恢复。强烈建议先导出备份。',
-                      okLabel: '全部删除');
+                    context,
+                    '清空全部数据？',
+                    '所有训练记录、计划和身体数据将被删除且无法恢复。强烈建议先导出备份。',
+                    okLabel: '全部删除',
+                  );
                   if (ok) {
                     if (c.session.hasActive) await c.session.quit();
                     await c.db.wipeAll();
@@ -138,8 +182,10 @@ class SettingsPage extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         const Center(
-          child: Text('薄肌训练计时器 v1.0 · 本地优先 · 无服务器',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+          child: Text(
+            '薄肌训练计时器 v1.0 · 本地优先 · 无服务器',
+            style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+          ),
         ),
       ],
     );
@@ -150,12 +196,14 @@ class SettingsPage extends StatelessWidget {
       children: [
         Expanded(child: Text(label)),
         IconButton(
-            onPressed: () => onChanged((value - 15).clamp(30, 600)),
-            icon: const Icon(Icons.remove_circle_outline)),
+          onPressed: () => onChanged((value - 15).clamp(30, 600)),
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
         Text('$value', style: const TextStyle(fontSize: 17)),
         IconButton(
-            onPressed: () => onChanged((value + 15).clamp(30, 600)),
-            icon: const Icon(Icons.add_circle_outline)),
+          onPressed: () => onChanged((value + 15).clamp(30, 600)),
+          icon: const Icon(Icons.add_circle_outline),
+        ),
       ],
     );
   }
@@ -169,14 +217,16 @@ class SettingsPage extends StatelessWidget {
       children: [
         Expanded(child: Text(label)),
         IconButton(
-            onPressed: i > 0 ? () => onChanged(choices[i - 1]) : null,
-            icon: const Icon(Icons.remove_circle_outline)),
+          onPressed: i > 0 ? () => onChanged(choices[i - 1]) : null,
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
         Text('${choices[i]} 分钟', style: const TextStyle(fontSize: 17)),
         IconButton(
-            onPressed: i < choices.length - 1
-                ? () => onChanged(choices[i + 1])
-                : null,
-            icon: const Icon(Icons.add_circle_outline)),
+          onPressed: i < choices.length - 1
+              ? () => onChanged(choices[i + 1])
+              : null,
+          icon: const Icon(Icons.add_circle_outline),
+        ),
       ],
     );
   }
@@ -185,11 +235,12 @@ class SettingsPage extends StatelessWidget {
   /// 备份内容走剪贴板（分享出去的 .json 文件打开后全选复制即可）。
   Future<void> _restoreFromJson(BuildContext context, AppContainer c) async {
     final ok = await confirmDialog(
-        context,
-        '从 JSON 存档恢复？',
-        '手机上的现有数据会先清空，再导入备份内容。\n\n'
-            '步骤：先打开之前导出的 JSON 存档文件，全选复制全部内容到剪贴板，再回来点「恢复」。此操作无法撤销。',
-        okLabel: '恢复');
+      context,
+      '从 JSON 存档恢复？',
+      '手机上的现有数据会先清空，再导入备份内容。\n\n'
+          '步骤：先打开之前导出的 JSON 存档文件，全选复制全部内容到剪贴板，再回来点「恢复」。此操作无法撤销。',
+      okLabel: '恢复',
+    );
     if (!ok || !context.mounted) return;
     final clip = await Clipboard.getData('text/plain');
     final text = (clip?.text ?? '').trim();
@@ -280,18 +331,22 @@ class _FocusCardState extends State<_FocusCard> {
     final apps = _apps;
     final q = _query.trim();
     final filtered = (apps ?? const <AppEntry>[])
-        .where((a) =>
-            q.isEmpty ||
-            a.label.toLowerCase().contains(q.toLowerCase()) ||
-            a.packageName.toLowerCase().contains(q.toLowerCase()))
+        .where(
+          (a) =>
+              q.isEmpty ||
+              a.label.toLowerCase().contains(q.toLowerCase()) ||
+              a.packageName.toLowerCase().contains(q.toLowerCase()),
+        )
         .toList();
     return SectionCard(
       title: '专注模式',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('勾选训练中不想刷的 App，切过去再回来会提醒你。',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+          const Text(
+            '勾选训练中不想刷的 App，切过去再回来会提醒你。',
+            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
           const SizedBox(height: 10),
           TextField(
             controller: _searchCtrl,
@@ -305,31 +360,36 @@ class _FocusCardState extends State<_FocusCard> {
           const SizedBox(height: 6),
           if (apps == null)
             const Center(
-                child: Padding(
-              padding: EdgeInsets.all(8),
-              child: SizedBox(
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-            ))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            )
           else if (filtered.isEmpty)
             const Padding(
               padding: EdgeInsets.all(8),
-              child: Text('没有匹配的应用',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+              child: Text(
+                '没有匹配的应用',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
             )
           else
-            // 列表带图标：默认只铺前 12 行防卡片过长，搜索时展开全部匹配
-            ...[
+          // 列表带图标：默认只铺前 12 行防卡片过长，搜索时展开全部匹配
+          ...[
             const SizedBox(height: 2),
             for (final a in filtered.take(q.isEmpty ? 12 : filtered.length))
               _appRow(a, selected.contains(a.packageName)),
             if (q.isEmpty && filtered.length > 12)
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 4),
-                child: Text('还有 ${filtered.length - 12} 个，输入名称搜索',
-                    style: const TextStyle(
-                        color: AppTheme.textDim, fontSize: 12)),
+                child: Text(
+                  '还有 ${filtered.length - 12} 个，输入名称搜索',
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
               ),
           ],
         ],
@@ -352,25 +412,40 @@ class _FocusCardState extends State<_FocusCard> {
               child: icon != null
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(9),
-                      child: Image.memory(icon,
-                          width: 38, height: 38, fit: BoxFit.cover),
+                      child: Image.memory(
+                        icon,
+                        width: 38,
+                        height: 38,
+                        fit: BoxFit.cover,
+                      ),
                     )
-                  : const Icon(Icons.android_outlined,
-                      size: 30, color: AppTheme.textDim),
+                  : const Icon(
+                      Icons.android_outlined,
+                      size: 30,
+                      color: AppTheme.textDim,
+                    ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(a.label,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w600)),
-                  Text(a.packageName,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          color: AppTheme.textDim, fontSize: 11)),
+                  Text(
+                    a.label,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    a.packageName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.textDim,
+                      fontSize: 11,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -417,21 +492,25 @@ class _AiCardState extends State<_AiCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-              '兼容 OpenAI 接口格式。例：Base URL 填 https://api.moonshot.cn/v1，模型填 kimi-k2。Key 只保存在手机本地。',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            '兼容 OpenAI 接口格式。例：Base URL 填 https://api.moonshot.cn/v1，模型填 kimi-k2。Key 只保存在手机本地。',
+            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
           const SizedBox(height: 10),
           TextField(
-              controller: _ctrlUrl,
-              decoration: const InputDecoration(labelText: 'Base URL')),
+            controller: _ctrlUrl,
+            decoration: const InputDecoration(labelText: 'Base URL'),
+          ),
           const SizedBox(height: 8),
           TextField(
-              controller: _ctrlKey,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'API Key')),
+            controller: _ctrlKey,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'API Key'),
+          ),
           const SizedBox(height: 8),
           TextField(
-              controller: _ctrlModel,
-              decoration: const InputDecoration(labelText: '模型名')),
+            controller: _ctrlModel,
+            decoration: const InputDecoration(labelText: '模型名'),
+          ),
           const SizedBox(height: 12),
           FilledButton(
             onPressed: () {
@@ -461,8 +540,9 @@ class _LarkCard extends StatefulWidget {
 class _LarkCardState extends State<_LarkCard> {
   late final _ctrlId = TextEditingController(text: widget.s.larkAppId);
   late final _ctrlSecret = TextEditingController(text: widget.s.larkAppSecret);
-  late final _ctrlRefresh =
-      TextEditingController(text: widget.s.larkRefreshToken);
+  late final _ctrlRefresh = TextEditingController(
+    text: widget.s.larkRefreshToken,
+  );
 
   @override
   void dispose() {
@@ -492,23 +572,26 @@ class _LarkCardState extends State<_LarkCard> {
             },
           ),
           const Text(
-              '首次配置：在飞书开放平台创建自建应用（开日历权限），用电脑 lark-cli 授权拿到 refresh_token，粘贴到这里。详见 README。',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+            '首次配置：在飞书开放平台创建自建应用（开日历权限），用电脑 lark-cli 授权拿到 refresh_token，粘贴到这里。详见 README。',
+            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
           const SizedBox(height: 10),
           TextField(
-              controller: _ctrlId,
-              decoration: const InputDecoration(labelText: 'App ID')),
+            controller: _ctrlId,
+            decoration: const InputDecoration(labelText: 'App ID'),
+          ),
           const SizedBox(height: 8),
           TextField(
-              controller: _ctrlSecret,
-              obscureText: true,
-              decoration: const InputDecoration(labelText: 'App Secret')),
+            controller: _ctrlSecret,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'App Secret'),
+          ),
           const SizedBox(height: 8),
           TextField(
-              controller: _ctrlRefresh,
-              obscureText: true,
-              decoration:
-                  const InputDecoration(labelText: 'Refresh Token（授权码）')),
+            controller: _ctrlRefresh,
+            obscureText: true,
+            decoration: const InputDecoration(labelText: 'Refresh Token（授权码）'),
+          ),
           const SizedBox(height: 12),
           Row(
             children: [
@@ -533,28 +616,40 @@ class _LarkCardState extends State<_LarkCard> {
                     s.larkAppSecret = _ctrlSecret.text.trim();
                     s.larkRefreshToken = _ctrlRefresh.text.trim();
                     await s.save();
-                    messenger.showSnackBar(const SnackBar(
+                    messenger.showSnackBar(
+                      const SnackBar(
                         content: Text('测试中…'),
                         backgroundColor: AppTheme.cardHi,
-                        behavior: SnackBarBehavior.floating));
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
                     try {
                       final cid = await c.lark.fetchPrimaryCalendar();
                       s.larkCalendarId = cid;
                       await s.save();
-                      messenger.showSnackBar(const SnackBar(
+                      messenger.showSnackBar(
+                        const SnackBar(
                           content: Text('连接成功 ✓ 日历已绑定'),
                           backgroundColor: AppTheme.cardHi,
-                          behavior: SnackBarBehavior.floating));
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
                     } catch (e) {
                       final msg = e.toString();
-                      final friendly = msg.contains('TimeoutException') ||
+                      final friendly =
+                          msg.contains('TimeoutException') ||
                               msg.contains('ClientException')
                           ? '网络不可用或超时，请检查网络'
-                          : (msg.length > 80 ? '${msg.substring(0, 80)}…' : msg);
-                      messenger.showSnackBar(SnackBar(
+                          : (msg.length > 80
+                                ? '${msg.substring(0, 80)}…'
+                                : msg);
+                      messenger.showSnackBar(
+                        SnackBar(
                           content: Text('连接失败：$friendly'),
                           backgroundColor: AppTheme.cardHi,
-                          behavior: SnackBarBehavior.floating));
+                          behavior: SnackBarBehavior.floating,
+                        ),
+                      );
                     }
                   },
                   child: const Text('测试连接'),
@@ -681,21 +776,34 @@ class _PermissionCardState extends State<_PermissionCard>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(children: [
-                      Text(title,
+                    Row(
+                      children: [
+                        Text(
+                          title,
                           style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600)),
-                      const SizedBox(width: 6),
-                      Text(granted ? '已授权' : '未授权',
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          granted ? '已授权' : '未授权',
                           style: TextStyle(
-                              fontSize: 12,
-                              color: granted
-                                  ? AppTheme.primary
-                                  : AppTheme.textDim)),
-                    ]),
-                    Text(desc,
-                        style: const TextStyle(
-                            color: AppTheme.textDim, fontSize: 12)),
+                            fontSize: 12,
+                            color: granted
+                                ? AppTheme.primary
+                                : AppTheme.textDim,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      desc,
+                      style: const TextStyle(
+                        color: AppTheme.textDim,
+                        fontSize: 12,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -724,8 +832,7 @@ class _UpdateCard extends StatefulWidget {
   State<_UpdateCard> createState() => _UpdateCardState();
 }
 
-class _UpdateCardState extends State<_UpdateCard>
-    with WidgetsBindingObserver {
+class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
   late final _ctrlToken = TextEditingController(text: widget.s.ghUpdateToken);
   bool _checking = false;
   bool _upToDate = false;
@@ -793,15 +900,17 @@ class _UpdateCardState extends State<_UpdateCard>
       _total = release.apkSize;
     });
     try {
-      final path =
-          await UpdateService(s).downloadApk(release, onProgress: (r, t) {
-        if (mounted) {
-          setState(() {
-            _received = r;
-            _total = t;
-          });
-        }
-      });
+      final path = await UpdateService(s).downloadApk(
+        release,
+        onProgress: (r, t) {
+          if (mounted) {
+            setState(() {
+              _received = r;
+              _total = t;
+            });
+          }
+        },
+      );
       if (!mounted) return;
       setState(() => _apkPath = path);
       await _tryInstall();
@@ -861,7 +970,8 @@ class _UpdateCardState extends State<_UpdateCard>
             controller: _ctrlToken,
             obscureText: true,
             decoration: const InputDecoration(
-                labelText: 'GitHub 只读令牌（公开仓库可留空）'),
+              labelText: 'GitHub 只读令牌（公开仓库可留空）',
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -877,16 +987,18 @@ class _UpdateCardState extends State<_UpdateCard>
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(_error!,
-                  style:
-                      const TextStyle(color: AppTheme.danger, fontSize: 13)),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: AppTheme.danger, fontSize: 13),
+              ),
             ),
           if (_upToDate && s.pendingUpdate == null)
             const Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('已是最新版本 ✓',
-                  style:
-                      TextStyle(color: AppTheme.primary, fontSize: 13)),
+              child: Text(
+                '已是最新版本 ✓',
+                style: TextStyle(color: AppTheme.primary, fontSize: 13),
+              ),
             ),
           ListenableBuilder(
             listenable: s,
@@ -903,14 +1015,20 @@ class _UpdateCardState extends State<_UpdateCard>
                   Text(
                     '发现新版 ${release.title.isEmpty ? '构建 ${release.buildNumber}' : release.title}',
                     style: const TextStyle(
-                        fontWeight: FontWeight.w600, fontSize: 15),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
                   ),
                   if (release.notes.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text(_briefNotes(release.notes),
-                          style: const TextStyle(
-                              color: AppTheme.textDim, fontSize: 12)),
+                      child: Text(
+                        _briefNotes(release.notes),
+                        style: const TextStyle(
+                          color: AppTheme.textDim,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                   if (downloading) ...[
                     const SizedBox(height: 10),
@@ -926,7 +1044,9 @@ class _UpdateCardState extends State<_UpdateCard>
                       '下载中 ${(received / 1048576).toStringAsFixed(1)}MB'
                       '${(total != null && total > 0) ? ' / ${(total / 1048576).toStringAsFixed(1)}MB' : ''}',
                       style: const TextStyle(
-                          color: AppTheme.textDim, fontSize: 12),
+                        color: AppTheme.textDim,
+                        fontSize: 12,
+                      ),
                     ),
                   ] else ...[
                     const SizedBox(height: 10),
@@ -937,12 +1057,13 @@ class _UpdateCardState extends State<_UpdateCard>
                   ],
                   if (_needInstallPerm && _apkPath != null) ...[
                     const SizedBox(height: 8),
-                    const Text('系统要求先允许本应用"安装未知应用"（只需授权一次）',
-                        style:
-                            TextStyle(color: AppTheme.warn, fontSize: 12)),
+                    const Text(
+                      '系统要求先允许本应用"安装未知应用"（只需授权一次）',
+                      style: TextStyle(color: AppTheme.warn, fontSize: 12),
+                    ),
                     TextButton(
-                      onPressed: () => UpdateService(s)
-                          .openInstallPermissionSettings(),
+                      onPressed: () =>
+                          UpdateService(s).openInstallPermissionSettings(),
                       child: const Text('去系统授权'),
                     ),
                   ],

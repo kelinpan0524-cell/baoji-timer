@@ -9,6 +9,7 @@ import '../db/db.dart';
 import '../engine/engine.dart';
 import '../presets/baoji_plan.dart';
 import 'focus_service.dart';
+import 'rest_cue.dart';
 import 'settings.dart';
 
 enum WorkoutPhase { idle, lifting, resting }
@@ -24,6 +25,9 @@ class SessionController extends ChangeNotifier {
   final Settings _settings;
   final SharedPreferences _prefs;
   final FocusService? _focus;
+
+  /// 只读暴露设置（测试与 UI 读取休息/音效偏好用；修改走 Settings 实例）。
+  Settings get settings => _settings;
 
   Session? session;
   List<SessionExercise> exercises = [];
@@ -70,6 +74,7 @@ class SessionController extends ChangeNotifier {
   final ValueNotifier<String> focusBanner = ValueNotifier('');
   bool _restNotified = false;
   int _lastCardSec = -1; // 训练卡每秒去重（只在秒变化时推送）
+  final RestCueScheduler _cueScheduler = RestCueScheduler();
 
   // 心跳持久化（LibreFit 的 RUNNING 行思路，写 prefs 不写库）：
   // 训练态被杀后恢复时按墙钟差值接续时长，不被清零。
@@ -91,6 +96,10 @@ class SessionController extends ChangeNotifier {
   /// 空闲提醒触发：App 容器决定屏内横幅还是系统通知。
   Future<void> Function(int minutes)? onIdleNudge;
 
+  /// 休息音效四层触发（调研条目 10）：App 容器接 NotifyService 播系统提示音。
+  /// 结束层不从这里走（双通道互斥沿用 _onRestFinished 原有通道）。
+  void Function(RestCue cue)? onRestCue;
+
   void notifyCard() => onCardChanged?.call(buildCard());
 
   /// 训练卡状态（从会话状态派生，对齐训练中三要素：当前动作/本组目标/剩余时间）。
@@ -102,8 +111,9 @@ class SessionController extends ChangeNotifier {
         ? '${rule?.repsMin ?? 0} 次'
         : '${rule.repsMin}-${rule.repsMax} 次';
     final w = weightDraft;
-    final wText =
-        w < 0 ? '辅 ${_fmtKg(-w)}kg' : (w == 0 ? '自重' : '${_fmtKg(w)}kg');
+    final wText = w < 0
+        ? '辅 ${_fmtKg(-w)}kg'
+        : (w == 0 ? '自重' : '${_fmtKg(w)}kg');
     if (phase == WorkoutPhase.resting) {
       final remainSec = restRemainingMs.value <= 0
           ? 0
@@ -116,8 +126,7 @@ class SessionController extends ChangeNotifier {
         resting: true,
         paused: _restPaused,
         title: '组间休息中',
-        text:
-            '${_restPaused ? '已暂停 · ' : ''}还剩 $remainText · 下一组 $wText×$reps',
+        text: '${_restPaused ? '已暂停 · ' : ''}还剩 $remainText · 下一组 $wText×$reps',
         remaining: restTotalMs > 0 ? remainSec : -1,
         total: (restTotalMs / 1000).round(),
         chronoStartMs: s.startedAt,
@@ -130,7 +139,8 @@ class SessionController extends ChangeNotifier {
       title: currentEx?.name ?? '训练中',
       // 组数封顶在本动作组数上：最后一个动作完成后、finish 落库前的瞬时
       // 推卡不出现「第 4/3 组」越界文案。
-      text: '本组 $wText×$reps · 第 '
+      text:
+          '本组 $wText×$reps · 第 '
           '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
           '/${rule?.workingSets ?? 0} 组',
       remaining: -1,
@@ -162,8 +172,7 @@ class SessionController extends ChangeNotifier {
   }
 
   void _ensureHbTimer() {
-    _hbTimer ??=
-        Timer.periodic(const Duration(seconds: 2), (_) {
+    _hbTimer ??= Timer.periodic(const Duration(seconds: 2), (_) {
       _persistProgress();
       checkIdleNudge(DateTime.now().millisecondsSinceEpoch);
     });
@@ -305,8 +314,9 @@ class SessionController extends ChangeNotifier {
       }
     }
     curSetIdx = (setsByEx[currentEx!.id] ?? []).length;
-    workingSetsDone =
-        currentSets.where((e) => e.kind == SetKind.working).length;
+    workingSetsDone = currentSets
+        .where((e) => e.kind == SetKind.working)
+        .length;
     await _loadContextForCurrent();
     weightDraft = _recommendFor(currentEx!.name);
     _setPhase(WorkoutPhase.lifting, silent: true);
@@ -332,14 +342,26 @@ class SessionController extends ChangeNotifier {
 
   double _presetStartFor(String name) => presetStartOf(name);
 
+  /// 上次该动作的首个正式组（调研条目 7"上次成绩行"数据源）：
+  /// 上次训练的第一组是"照上次练"的重现起点（lastWorkingSets 按 id 升序）；
+  /// 无历史返回 null。与渐进引擎的建议值（weightDraft 初始值，基于最后一组
+  /// 渐进）并列，两个起点互不替换。
+  SetEntry? lastPerformance(String name) {
+    final list = lastWorkout[name] ?? const <SetEntry>[];
+    return list.isEmpty ? null : list.first;
+  }
+
   Future<void> _loadContextForCurrent() async {
     if (currentEx == null) return;
     final name = currentEx!.name;
     lastWorkout[name] = await _db.lastWorkingSets(name);
     final seId = currentEx!.id;
     // PR 判定只看正式组历史（热身大重量不应抬高 PR 门槛）
-    historyBefore[name] = await _db.historySets(name,
-        beforeSessionExerciseId: seId, kindFilter: SetKind.working);
+    historyBefore[name] = await _db.historySets(
+      name,
+      beforeSessionExerciseId: seId,
+      kindFilter: SetKind.working,
+    );
   }
 
   /// 从计划日开始训练（或继续）。已有进行中的会话时直接返回，防止双击产生孤儿会话。
@@ -413,10 +435,9 @@ class SessionController extends ChangeNotifier {
       note: note,
     );
     final id = await _db.insertSet(entry);
-    setsByEx.putIfAbsent(ex.id!, () => []).add(SetEntry.fromMap({
-          ...entry.toMap(),
-          'id': id,
-        }));
+    setsByEx
+        .putIfAbsent(ex.id!, () => [])
+        .add(SetEntry.fromMap({...entry.toMap(), 'id': id}));
     curSetIdx++;
     var pr = false;
     if (kind == SetKind.working) {
@@ -472,8 +493,8 @@ class SessionController extends ChangeNotifier {
     final sec = justFinished.restSec > 0
         ? justFinished.restSec
         : (justFinished.kind == 'compound'
-            ? _settings.restCompoundSec
-            : _settings.restAssistanceSec);
+              ? _settings.restCompoundSec
+              : _settings.restAssistanceSec);
     final end = DateTime.now().millisecondsSinceEpoch + sec * 1000;
     _startRestAt(end, notifyUi: true);
     // 预载（下一）动作上下文。推荐重量只在换动作时刷新——
@@ -490,7 +511,10 @@ class SessionController extends ChangeNotifier {
 
   void _startRestAt(int endAtMs, {required bool notifyUi}) {
     restEndAt = endAtMs;
-    restTotalMs = (endAtMs - DateTime.now().millisecondsSinceEpoch).clamp(0, 1 << 31);
+    restTotalMs = (endAtMs - DateTime.now().millisecondsSinceEpoch).clamp(
+      0,
+      1 << 31,
+    );
     _restNotified = false;
     _lastCardSec = -1;
     // 先刷剩余时间再切相位：_setPhase 会同步推训练卡，拿的是新值
@@ -500,12 +524,16 @@ class SessionController extends ChangeNotifier {
     _prefs.setInt('rest.sessionId', session?.id ?? 0);
     _tick?.cancel();
     _tick = Timer.periodic(const Duration(milliseconds: 250), (_) => _tickFn());
+    // 音效四层（条目 10）：进入/恢复/加时都重置各层，重新经过触发窗口即播
+    _cueScheduler.reset();
+    _fireRestCues();
     // 时间源统一：精确闹钟跟随 restEndAt（含恢复会话后补挂闹钟的场景）
     onRestAlarmChanged?.call(endAtMs);
   }
 
   void _tickFn() {
     _updateRemaining();
+    _fireRestCues();
     // 训练卡只在秒变化时推送（后台不必每 250ms 打扰通知栈）
     final sec = restRemainingMs.value ~/ 1000;
     if (sec != _lastCardSec) {
@@ -516,6 +544,21 @@ class SessionController extends ChangeNotifier {
     if (restEndAt <= now && !_restNotified) {
       _restNotified = true;
       _onRestFinished();
+    }
+  }
+
+  /// 音效四层触发（调研条目 10）：区间阈值判断见 RestCueScheduler。
+  /// 每层触发 = 播一声提示音 + 震一次（到点只震一次，跟随震动开关）。
+  /// 结束层跳过——休息到点的提示走 _onRestFinished 原有通道
+  /// （前台震动+系统提示音 / 后台系统精确提醒，双通道互斥不重复）。
+  void _fireRestCues() {
+    if (!hasActive || phase != WorkoutPhase.resting || _restPaused) return;
+    if (!_settings.restCueEnabled) return;
+    final cues = _cueScheduler.evaluate(restRemainingMs.value, restTotalMs);
+    for (final cue in cues) {
+      if (cue == RestCue.end) continue;
+      onRestCue?.call(cue);
+      unawaited(_vibrate());
     }
   }
 
@@ -589,6 +632,7 @@ class SessionController extends ChangeNotifier {
     _restRemainingWhenPaused = restRemainingMs.value;
     _tick?.cancel();
     _tick = null;
+    _applyWakelock(); // 暂停即灭屏：只有真在计时才耗电（条目 6）
     // 暂停即取消精确闹钟（否则暂停期间到点照响）
     onRestAlarmChanged?.call(null);
     // 暂停态落盘：暂停中被杀后 restore 能还原冻结倒计时（不然暂停被吞）
@@ -599,7 +643,8 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 继续：从剩余时间重新起表（经 _startRestAt 自动重挂闹钟）。
+  /// 继续：从剩余时间重新起表（经 _startRestAt 自动重挂闹钟；
+  /// _setPhase 里的 _applyWakelock 随 lifting/resting 未暂停态重新常亮）。
   void resumeRest() {
     if (phase != WorkoutPhase.resting || !_restPaused) return;
     _restPaused = false;
@@ -617,8 +662,10 @@ class SessionController extends ChangeNotifier {
       // （否则 resume 用冻结值重算时，加的秒数会被静默丢弃）；
       // 地板 5 秒，减时不把休息直接减没。冻结值变化同步进暂停落盘，
       // 暂停中被杀恢复才能拿到加/减后的剩余时间。
-      _restRemainingWhenPaused =
-          (_restRemainingWhenPaused + sec * 1000).clamp(5000, 1 << 31);
+      _restRemainingWhenPaused = (_restRemainingWhenPaused + sec * 1000).clamp(
+        5000,
+        1 << 31,
+      );
       restTotalMs = (restTotalMs + sec * 1000).clamp(1000, 1 << 31);
       restRemainingMs.value = _restRemainingWhenPaused;
       _prefs.setInt('rest.remainingAtPause', _restRemainingWhenPaused);
@@ -627,11 +674,17 @@ class SessionController extends ChangeNotifier {
     }
     // 非暂停态：地板 5 秒，防止 -30 把剩余时间减成已过期
     final floorEnd = DateTime.now().millisecondsSinceEpoch + 5000;
-    restEndAt =
-        (restEndAt + sec * 1000) < floorEnd ? floorEnd : restEndAt + sec * 1000;
+    restEndAt = (restEndAt + sec * 1000) < floorEnd
+        ? floorEnd
+        : restEndAt + sec * 1000;
     restTotalMs = (restTotalMs + sec * 1000).clamp(1000, 1 << 31);
     _prefs.setInt('rest.endAt', restEndAt);
     _updateRemaining();
+    // 音效层重置（条目 10）：只在加时（重新获得一段等待）时清层，
+    // 半程按新总长重新计算、重新经过窗口即重播；减时保留已播状态——
+    // 跳过的窗口不补播、已过的层不重播（避免 -30 秒重播开始音）。
+    if (sec > 0) _cueScheduler.reset();
+    _fireRestCues();
     onRestAlarmChanged?.call(restEndAt);
     notifyCard();
   }
@@ -665,8 +718,9 @@ class SessionController extends ChangeNotifier {
     // 历史新高时才清除（逐组重判，任一剩余组仍超历史最佳就保留）。
     if (prHit.contains(ex.name)) {
       final history = historyBefore[ex.name] ?? const <SetEntry>[];
-      final anyStillPr = list
-          .any((e) => e.kind == SetKind.working && isPrWeight(e.weightKg, history));
+      final anyStillPr = list.any(
+        (e) => e.kind == SetKind.working && isPrWeight(e.weightKg, history),
+      );
       if (!anyStillPr) prHit.remove(ex.name);
     }
     notifyCard();
@@ -787,7 +841,12 @@ class SessionController extends ChangeNotifier {
   Future<SessionStats> stats() async {
     if (session == null) {
       return const SessionStats(
-          volume: 0, totalSets: 0, workingSets: 0, reps: 0, exercises: []);
+        volume: 0,
+        totalSets: 0,
+        workingSets: 0,
+        reps: 0,
+        exercises: [],
+      );
     }
     final order = await _db.sessionExercises(session!.id!);
     final map = await _db.setsOfSession(session!.id!);
@@ -847,8 +906,30 @@ class SessionController extends ChangeNotifier {
       _ensureHbTimer();
       _persistProgress(force: true);
     }
+    _applyWakelock(); // 常亮随相位收口（条目 6，含恢复会话的各分支）
     notifyCard();
     if (!silent) notifyListeners();
+  }
+
+  /// 是否应保持屏幕常亮（调研条目 6 常亮三件套）：
+  /// 会话进行中且不在"已暂停的休息"里才常亮——暂停/结束即灭屏，
+  /// 恢复（继续/跳过/到点/加练）回到计时态再亮。提取纯函数便于单测。
+  static bool shouldKeepScreenOn({
+    required bool hasActive,
+    required WorkoutPhase phase,
+    required bool restPaused,
+  }) => hasActive && (phase != WorkoutPhase.resting || !restPaused);
+
+  void _applyWakelock() {
+    if (shouldKeepScreenOn(
+      hasActive: hasActive,
+      phase: phase,
+      restPaused: _restPaused,
+    )) {
+      WakelockPlus.enable();
+    } else {
+      WakelockPlus.disable();
+    }
   }
 
   // 分心提醒（由 FocusService 检测后调用）
@@ -883,9 +964,9 @@ double presetStartOf(String name) {
 String _fmtKg(double v) => v == v.roundToDouble()
     ? v.toStringAsFixed(0)
     : v
-        .toStringAsFixed(2)
-        .replaceAll(RegExp(r'0+$'), '')
-        .replaceAll(RegExp(r'\.$'), '');
+          .toStringAsFixed(2)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
 
 /// 训练卡通知内容（原生前台服务展示，调研条目 1/3）。
 /// [remaining]/[total] 休息剩余秒与总秒（进度条，-1 = 无进度）；
@@ -903,14 +984,14 @@ class TrainingCard {
   });
 
   const TrainingCard.inactive()
-      : active = false,
-        resting = false,
-        paused = false,
-        title = '',
-        text = '',
-        remaining = -1,
-        total = 0,
-        chronoStartMs = 0;
+    : active = false,
+      resting = false,
+      paused = false,
+      title = '',
+      text = '',
+      remaining = -1,
+      total = 0,
+      chronoStartMs = 0;
 
   final bool active; // 会话进行中（false = 停前台服务）
   final bool resting; // 休息态：带暂停/±10 秒按钮与进度条
@@ -922,12 +1003,12 @@ class TrainingCard {
   final int chronoStartMs;
 
   Map<String, Object?> toMap() => {
-        'phase': resting ? 1 : 0,
-        'title': title,
-        'text': text,
-        'paused': paused,
-        'remaining': remaining,
-        'total': total,
-        'chronoBase': chronoStartMs,
-      };
+    'phase': resting ? 1 : 0,
+    'title': title,
+    'text': text,
+    'paused': paused,
+    'remaining': remaining,
+    'total': total,
+    'chronoBase': chronoStartMs,
+  };
 }

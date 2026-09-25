@@ -10,7 +10,8 @@ import 'theme.dart';
 import 'widgets/common.dart';
 
 /// 训练页（全屏）：动作态 / 休息态；折叠屏（≥840dp）双栏。
-/// 训练中不弹窗：结束训练用两击确认。
+/// 训练中不弹窗：结束训练用长按 2 秒环形进度（调研条目 5）；
+/// 整屏状态色随相位切换：练=暗绿调、歇=暗红调（调研条目 11）。
 class WorkoutPage extends StatefulWidget {
   const WorkoutPage({super.key});
 
@@ -18,8 +19,7 @@ class WorkoutPage extends StatefulWidget {
   State<WorkoutPage> createState() => _WorkoutPageState();
 }
 
-class _WorkoutPageState extends State<WorkoutPage>
-    with WidgetsBindingObserver {
+class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   WorkoutPhase? _lastPhase;
   Timer? _distractTimer;
 
@@ -28,7 +28,7 @@ class _WorkoutPageState extends State<WorkoutPage>
     super.initState();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     WidgetsBinding.instance.addObserver(this);
-      _distractTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _distractTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _checkDistractingApp();
       // 常驻通知文案由 SessionController 心跳驱动（秒级、屏幕内外都更新）
     });
@@ -107,62 +107,83 @@ class _WorkoutPageState extends State<WorkoutPage>
         _syncPhaseSideEffects(s.phase);
         if (!s.hasActive) {
           return const Scaffold(
-              backgroundColor: AppTheme.bg,
-              body: Center(child: Text('本次训练已结束')));
+            backgroundColor: AppTheme.bg,
+            body: Center(child: Text('本次训练已结束')),
+          );
         }
         return Scaffold(
           backgroundColor: AppTheme.bg,
-          body: SafeArea(
-            top: false,
-            child: Column(
-              children: [
-                ValueListenableBuilder<String>(
-                  valueListenable: s.focusBanner,
-                  builder: (context, msg, _) => msg.isEmpty
-                      ? const SizedBox.shrink()
-                      : Container(
-                          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: AppTheme.warn.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Row(children: [
-                            const Icon(Icons.warning_amber_rounded,
-                                color: AppTheme.warn, size: 20),
-                            const SizedBox(width: 8),
-                            Expanded(
-                                child: Text(msg,
+          // 整屏状态色（条目 11）：练=暗绿调、歇=暗红调，渐变过渡不闪变
+          body: AnimatedContainer(
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOut,
+            color: s.phase == WorkoutPhase.resting
+                ? AppTheme.bgRest
+                : AppTheme.bgLift,
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  ValueListenableBuilder<String>(
+                    valueListenable: s.focusBanner,
+                    builder: (context, msg, _) => msg.isEmpty
+                        ? const SizedBox.shrink()
+                        : Container(
+                            margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppTheme.warn.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.warning_amber_rounded,
+                                  color: AppTheme.warn,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    msg,
                                     style: const TextStyle(
-                                        color: AppTheme.warn, fontSize: 14))),
-                          ]),
-                        ),
-                ),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (context, cons) {
-                      final wide = cons.maxWidth >= 840;
-                      // 600dp 断点：更窄的屏（手机竖屏/分屏小窗）用紧凑面板，
-                      // 压大数字字号并收起备注行，给「完成本组」留出空间。
-                      final narrow = cons.maxWidth < 600;
-                      Widget content = s.phase == WorkoutPhase.resting
-                          ? const _RestView()
-                          : _LiftView(s: s, compact: narrow);
-                      // 窄屏/中屏：操作区最大宽度 560，单手可达
-                      if (!wide) {
-                        content = Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 560),
-                            child: content,
+                                      color: AppTheme.warn,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        );
-                      }
-                      return content;
-                    },
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, cons) {
+                        final wide = cons.maxWidth >= 840;
+                        // 600dp 断点：更窄的屏（手机竖屏/分屏小窗）用紧凑面板，
+                        // 压大数字字号并收起备注行，给「完成本组」留出空间。
+                        final narrow = cons.maxWidth < 600;
+                        Widget content = s.phase == WorkoutPhase.resting
+                            ? const _RestView()
+                            : _LiftView(s: s, compact: narrow);
+                        // 窄屏/中屏：操作区最大宽度 560，单手可达
+                        if (!wide) {
+                          content = Center(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 560),
+                              child: content,
+                            ),
+                          );
+                        }
+                        return content;
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -199,12 +220,17 @@ class _LiftView extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Expanded(child: _ExerciseInfo(s: s, ex: ex)),
+                      Expanded(
+                        child: _ExerciseInfo(s: s, ex: ex),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: SingleChildScrollView(
-                          child:
-                              _ActionPanel(s: s, ex: ex, key: ValueKey(ex.id)),
+                          child: _ActionPanel(
+                            s: s,
+                            ex: ex,
+                            key: ValueKey(ex.id),
+                          ),
                         ),
                       ),
                     ],
@@ -224,23 +250,24 @@ class _LiftView extends StatelessWidget {
               child: LayoutBuilder(
                 builder: (context, viewport) => SingleChildScrollView(
                   child: ConstrainedBox(
-                    constraints:
-                        BoxConstraints(minHeight: viewport.maxHeight),
+                    constraints: BoxConstraints(minHeight: viewport.maxHeight),
                     child: IntrinsicHeight(
                       child: Column(
                         children: [
                           Expanded(
                             child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 20),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
                               child: _ExerciseInfo(s: s, ex: ex),
                             ),
                           ),
                           _ActionPanel(
-                              s: s,
-                              ex: ex,
-                              key: ValueKey(ex.id),
-                              compact: compact),
+                            s: s,
+                            ex: ex,
+                            key: ValueKey(ex.id),
+                            compact: compact,
+                          ),
                         ],
                       ),
                     ),
@@ -265,16 +292,19 @@ class _TopBar extends StatefulWidget {
 }
 
 class _TopBarState extends State<_TopBar> {
-  bool _endArmed = false;
-  Timer? _disarm;
+  bool _holdHint = false; // 进度不足松手的内联提示（非弹窗非 toast）
+  Timer? _hintTimer;
 
-  /// 两击确认后给三个出口：继续练 / 放弃本次（不留记录）/ 结束并保存。
+  /// 长按 2 秒确认后给三个出口：继续练 / 放弃本次（不留记录）/ 结束并保存。
+  /// P1-12 的"放弃不保存"出口保留在这里，防误触由长按手势承担。
   Future<void> _showEndOptions() async {
+    setState(() => _holdHint = false);
     final choice = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -287,8 +317,10 @@ class _TopBarState extends State<_TopBar> {
             ListTile(
               leading: const Icon(Icons.delete_outline, color: AppTheme.danger),
               title: const Text('放弃本次（不留记录）'),
-              subtitle: const Text('误开的训练用这个，历史不会多一次',
-                  style: TextStyle(fontSize: 12)),
+              subtitle: const Text(
+                '误开的训练用这个，历史不会多一次',
+                style: TextStyle(fontSize: 12),
+              ),
               onTap: () => Navigator.pop(ctx, 'quit'),
             ),
             ListTile(
@@ -312,68 +344,86 @@ class _TopBarState extends State<_TopBar> {
     }
   }
 
-  void _armEnd() {
-    _disarm?.cancel();
-    setState(() => _endArmed = true);
-    HapticFeedback.selectionClick();
-    _disarm = Timer(const Duration(seconds: 3), () {
-      if (mounted) setState(() => _endArmed = false);
+  /// 进度不足 30% 就松手：教手势（FitoTrack 思路），用页面内联提示而非
+  /// toast/弹窗——不抢焦点、不挡训练计时（红线：训练中不弹窗）。
+  void _onShortRelease() {
+    setState(() => _holdHint = true);
+    _hintTimer?.cancel();
+    _hintTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) setState(() => _holdHint = false);
     });
   }
 
   @override
   void dispose() {
-    _disarm?.cancel();
+    _hintTimer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final isLastEx =
-        widget.s.curExIdx >= widget.s.exercises.length - 1;
+    final isLastEx = widget.s.curExIdx >= widget.s.exercises.length - 1;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-      child: Row(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: Text(widget.s.session!.planDayTitle,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: AppTheme.textDim, fontSize: 14)),
-          ),
-          TextButton(
-            onPressed: () => _showExerciseAdjustSheet(context),
-            child: const Text('换/加动作',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 14)),
-          ),
-          TextButton(
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              widget.s.skipExercise();
-            },
-            child: Text(isLastEx ? '已是最后一个' : '跳过动作',
-                style: TextStyle(
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.s.session!.planDayTitle,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
+                ),
+              ),
+              TextButton(
+                onPressed: () => _showExerciseAdjustSheet(context),
+                child: const Text(
+                  '换/加动作',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 14),
+                ),
+              ),
+              TextButton(
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  widget.s.skipExercise();
+                },
+                child: Text(
+                  isLastEx ? '已是最后一个' : '跳过动作',
+                  style: TextStyle(
                     color: isLastEx
                         ? AppTheme.textDim.withValues(alpha: 0.4)
                         : AppTheme.textDim,
-                    fontSize: 14)),
-          ),
-          TextButton(
-            onPressed: () {
-              if (_endArmed) {
-                _disarm?.cancel();
-                _showEndOptions();
-              } else {
-                _armEnd();
-              }
-            },
-            child: Text(
-              _endArmed ? '再点一次确认结束' : '结束训练',
-              style: TextStyle(
-                color: _endArmed ? AppTheme.danger : AppTheme.textDim,
-                fontSize: 14,
-                fontWeight: _endArmed ? FontWeight.w800 : FontWeight.w400,
+                    fontSize: 14,
+                  ),
+                ),
               ),
-            ),
+              HoldToEndButton(
+                onConfirmed: _showEndOptions,
+                onShortRelease: _onShortRelease,
+              ),
+            ],
+          ),
+          // 内联手势提示（条目 5）：只占一行高度，出现/消失不挤压训练区
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _holdHint
+                ? Padding(
+                    key: const ValueKey('holdHint'),
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        '按住「结束训练」不放，转满一圈才生效',
+                        style: const TextStyle(
+                          color: AppTheme.warn,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('noHint')),
           ),
         ],
       ),
@@ -389,7 +439,8 @@ class _TopBarState extends State<_TopBar> {
       context: context,
       backgroundColor: AppTheme.card,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -397,20 +448,21 @@ class _TopBarState extends State<_TopBar> {
             ListTile(
               leading: const Icon(Icons.playlist_add, color: AppTheme.primary),
               title: const Text('添加动作到队尾'),
-              subtitle: const Text('从动作库挑选，只进本次训练',
-                  style: TextStyle(fontSize: 12)),
+              subtitle: const Text(
+                '从动作库挑选，只进本次训练',
+                style: TextStyle(fontSize: 12),
+              ),
               onTap: () => Navigator.pop(ctx, 'append'),
             ),
             ListTile(
               leading: const Icon(Icons.swap_horiz, color: AppTheme.accent),
-              title: Text(canReplace
-                  ? '替换当前动作（${s.currentEx?.name ?? ''}）'
-                  : '替换当前动作'),
+              title: Text(
+                canReplace ? '替换当前动作（${s.currentEx?.name ?? ''}）' : '替换当前动作',
+              ),
               subtitle: Text(
-                  canReplace
-                      ? '沿用原组次规则，只换动作名'
-                      : '当前动作已记组，不能替换；可改用"跳过动作"',
-                  style: const TextStyle(fontSize: 12)),
+                canReplace ? '沿用原组次规则，只换动作名' : '当前动作已记组，不能替换；可改用"跳过动作"',
+                style: const TextStyle(fontSize: 12),
+              ),
               onTap: canReplace ? () => Navigator.pop(ctx, 'replace') : null,
             ),
           ],
@@ -435,12 +487,150 @@ class _TopBarState extends State<_TopBar> {
       if (ok) {
         s.showFocusBanner('已换成 ${picked.first.name}');
       } else {
-        messenger.showSnackBar(SnackBar(
+        messenger.showSnackBar(
+          SnackBar(
             content: const Text('替换失败：该动作已在本次训练里'),
             backgroundColor: AppTheme.cardHi,
-            behavior: SnackBarBehavior.floating));
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
       }
     }
+  }
+}
+
+/// 长按 2 秒结束训练（调研条目 5，FitoTrack HoldToStopButton 思路 + 无障碍补强）：
+/// 环形进度 2 秒填满触发；按住期间每 100ms 一次触觉 tick；松手即取消；
+/// 进度不足 30% 松手回调 [onShortRelease] 给页面内联提示（父组件渲染，
+/// 非弹窗非 toast）。无障碍替代路径：读屏（TalkBack）开启时退化为单击
+/// 直通三选——长按+进度对读屏不可用，FitoTrack 原实现未处理，这里补上。
+/// 公开类便于 widget 测试覆盖（test/hold_to_stop_test.dart）。
+class HoldToEndButton extends StatefulWidget {
+  const HoldToEndButton({
+    super.key,
+    required this.onConfirmed,
+    this.onShortRelease,
+  });
+
+  final VoidCallback onConfirmed;
+  final VoidCallback? onShortRelease;
+
+  @override
+  State<HoldToEndButton> createState() => _HoldToEndButtonState();
+}
+
+class _HoldToEndButtonState extends State<HoldToEndButton> {
+  static const _holdMs = 2000;
+
+  Timer? _timer;
+  int _elapsedMs = 0;
+  int _lastTick = -1;
+  double _progress = 0;
+
+  bool get _accessible => MediaQuery.of(context).accessibleNavigation;
+
+  void _startHold() {
+    if (_timer != null) return;
+    HapticFeedback.selectionClick();
+    _elapsedMs = 0;
+    _lastTick = -1;
+    _timer = Timer.periodic(const Duration(milliseconds: 50), (_) => _step());
+  }
+
+  void _step() {
+    // 进度按 50ms tick 计数推进（UI 提示用途，非计时权威——休息计时
+    // 仍以墙钟为准）：误差 ≤50ms 无感，且在 fake-clock 测试里行为一致。
+    _elapsedMs += 50;
+    // 触觉 tick（条目 5）：每 100ms 一次轻震，给"正在计时"的体感，
+    // 与完成组的确认震动（mediumImpact）区分开。
+    final tick = _elapsedMs ~/ 100;
+    if (tick != _lastTick) {
+      _lastTick = tick;
+      HapticFeedback.selectionClick();
+    }
+    if (_elapsedMs >= _holdMs) {
+      _cancelHold();
+      HapticFeedback.heavyImpact();
+      widget.onConfirmed();
+      return;
+    }
+    setState(() => _progress = _elapsedMs / _holdMs);
+  }
+
+  void _onRelease() {
+    final p = _progress;
+    _cancelHold();
+    if (p > 0 && p < 0.3) widget.onShortRelease?.call();
+  }
+
+  void _cancelHold() {
+    _timer?.cancel();
+    _timer = null;
+    _elapsedMs = 0;
+    if (mounted && _progress != 0) setState(() => _progress = 0);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accessible = _accessible;
+    final Widget child;
+    if (accessible) {
+      // 读屏替代路径：TalkBack 双击即开三选（P1-12 出口不受影响）
+      child = TextButton(
+        onPressed: widget.onConfirmed,
+        child: const Text(
+          '结束训练',
+          style: TextStyle(color: AppTheme.textDim, fontSize: 14),
+        ),
+      );
+    } else {
+      child = GestureDetector(
+        onLongPressStart: (_) => _startHold(),
+        onLongPressEnd: (_) => _onRelease(),
+        onLongPressCancel: _onRelease,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 环形进度：平时一枚暗环暗示"可环形握住"，按住时危险色填充
+              SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  value: _progress <= 0 ? 0 : _progress,
+                  strokeWidth: 2.5,
+                  strokeCap: StrokeCap.round,
+                  color: _progress > 0 ? AppTheme.danger : AppTheme.textDim,
+                  backgroundColor: AppTheme.textDim.withValues(alpha: 0.25),
+                ),
+              ),
+              const SizedBox(width: 4),
+              Text(
+                _progress > 0 ? '继续按住…' : '结束训练',
+                style: TextStyle(
+                  color: _progress > 0 ? AppTheme.danger : AppTheme.textDim,
+                  fontSize: 14,
+                  fontWeight: _progress > 0 ? FontWeight.w800 : FontWeight.w400,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return Semantics(
+      button: true,
+      label: '结束训练',
+      hint: accessible ? '点按两下打开结束选项' : '长按两秒打开结束选项',
+      child: child,
+    );
   }
 }
 
@@ -465,25 +655,34 @@ class _ExerciseInfo extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('${s.curExIdx + 1} / ${s.exercises.length}',
-            style: const TextStyle(color: AppTheme.textDim, fontSize: 15)),
+        Text(
+          '${s.curExIdx + 1} / ${s.exercises.length}',
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
+        ),
         const SizedBox(height: 4),
-        Text(ex.name,
-            style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
+        Text(
+          ex.name,
+          style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
+        ),
         const SizedBox(height: 8),
-        Text(progressText,
-            style: const TextStyle(color: AppTheme.accent, fontSize: 16)),
+        Text(
+          progressText,
+          style: const TextStyle(color: AppTheme.accent, fontSize: 16),
+        ),
         const SizedBox(height: 12),
-        Text(lastText,
-            style: const TextStyle(color: AppTheme.textDim, fontSize: 15)),
+        Text(
+          lastText,
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
+        ),
         if (s.currentSets.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: GestureDetector(
               onTap: () => s.undoLastSet(),
-              child: const Text('↩ 撤销上一组',
-                  style:
-                      TextStyle(color: AppTheme.textDim, fontSize: 13)),
+              child: const Text(
+                '↩ 撤销上一组',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
             ),
           ),
       ],
@@ -517,28 +716,35 @@ Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
             double.tryParse(ctrl.text.trim().replaceAll(',', '.')) == null;
         return Padding(
           padding: EdgeInsets.only(
-              bottom: MediaQuery.of(sheetCtx).viewInsets.bottom),
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          ),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('输入重量（kg）',
-                    style:
-                        TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                const Text(
+                  '输入重量（kg）',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 4),
-                const Text('正数 = 负重；0 = 自重；负数 = 辅助器械配重（如 -30）',
-                    style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                const Text(
+                  '正数 = 负重；0 = 自重；负数 = 辅助器械配重（如 -30）',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+                ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: ctrl,
                   autofocus: true,
                   keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true, signed: true),
+                    decimal: true,
+                    signed: true,
+                  ),
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(
-                        RegExp(r'^-?\d{0,3}(\.\d{0,2})?$')),
+                      RegExp(r'^-?\d{0,3}(\.\d{0,2})?$'),
+                    ),
                     LengthLimitingTextInputFormatter(7),
                   ],
                   onSubmitted: (_) => submit(),
@@ -549,15 +755,13 @@ Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
                   ),
                 ),
                 const SizedBox(height: 16),
-                BigButton(
-                  label: '确认',
-                  height: 64,
-                  onPressed: submit,
-                ),
+                BigButton(label: '确认', height: 64, onPressed: submit),
                 TextButton(
                   onPressed: () => Navigator.pop(sheetCtx),
-                  child: const Text('取消',
-                      style: TextStyle(color: AppTheme.textDim)),
+                  child: const Text(
+                    '取消',
+                    style: TextStyle(color: AppTheme.textDim),
+                  ),
                 ),
               ],
             ),
@@ -606,18 +810,59 @@ class _ActionPanelState extends State<_ActionPanel> {
     }
   }
 
+  /// 上次成绩行（无历史不显示）。
+  List<Widget> _lastPerformanceRow(BuildContext context, SessionController s) {
+    final last = s.lastPerformance(widget.ex.name);
+    if (last == null) return const [];
+    final rirText = last.rir >= 0 ? ' R${last.rir}' : '';
+    return [
+      const SizedBox(height: 4),
+      GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          s.setWeightDraft(last.weightKg);
+          setState(() {
+            _reps = last.reps;
+            _rir = last.rir;
+          });
+        },
+        child: Semantics(
+          button: true,
+          label:
+              '带入上次成绩：${fmtKg(last.weightKg)}公斤'
+              '${last.reps}次${last.rir >= 0 ? '余力${last.rir}' : ''}',
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.history, size: 15, color: AppTheme.accent),
+                const SizedBox(width: 5),
+                Text(
+                  '上次：${fmtKg(last.weightKg)}kg×${last.reps}$rirText（点按整套带入）',
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = widget.s;
     final ex = widget.ex;
     final compact = widget.compact;
     final repsChoices = <int>{
-      for (var r = (ex.rule.repsMin - 2).clamp(1, 99);
-          r <= ex.rule.repsMax + 2;
-          r++)
+      for (
+        var r = (ex.rule.repsMin - 2).clamp(1, 99);
+        r <= ex.rule.repsMax + 2;
+        r++
+      )
         r,
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     final doneAll = s.workingSetsDone >= ex.rule.workingSets;
 
     return Container(
@@ -646,26 +891,33 @@ class _ActionPanelState extends State<_ActionPanel> {
                     onLongPress: () => s.setWeightDraft(0),
                     // 负值=辅助配重（辅30），0=自重，正值=常规负重（fmtLoad 统一口径）；
                     // 点按弹数字键盘直输，长按清零（老入口保留）
-                    child: Text(fmtLoad(s.weightDraft),
-                        key: const ValueKey('weightDraftNum'),
-                        style: AppTheme.bigNum(
-                            compact || s.weightDraft <= 0 ? 56 : 84)),
+                    child: Text(
+                      fmtLoad(s.weightDraft),
+                      key: const ValueKey('weightDraftNum'),
+                      style: AppTheme.bigNum(
+                        compact || s.weightDraft <= 0 ? 56 : 84,
+                      ),
+                    ),
                   ),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.only(left: 6, bottom: 10),
-                child: Text('kg',
-                    style: TextStyle(
-                        color: AppTheme.textDim,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600)),
+                child: Text(
+                  'kg',
+                  style: TextStyle(
+                    color: AppTheme.textDim,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               // 自重/负重一键切换（长按清零的老入口保留，这里给可见入口）
               Padding(
                 padding: const EdgeInsets.only(left: 12, bottom: 12),
                 child: Tooltip(
-                  message: '自重/辅助动作点这里：在自重和上次重量间切换；'
+                  message:
+                      '自重/辅助动作点这里：在自重和上次重量间切换；'
                       '点大数字可直接键入重量（负值 = 辅助器械配重，如 -30）',
                   child: GestureDetector(
                     onTap: () {
@@ -674,39 +926,55 @@ class _ActionPanelState extends State<_ActionPanel> {
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 5),
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
                       decoration: BoxDecoration(
                         color: s.weightDraft == 0
                             ? AppTheme.accent
                             : AppTheme.cardHi,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Text(s.weightDraft == 0 ? '自重' : '自重?',
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: s.weightDraft == 0
-                                  ? const Color(0xFF06220F)
-                                  : AppTheme.textDim)),
+                      child: Text(
+                        s.weightDraft == 0 ? '自重' : '自重?',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: s.weightDraft == 0
+                              ? const Color(0xFF06220F)
+                              : AppTheme.textDim,
+                        ),
+                      ),
                     ),
                   ),
                 ),
               ),
             ],
           ),
+          // 上次成绩行（调研条目 7，wger/LibreFit 思路）：与渐进引擎建议值
+          // （大数字 = 本组推荐起点）并列的第二起点，点按整套带入重量/次数/
+          // RIR；不替换建议值、不弹窗，无需手动步进即可重现上次配置。
+          ..._lastPerformanceRow(context, s),
           const SizedBox(height: 8),
-          Row(children: [
-            for (final step in _steps)
-              WeightStepButton(
-                  delta: step, onTap: () => s.setWeightDraft(s.weightDraft + step)),
-          ]),
+          Row(
+            children: [
+              for (final step in _steps)
+                WeightStepButton(
+                  delta: step,
+                  onTap: () => s.setWeightDraft(s.weightDraft + step),
+                ),
+            ],
+          ),
           const SizedBox(height: 8),
-          Row(children: [
-            for (final step in _steps)
-              WeightStepButton(
+          Row(
+            children: [
+              for (final step in _steps)
+                WeightStepButton(
                   delta: -step,
-                  onTap: () => s.setWeightDraft(s.weightDraft - step)),
-          ]),
+                  onTap: () => s.setWeightDraft(s.weightDraft - step),
+                ),
+            ],
+          ),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -725,8 +993,10 @@ class _ActionPanelState extends State<_ActionPanel> {
             children: [
               Tooltip(
                 message: '余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
-                child: const Text('余力 ',
-                    style: TextStyle(color: AppTheme.textDim, fontSize: 14)),
+                child: const Text(
+                  '余力 ',
+                  style: TextStyle(color: AppTheme.textDim, fontSize: 14),
+                ),
               ),
               for (var r = 0; r <= 4; r++)
                 GestureDetector(
@@ -737,18 +1007,23 @@ class _ActionPanelState extends State<_ActionPanel> {
                   child: Container(
                     margin: const EdgeInsets.symmetric(horizontal: 3),
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 5),
+                      horizontal: 12,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: _rir == r ? AppTheme.accent : AppTheme.cardHi,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text('$r',
-                        style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: _rir == r
-                                ? const Color(0xFF06220F)
-                                : AppTheme.textDim)),
+                    child: Text(
+                      '$r',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: _rir == r
+                            ? const Color(0xFF06220F)
+                            : AppTheme.textDim,
+                      ),
+                    ),
                   ),
                 ),
             ],
@@ -764,15 +1039,17 @@ class _ActionPanelState extends State<_ActionPanel> {
                   label: Text('$r'),
                   selected: _reps == r,
                   labelStyle: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color:
-                          _reps == r ? const Color(0xFF06220F) : AppTheme.text),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: _reps == r ? const Color(0xFF06220F) : AppTheme.text,
+                  ),
                   selectedColor: AppTheme.primary,
                   backgroundColor: AppTheme.cardHi,
                   side: BorderSide.none,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   onSelected: (_) {
                     HapticFeedback.selectionClick();
                     setState(() => _reps = r);
@@ -786,15 +1063,16 @@ class _ActionPanelState extends State<_ActionPanel> {
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () => setState(() => _noteOpen = !_noteOpen),
-              child: Text(_note.isEmpty && !_noteOpen
-                  ? '+ 备注（可选）'
-                  : '备注：${_note.isEmpty ? "编辑" : _note}',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: _note.isEmpty
-                          ? AppTheme.textDim
-                          : AppTheme.accent)),
+              child: Text(
+                _note.isEmpty && !_noteOpen
+                    ? '+ 备注（可选）'
+                    : '备注：${_note.isEmpty ? "编辑" : _note}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: _note.isEmpty ? AppTheme.textDim : AppTheme.accent,
+                ),
+              ),
             ),
             if (_noteOpen)
               Padding(
@@ -805,8 +1083,9 @@ class _ActionPanelState extends State<_ActionPanel> {
                   maxLines: 1,
                   onChanged: (v) => _note = v,
                   decoration: const InputDecoration(
-                      hintText: '这组的感受/状态（可选）',
-                      isDense: true),
+                    hintText: '这组的感受/状态（可选）',
+                    isDense: true,
+                  ),
                 ),
               ),
           ],
@@ -862,11 +1141,14 @@ class _ActionPanelState extends State<_ActionPanel> {
           color: sel ? AppTheme.accent : AppTheme.cardHi,
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: sel ? const Color(0xFF06220F) : AppTheme.textDim)),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: sel ? const Color(0xFF06220F) : AppTheme.textDim,
+          ),
+        ),
       ),
     );
   }
@@ -910,9 +1192,10 @@ class _RestViewState extends State<_RestView> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text('组间休息',
-                          style: TextStyle(
-                              color: AppTheme.textDim, fontSize: 18)),
+                      const Text(
+                        '组间休息',
+                        style: TextStyle(color: AppTheme.textDim, fontSize: 18),
+                      ),
                       const SizedBox(height: 8),
                       ValueListenableBuilder<int>(
                         valueListenable: s.restRemainingMs,
@@ -941,19 +1224,24 @@ class _RestViewState extends State<_RestView> {
                       const SizedBox(height: 12),
                       // 点"下一组"展开重量步进：休息中就能调下一组重量
                       GestureDetector(
-                        onTap: () =>
-                            setState(() => _weightOpen = !_weightOpen),
+                        onTap: () => setState(() => _weightOpen = !_weightOpen),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: AppTheme.cardHi,
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text(nextText,
-                              textAlign: TextAlign.center,
-                              style: const TextStyle(
-                                  color: AppTheme.text, fontSize: 18)),
+                          child: Text(
+                            nextText,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: AppTheme.text,
+                              fontSize: 18,
+                            ),
+                          ),
                         ),
                       ),
                       if (_weightOpen) ...[
@@ -967,37 +1255,50 @@ class _RestViewState extends State<_RestView> {
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(48),
                           ),
-                          child: const Text('直接输入重量',
-                              style: TextStyle(
-                                  fontSize: 15, fontWeight: FontWeight.w700)),
+                          child: const Text(
+                            '直接输入重量',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                         const SizedBox(height: 6),
-                        Row(children: [
-                          for (final step in _steps)
-                            WeightStepButton(
+                        Row(
+                          children: [
+                            for (final step in _steps)
+                              WeightStepButton(
                                 delta: step,
-                                onTap: () => s
-                                    .setWeightDraft(s.weightDraft + step)),
-                        ]),
+                                onTap: () =>
+                                    s.setWeightDraft(s.weightDraft + step),
+                              ),
+                          ],
+                        ),
                         const SizedBox(height: 6),
-                        Row(children: [
-                          for (final step in _steps)
-                            WeightStepButton(
+                        Row(
+                          children: [
+                            for (final step in _steps)
+                              WeightStepButton(
                                 delta: -step,
-                                onTap: () => s
-                                    .setWeightDraft(s.weightDraft - step)),
-                        ]),
+                                onTap: () =>
+                                    s.setWeightDraft(s.weightDraft - step),
+                              ),
+                          ],
+                        ),
                         const SizedBox(height: 4),
                         TextButton(
                           onPressed: () => s.toggleBodyweightDraft(),
                           child: Text(
-                              s.weightDraft == 0
-                                  ? '当前：自重'
-                                  : (s.weightDraft < 0
+                            s.weightDraft == 0
+                                ? '当前：自重'
+                                : (s.weightDraft < 0
                                       ? '当前：辅 ${fmtKg(-s.weightDraft)}（点切自重）'
                                       : '改为自重'),
-                              style: const TextStyle(
-                                  color: AppTheme.textDim, fontSize: 13)),
+                            style: const TextStyle(
+                              color: AppTheme.textDim,
+                              fontSize: 13,
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -1007,8 +1308,9 @@ class _RestViewState extends State<_RestView> {
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                   decoration: const BoxDecoration(
                     color: AppTheme.card,
-                    borderRadius:
-                        BorderRadius.vertical(top: Radius.circular(24)),
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -1025,14 +1327,19 @@ class _RestViewState extends State<_RestView> {
                                 HapticFeedback.selectionClick();
                                 s.startExtraSet();
                               },
-                              icon: const Icon(Icons.replay,
-                                  size: 18, color: AppTheme.primary),
+                              icon: const Icon(
+                                Icons.replay,
+                                size: 18,
+                                color: AppTheme.primary,
+                              ),
                               label: Text(
-                                  '再来一组 · ${s.extraSetExerciseName}（继承上次重量）',
-                                  style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppTheme.primary)),
+                                '再来一组 · ${s.extraSetExerciseName}（继承上次重量）',
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppTheme.primary,
+                                ),
+                              ),
                             ),
                           ),
                         ),
@@ -1052,10 +1359,13 @@ class _RestViewState extends State<_RestView> {
                                   backgroundColor: AppTheme.cardHi,
                                   side: BorderSide.none,
                                 ),
-                                child: const Text('-30 秒',
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700)),
+                                child: const Text(
+                                  '-30 秒',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1072,10 +1382,13 @@ class _RestViewState extends State<_RestView> {
                                   backgroundColor: AppTheme.cardHi,
                                   side: BorderSide.none,
                                 ),
-                                child: const Text('+30 秒',
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700)),
+                                child: const Text(
+                                  '+30 秒',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1097,10 +1410,13 @@ class _RestViewState extends State<_RestView> {
                                       ? AppTheme.primary
                                       : AppTheme.text,
                                 ),
-                                child: Text(s.isRestPaused ? '继续' : '暂停',
-                                    style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700)),
+                                child: Text(
+                                  s.isRestPaused ? '继续' : '暂停',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1118,10 +1434,13 @@ class _RestViewState extends State<_RestView> {
                                   side: BorderSide.none,
                                   foregroundColor: AppTheme.textDim,
                                 ),
-                                child: const Text('撤销',
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600)),
+                                child: const Text(
+                                  '撤销',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
@@ -1182,25 +1501,29 @@ Future<void> _doEndTraining(BuildContext context) async {
   final activeMin = ((s.session?.activeMs ?? 0) / 60000).ceil();
   final summaryBuf = StringBuffer();
   summaryBuf.writeln(
-      '$title 完成：总容量 ${fmtVolume(stats.volume)}，${stats.workingSets} 个正式组，${stats.exercises.length} 个动作，总时长 $durationMin 分钟（训练 $activeMin / 休息 $restMin）。');
+    '$title 完成：总容量 ${fmtVolume(stats.volume)}，${stats.workingSets} 个正式组，${stats.exercises.length} 个动作，总时长 $durationMin 分钟（训练 $activeMin / 休息 $restMin）。',
+  );
   for (final v in verdicts) {
     summaryBuf.writeln('- $v');
   }
-  unawaited(c.lark
-      .backfillSessionSummary(date: date, summary: summaryBuf.toString()));
+  unawaited(
+    c.lark.backfillSessionSummary(date: date, summary: summaryBuf.toString()),
+  );
 
   if (!context.mounted) return;
-  await Navigator.of(context).pushReplacement(MaterialPageRoute(
-    builder: (_) => _SummaryPage(
-      stats: stats,
-      verdicts: verdicts,
-      title: title,
-      prNames: prNames,
-      durationMin: durationMin,
-      activeMin: activeMin,
-      restMin: restMin,
+  await Navigator.of(context).pushReplacement(
+    MaterialPageRoute(
+      builder: (_) => _SummaryPage(
+        stats: stats,
+        verdicts: verdicts,
+        title: title,
+        prNames: prNames,
+        durationMin: durationMin,
+        activeMin: activeMin,
+        restMin: restMin,
+      ),
     ),
-  ));
+  );
 }
 
 class _SummaryPage extends StatelessWidget {
@@ -1236,13 +1559,17 @@ class _SummaryPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 24),
-              const Text('训练完成 💪',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800)),
+              const Text(
+                '训练完成 💪',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
+              ),
               const SizedBox(height: 8),
-              Text(title,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textDim, fontSize: 16)),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 16),
+              ),
               const SizedBox(height: 24),
               Row(
                 children: [
@@ -1253,13 +1580,14 @@ class _SummaryPage extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                  durationMin > 0
-                      ? (activeMin > 0 || restMin > 0
+                durationMin > 0
+                    ? (activeMin > 0 || restMin > 0
                           ? '总时长 $durationMin 分钟 · 训练 $activeMin 分 · 休息 $restMin 分'
                           : '训练时长 $durationMin 分钟')
-                      : '训练完成',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: AppTheme.textDim)),
+                    : '训练完成',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppTheme.textDim),
+              ),
               const SizedBox(height: 24),
               if (prNames.isNotEmpty) ...[
                 Container(
@@ -1268,11 +1596,14 @@ class _SummaryPage extends StatelessWidget {
                     color: AppTheme.warn.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Text('🏆 PR 突破：${prNames.join('、')}',
-                      style: const TextStyle(
-                          color: AppTheme.warn,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700)),
+                  child: Text(
+                    '🏆 PR 突破：${prNames.join('、')}',
+                    style: const TextStyle(
+                      color: AppTheme.warn,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
               ],
@@ -1284,8 +1615,10 @@ class _SummaryPage extends StatelessWidget {
                     for (final v in verdicts)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
-                        child:
-                            Text('· $v', style: const TextStyle(fontSize: 15)),
+                        child: Text(
+                          '· $v',
+                          style: const TextStyle(fontSize: 15),
+                        ),
                       ),
                   ],
                 ),
@@ -1312,8 +1645,10 @@ class _SummaryPage extends StatelessWidget {
           // 放不下：FittedBox 等比缩字，避免溢出/与邻格重叠。
           FittedBox(
             fit: BoxFit.scaleDown,
-            child:
-                Text(value, style: AppTheme.bigNum(30, color: AppTheme.primary)),
+            child: Text(
+              value,
+              style: AppTheme.bigNum(30, color: AppTheme.primary),
+            ),
           ),
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(color: AppTheme.textDim)),

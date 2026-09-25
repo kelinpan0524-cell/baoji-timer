@@ -14,6 +14,8 @@ class SectionCard extends StatelessWidget {
     this.trailing,
     this.padding,
     this.onLongPress,
+    this.semanticsLabel,
+    this.longPressHint,
   });
 
   final Widget child;
@@ -21,6 +23,11 @@ class SectionCard extends StatelessWidget {
   final Widget? trailing;
   final EdgeInsetsGeometry? padding;
   final VoidCallback? onLongPress;
+
+  /// 读屏语义（调研条目 5/历史页 P1-12 长按删除的替代路径）：
+  /// TalkBack 下长按手势难触发，"双击并按住"提示 + 完整朗读标签补足。
+  final String? semanticsLabel;
+  final String? longPressHint;
 
   @override
   Widget build(BuildContext context) {
@@ -36,11 +43,14 @@ class SectionCard extends StatelessWidget {
                 children: [
                   // Flexible：系统大字号下长标题允许换行，不会把 Row 顶出横向溢出
                   Flexible(
-                    child: Text(title!,
-                        style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.text)),
+                    child: Text(
+                      title!,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.text,
+                      ),
+                    ),
                   ),
                   const Spacer(),
                   ?trailing,
@@ -54,7 +64,12 @@ class SectionCard extends StatelessWidget {
     );
     // 长按删除等场景（历史页训练卡）
     if (onLongPress == null) return card;
-    return InkWell(onLongPress: onLongPress, child: card);
+    return Semantics(
+      label: semanticsLabel,
+      onLongPressHint: longPressHint,
+      onLongPress: onLongPress,
+      child: InkWell(onLongPress: onLongPress, child: card),
+    );
   }
 }
 
@@ -85,11 +100,14 @@ class BigButton extends StatelessWidget {
         style: FilledButton.styleFrom(
           backgroundColor: color,
           foregroundColor: const Color(0xFF06220F),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
-        child: Text(label,
-            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800)),
+        child: Text(
+          label,
+          style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -97,11 +115,7 @@ class BigButton extends StatelessWidget {
 
 /// 重量步进大按钮。
 class WeightStepButton extends StatelessWidget {
-  const WeightStepButton({
-    super.key,
-    required this.delta,
-    required this.onTap,
-  });
+  const WeightStepButton({super.key, required this.delta, required this.onTap});
 
   final double delta;
   final VoidCallback onTap;
@@ -127,11 +141,14 @@ class WeightStepButton extends StatelessWidget {
               side: BorderSide.none,
               padding: EdgeInsets.zero,
             ),
-            child: Text(label,
-                style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: AppTheme.text)),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.text,
+              ),
+            ),
           ),
         ),
       ),
@@ -139,8 +156,12 @@ class WeightStepButton extends StatelessWidget {
   }
 }
 
-String fmtKg(double v) =>
-    v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+String fmtKg(double v) => v == v.roundToDouble()
+    ? v.toStringAsFixed(0)
+    : v
+          .toStringAsFixed(2)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
 
 /// 自重动作（0kg）显示"自重"而不是"0"。
 String fmtWeight(double v) => v <= 0 ? '自重' : fmtKg(v);
@@ -165,8 +186,12 @@ String fmtVolume(double v) {
 }
 
 /// App 级确认弹窗（非训练页使用）。
-Future<bool> confirmDialog(BuildContext context, String title, String content,
-    {String okLabel = '确认'}) async {
+Future<bool> confirmDialog(
+  BuildContext context,
+  String title,
+  String content, {
+  String okLabel = '确认',
+}) async {
   final r = await showDialog<bool>(
     context: context,
     builder: (c) => AlertDialog(
@@ -175,11 +200,13 @@ Future<bool> confirmDialog(BuildContext context, String title, String content,
       content: Text(content, style: const TextStyle(color: AppTheme.textDim)),
       actions: [
         TextButton(
-            onPressed: () => Navigator.pop(c, false),
-            child: const Text('取消', style: TextStyle(color: AppTheme.textDim))),
+          onPressed: () => Navigator.pop(c, false),
+          child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+        ),
         TextButton(
-            onPressed: () => Navigator.pop(c, true),
-            child: Text(okLabel, style: const TextStyle(color: AppTheme.danger))),
+          onPressed: () => Navigator.pop(c, true),
+          child: Text(okLabel, style: const TextStyle(color: AppTheme.danger)),
+        ),
       ],
     ),
   );
@@ -188,14 +215,16 @@ Future<bool> confirmDialog(BuildContext context, String title, String content,
 
 /// 通用轻提示。
 void toast(BuildContext context, String msg) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(msg),
-    backgroundColor: AppTheme.cardHi,
-    behavior: SnackBarBehavior.floating,
-    // 抬高到底部导航/常驻按钮之上，避免遮挡可点区域
-    margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-    duration: const Duration(seconds: 2),
-  ));
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: Text(msg),
+      backgroundColor: AppTheme.cardHi,
+      behavior: SnackBarBehavior.floating,
+      // 抬高到底部导航/常驻按钮之上，避免遮挡可点区域
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+      duration: const Duration(seconds: 2),
+    ),
+  );
 }
 
 /// 读取容器快捷方式。
