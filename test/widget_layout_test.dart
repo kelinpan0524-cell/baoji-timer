@@ -19,6 +19,8 @@ import 'package:baoji_timer/core/app.dart';
 import 'package:baoji_timer/engine/engine.dart';
 import 'package:baoji_timer/services/session_controller.dart';
 import 'package:baoji_timer/ui/exercise_picker_page.dart';
+import 'package:baoji_timer/ui/plan_page.dart';
+import 'package:baoji_timer/ui/stats_page.dart';
 import 'package:baoji_timer/ui/widgets/common.dart';
 import 'package:baoji_timer/ui/workout_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -534,6 +536,64 @@ void main() {
       await seedAndPump(tester, phone, textScale: 1.6);
       expectNoLayoutError(tester); // A8-4：大字号下筛选行/计数不再 RenderFlex 溢出
       expectOnScreen(tester, find.textContaining('添加'), phone);
+    });
+  });
+
+  // ---------- 320dp 窄屏 + 1.6 大字号（2026-09-26 Arono 报障：数字折行/分布错乱） ----------
+
+  group('320dp 窄屏 + 1.6 大字号：计划页与数据页无溢出、数字不断行', () {
+    const tiny = Size(320, 640);
+
+    /// PlanPage 无自身 Scaffold（真实 App 由 HomeShell 提供），宿主要补。
+    Widget hostWithScaffold(Widget page) => AppScope(
+          container: container,
+          child: MaterialApp(home: Scaffold(body: page)),
+        );
+
+    testWidgets('计划页：排程行/模板按钮/步进值无布局异常', (tester) async {
+      setSurface(tester, tiny, textScale: 1.6);
+      await tester.runAsync(() async {
+        await makeDay('推日');
+        await container.planRepo.reload();
+      });
+      await tester.pumpWidget(hostWithScaffold(const PlanPage()));
+      // _refresh 的 db 回包桥接（同挑选页口径：真实延时 + pump）
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 250)));
+      await tester.pump(const Duration(milliseconds: 100));
+      expectNoLayoutError(tester);
+      expect(find.textContaining('测试计划'), findsOneWidget,
+          reason: '计划已加载（日期视图按排程推导，不保证显示模板日名）');
+    });
+
+    testWidgets('数据页肌肉 Tab：恢复度/容量行数字不断行、无布局异常',
+        (tester) async {
+      setSurface(tester, tiny, textScale: 1.6);
+      await tester.pumpWidget(host(container, const StatsPage()));
+      // 先让概览 Tab 的加载完成（无限转圈不能 pumpAndSettle，真实延时桥接）
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 250)));
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('肌肉'), findsOneWidget);
+      await tester.tap(find.text('肌肉'));
+      await tester.pump(const Duration(milliseconds: 50));
+      // 肌肉 Tab 两个 FutureBuilder 的 db 查询回包桥接：
+      // 多轮「真实延时 + pump」直到内容出现（上限约 2 秒防死等）
+      var loaded = false;
+      for (var i = 0; i < 6 && !loaded; i++) {
+        await tester.runAsync(
+            () => Future<void>.delayed(const Duration(milliseconds: 250)));
+        await tester.pump(const Duration(milliseconds: 100));
+        loaded = find.text('肌群恢复度').evaluate().isNotEmpty;
+      }
+      expect(loaded, isTrue, reason: '肌肉 Tab 应加载出恢复度卡片');
+      expectNoLayoutError(tester);
+      // 百分比标签全部单行：两行文本的高度会明显超过 1.6 倍字号的行高
+      for (final e in find.textContaining('%').evaluate()) {
+        final w = e.widget as Text;
+        expect(tester.getSize(find.text(w.data!).last).height, lessThan(42),
+            reason: '「${w.data}」不应折行（FittedBox 缩放兜底）');
+      }
     });
   });
 }

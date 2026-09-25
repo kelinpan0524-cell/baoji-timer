@@ -32,7 +32,12 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
     super.initState();
     // initState 里不能同步读 InheritedWidget，延后一帧
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _future = _load());
+      // 块体写法：箭头闭包会把 Future 返回给 setState（debug 断言抛错）
+      if (mounted) {
+        setState(() {
+          _future = _load();
+        });
+      }
     });
   }
 
@@ -69,12 +74,7 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
     );
   }
 
-  Color _heat(int recovery) {
-    // 100%（满血）→ 主题绿；0%（疲劳）→ 底色灰。恢复度与容量热力图同向：
-    // 绿=练得多/刚练完与绿=容量高在视觉语言上一致，避免引入第三种语义色。
-    final t = (recovery / 100).clamp(0.0, 1.0);
-    return Color.lerp(AppTheme.cardHi, AppTheme.primary, 0.15 + 0.85 * t)!;
-  }
+  Color _heat(int recovery) => AppTheme.recoveryColor(recovery.toDouble());
 
   @override
   Widget build(BuildContext context) {
@@ -97,7 +97,9 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
                             TextStyle(color: AppTheme.textDim, fontSize: 13)),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: () => setState(() => _future = _load()),
+                      onPressed: () => setState(() {
+                        _future = _load();
+                      }),
                       child: const Text('重试'),
                     ),
                   ],
@@ -153,7 +155,12 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
               const SizedBox(height: 12),
               SizedBox(
                 height: 300,
-                child: MuscleBodyView(share: share, front: _front),
+                // 着色走红黄绿分级（2026-09-26 Arono：按恢复程度分色）
+                child: MuscleBodyView(
+                  share: share,
+                  front: _front,
+                  ramp: (v) => AppTheme.recoveryColor(v * 100),
+                ),
               ),
               const SizedBox(height: 12),
               ...kMuscleRegions.map((r) {
@@ -162,10 +169,17 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Row(
                     children: [
+                      // FittedBox：大字号/窄屏下肌群名与百分比整体缩放，
+                      // 绝不出现"30"被折成两行这类数字断行
                       SizedBox(
-                          width: 44,
-                          child:
-                              Text(r, style: const TextStyle(fontSize: 14))),
+                        width: 44,
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(r,
+                              maxLines: 1,
+                              style: const TextStyle(fontSize: 14)),
+                        ),
+                      ),
                       Expanded(
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(4),
@@ -179,14 +193,16 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
                       ),
                       SizedBox(
                         width: 52,
-                        child: Text('$v%',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                              color: v <= 50
-                                  ? AppTheme.warn
-                                  : AppTheme.textDim,
-                              fontSize: 13,
-                            )),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text('$v%',
+                              maxLines: 1,
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                color: _heat(v),
+                                fontSize: 13,
+                              )),
+                        ),
                       ),
                     ],
                   ),

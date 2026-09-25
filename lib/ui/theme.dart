@@ -18,6 +18,24 @@ class AppTheme {
   static const text = Color(0xFFE5E7EB);
   static const textDim = Color(0xFF9CA3AF);
 
+  // ============ 数据分级色（2026-09-26 Arono：按程度分色，不要全绿） ============
+
+  /// 恢复度分级色（pct 0-100）：0=疲劳红 → 60=黄 → 100=满血绿。
+  /// 低恢复是"要注意"的信号，用暖色一眼可见；高恢复回归主题绿。
+  static Color recoveryColor(double pct) {
+    final t = (pct / 100).clamp(0.0, 1.0);
+    if (t < 0.6) return Color.lerp(danger, warn, t / 0.6)!;
+    return Color.lerp(warn, primary, (t - 0.6) / 0.4)!;
+  }
+
+  /// 负荷/容量占比分级色（t 先由调用方归一到 0-1）：0=灰 → 0.45=绿 → 1=琥珀。
+  /// 按"列表内最大值"归一后重/轻肌群能拉开色带差距，不再是清一色绿。
+  static Color loadColor(double t) {
+    final v = t.clamp(0.0, 1.0);
+    if (v < 0.45) return Color.lerp(cardHi, primary, v / 0.45)!;
+    return Color.lerp(primary, warn, (v - 0.45) / 0.55)!;
+  }
+
   static ThemeData get dark => ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,

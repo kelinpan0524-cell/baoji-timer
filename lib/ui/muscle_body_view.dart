@@ -9,11 +9,20 @@ import 'theme.dart';
 /// 解剖级人体肌肉热力图：正面/背面 SVG，按肌群容量占比着色。
 /// SVG 路径数据来自 vulovix/body-muscles（Apache 2.0）。
 class MuscleBodyView extends StatelessWidget {
-  const MuscleBodyView({super.key, required this.share, required this.front});
+  const MuscleBodyView({
+    super.key,
+    required this.share,
+    required this.front,
+    this.ramp,
+  });
 
   /// 肌群 → 本周容量占比（0-1）。
   final Map<String, double> share;
   final bool front;
+
+  /// 自定义着色（入参为该肌群占比 0-1）：恢复度视图传红黄绿分级、
+  /// 容量视图传负荷分级；缺省沿用 sqrt 绿色渐变（既有语义）。
+  final Color Function(double share)? ramp;
 
   static const _skin = Color(0xFF2A323D);
   static const _line = Color(0xFF151A21); // 肌肉分隔线
@@ -23,10 +32,11 @@ class MuscleBodyView extends StatelessWidget {
   static const _viewBoxFront = '0 0 35 93';
   static const _viewBoxBack = '37 0 35 93';
 
-  /// 灰底 → 绿，随占比加深（sqrt 让低占比也可感知）。
+  /// 灰底 → 着色，随占比加深（sqrt 让低占比也可感知）。
   Color _heat(String region) {
     final v = (share[region] ?? 0).clamp(0.0, 1.0);
     if (v <= 0.005) return _skin;
+    if (ramp != null) return ramp!(v);
     final t = math.sqrt(v);
     return Color.lerp(_skin, AppTheme.primary, 0.15 + 0.85 * t)!;
   }
