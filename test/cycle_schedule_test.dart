@@ -1,7 +1,9 @@
-// 循环排程「训练日搁浅」回归：连练 N < 有动作的训练日数时，
-// 多出的模板日在 _cycleDayFor 里永远轮不到（用户报障：胸腿背计划一直只有胸腿）。
-// 本文件锁定推导语义 + trainableDayCount 口径，UI 侧默认值与警示见 plan_page。
-// 基建同 plan_repository_test：ffi 真库 + Db.forTesting + 唯一路径。
+// 循环排程轮转语义（2026-09-26 Arono 拍板）：模板日按「全局训练序号」
+// 依次轮转，连练数不必等于训练日数——练2休1 配 6 个训练日即
+// T1T2休T3T4休T5T6休T1…接着往下轮，练完一圈从头再来。
+// （旧实现用窗口内 pos 取下标：连练 < 训练日数时多出的模板日永远排不上，
+// 曾被当「搁浅」用警示兜底，语义废弃——现在这种配置就是正常轮转。）
+// 同时锁定 trainableDayCount 口径。基建同 plan_repository_test：ffi 真库。
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/db/db.dart';
 import 'package:baoji_timer/models/models.dart';
@@ -38,26 +40,29 @@ void main() {
     await db.wipeAll();
   });
 
-  /// 建「胸/腿/背」三模板日，每日 1 个动作；[backWithExercises]=false 时背日留空。
-  Future<Plan> buildPushPullLegs({bool backWithExercises = true}) async {
+  /// 建 [titles] 个模板日，每日 1 个动作；[emptyIdx] 列表里的下标留空模板日。
+  Future<Plan> buildCyclePlan(
+    List<String> titles, {
+    List<int> emptyIdx = const [],
+    int train = 2,
+    int rest = 2,
+  }) async {
     final plan = await db.insertPlan(Plan(
-      name: '胸腿背',
+      name: titles.join(),
       source: 'manual',
       createdAt: '2026-09-25',
       pattern: 'cycle',
       patternStart: '2026-09-01',
-      cycleTrain: 2,
-      cycleRest: 2,
+      cycleTrain: train,
+      cycleRest: rest,
     ));
-    final titles = ['胸', '腿', '背'];
     for (var i = 0; i < titles.length; i++) {
       final day = await db.insertPlanDay(PlanDay(
           planId: plan.id!, weekday: i + 1, title: titles[i]));
-      final withEx = i < 2 || backWithExercises;
-      if (withEx) {
+      if (!emptyIdx.contains(i)) {
         await db.insertPlanExercise(PlanExercise(
           dayId: day,
-          name: '卧推',
+          name: '动作${i + 1}',
           orderIdx: 0,
           sets: 3,
           repsMin: 8,
@@ -72,51 +77,78 @@ void main() {
   }
 
   test('trainableDayCount：有动作的训练日数，空模板日不计入', () async {
-    final plan = await buildPushPullLegs();
+    final plan = await buildCyclePlan(['胸', '腿', '背']);
     expect(await repo.trainableDayCount(plan.id!), 3);
 
-    final emptyBack = await buildPushPullLegs(backWithExercises: false);
+    final emptyBack = await buildCyclePlan(['胸', '腿', '背'],
+        emptyIdx: const [2]);
     expect(await repo.trainableDayCount(emptyBack.id!), 2);
   });
 
-  test('复现：连练2 < 3 个训练日时，第 3 天永远推导为休息（搁浅语义锁定）', () async {
-    final plan = await buildPushPullLegs();
-    // 周期 4：pos 0=胸 1=腿 2=休 3=休；背(下标2)永远轮不到 —— 用户报障的形状
+  test('Arono 用例：6 训练日 + 练2休1 → 三个窗口转完一圈，从头再来', () async {
+    final plan = await buildCyclePlan(
+      ['胸', '腿', '背', '肩', '臂', '核心'],
+      train: 2,
+      rest: 1,
+    );
+    // 窗口1：胸、腿；休 1 天
     expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 1)))!.title, '胸');
     expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 2)))!.title, '腿');
-    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 3)), isNull,
-        reason: '连练2 < 训练日3：第 3 天被当作休息日，背排不上');
-    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 4)), isNull);
-    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 5)))!.title, '胸');
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 3)), isNull);
+    // 窗口2：接着是第 3、4 个训练日，不是又从胸开始
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 4)))!.title, '背');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 5)))!.title, '肩');
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 6)), isNull);
+    // 窗口3：第 5、6 个训练日；之后休 1 天再从胸（第 1 个）轮起
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 7)))!.title, '臂');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 8)))!.title, '核心');
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 9)), isNull);
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 10)))!.title, '胸',
+        reason: '练完一圈从头再来');
   });
 
-  test('连练3 = 训练日数时正常轮转：胸腿背休休', () async {
-    final plan = await buildPushPullLegs();
-    await repo.updateSchedulePattern(
-        planId: plan.id!,
-        pattern: 'cycle',
-        patternStart: '2026-09-01',
-        cycleTrain: 3,
-        cycleRest: 2);
-    final reloaded = (await db.allPlans()).firstWhere((p) => p.id == plan.id);
-    expect((await repo.dayForDateOn(reloaded, DateTime(2026, 9, 1)))!.title,
-        '胸');
-    expect((await repo.dayForDateOn(reloaded, DateTime(2026, 9, 2)))!.title,
-        '腿');
-    expect((await repo.dayForDateOn(reloaded, DateTime(2026, 9, 3)))!.title,
-        '背', reason: '连练数与训练日数对齐后，背正常出现');
-    expect(await repo.dayForDateOn(reloaded, DateTime(2026, 9, 4)), isNull);
-    expect(await repo.dayForDateOn(reloaded, DateTime(2026, 9, 5)), isNull);
-    expect((await repo.dayForDateOn(reloaded, DateTime(2026, 9, 6)))!.title,
-        '胸');
+  test('跨窗口轮转：3 训练日 + 练2休2 → 每个训练日都轮得到', () async {
+    final plan = await buildCyclePlan(['胸', '腿', '背']);
+    // occ 序列 0,1 | 2,3 | 4,5 | 6 → 下标 0,1 | 2,0 | 1,2 | 0
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 1)))!.title, '胸');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 2)))!.title, '腿');
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 3)), isNull);
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 4)), isNull);
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 5)))!.title, '背',
+        reason: '第二个训练窗口接着用第 3 个模板日（旧实现这里又回到胸）');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 6)))!.title, '胸');
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 7)), isNull);
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 8)), isNull);
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 9)))!.title, '腿');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 10)))!.title, '背');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 13)))!.title, '胸',
+        reason: '12 天（3 个窗口 × 4 天周期）后回到起点');
+  });
+
+  test('连练=训练日数（对齐）：语义与旧版一致，胸腿背休休胸', () async {
+    final plan =
+        await buildCyclePlan(['胸', '腿', '背'], train: 3, rest: 2);
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 1)))!.title, '胸');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 2)))!.title, '腿');
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 3)))!.title, '背');
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 4)), isNull);
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 5)), isNull);
+    expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 6)))!.title, '胸');
   });
 
   test('空模板日被推导跳过：轮转只在有动作的模板日里循环', () async {
-    final plan = await buildPushPullLegs(backWithExercises: false);
-    // 连练2、可练日=[胸,腿]：pos 0=胸 1=腿，休 2 天后重复
+    final plan = await buildCyclePlan(['胸', '腿', '背'],
+        emptyIdx: const [2], train: 2, rest: 2);
+    // 可练日=[胸,腿]：occ 0=胸 1=腿，休 2 天后 occ 2=胸 3=腿
     expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 1)))!.title, '胸');
     expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 2)))!.title, '腿');
     expect(await repo.dayForDateOn(plan, DateTime(2026, 9, 3)), isNull);
     expect((await repo.dayForDateOn(plan, DateTime(2026, 9, 5)))!.title, '胸');
+  });
+
+  test('起始日之前不推导：返回休息', () async {
+    final plan = await buildCyclePlan(['胸', '腿', '背']);
+    expect(await repo.dayForDateOn(plan, DateTime(2026, 8, 31)), isNull,
+        reason: 'patternStart(9/1) 之前不产生训练日');
   });
 }
