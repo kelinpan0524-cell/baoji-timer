@@ -975,57 +975,99 @@ class _PlanPageState extends State<PlanPage> {
         ),
       ),
     );
+    List<AiDaySpec>? specs;
+    var localMode = false;
+    var aiError = '';
     try {
-      final specs = genMode
+      if (!c.settings.aiConfigured) {
+        throw const AiException('未配置 AI 接口');
+      }
+      specs = genMode
           ? await c.ai.designPlanFromDescription(ctrl.text.trim())
           : await c.ai.parsePlan(ctrl.text.trim());
-      if (nav.canPop()) nav.pop();
-
-      if (genMode) {
-        // 生成模式：先预览，用户同意才保存（撤旧+写新由 helper 统一处理）
-        if (!mounted) return;
-        final name = await _showPlanPreview(specs);
-        if (name == null || !mounted) return;
-        final plan = await _switchActivePlanAndSync(
-          c,
-          () => c.planRepo.saveAiPlan(
-            name: name.isEmpty ? 'AI 生成 ${fmtDate(DateTime.now())}' : name,
-            specs: specs,
-            metaMap: c.ai.metaMap(),
-          ),
-        );
-        await _refresh();
-        if (!mounted) return;
-        toast(context, '已保存并设为使用中「${plan.name}」，点任意一天可微调');
-      } else {
-        // 原文导入：逐字转成计划直接保存
-        final plan = await _switchActivePlanAndSync(
-          c,
-          () => c.planRepo.saveAiPlan(
-            name: 'AI 计划 ${fmtDate(DateTime.now())}',
-            specs: specs,
-            metaMap: c.ai.metaMap(),
-          ),
-        );
-        await _refresh();
-        if (!mounted) return;
-        toast(context, '拆解完成：${specs.length} 个训练日，已设为使用中「${plan.name}」');
-      }
     } on AiException catch (e) {
-      if (nav.canPop()) nav.pop();
-      if (mounted) toast(context, e.message);
+      aiError = e.message;
     } catch (e) {
-      if (nav.canPop()) nav.pop();
-      if (mounted) toast(context, 'AI 请求失败，请重试或换模型（$e）');
+      aiError = 'AI 请求失败，请重试或换模型（$e）';
     }
+    if (nav.canPop()) nav.pop();
+
+    // 调研条目 13：AI 不可用（无 Key/无网/失败）→ 自动回落 engine 本地
+    // 规则生成，预览页明示「本地模式」；描述里实在提不出可用动作才报错。
+    if (specs == null) {
+      final local = localPlanFromDescription(ctrl.text.trim());
+      if (local.isEmpty) {
+        if (mounted) {
+          toast(context, aiError.isEmpty ? '本地生成失败，请重试' : aiError);
+        }
+        return;
+      }
+      specs = [
+        for (final d in local)
+          AiDaySpec(
+            d.weekday,
+            d.title,
+            [
+              for (final ex in d.exercises)
+                AiExerciseSpec(
+                  name: ex.name,
+                  rawName: ex.name,
+                  sets: ex.sets,
+                  repsMin: ex.repsMin,
+                  repsMax: ex.repsMax,
+                  restSec: ex.restSec,
+                  kind: ex.kind,
+                  mainMuscle: ex.mainMuscle,
+                ),
+            ],
+          ),
+      ];
+      localMode = true;
+    }
+    if (!mounted) return;
+
+    // 调研条目 12：无论哪种来源都先进预览页逐动作确认，确认后才落库。
+    final picked = await _showPlanPreview(specs, localMode: localMode);
+    if (picked == null || !mounted) return;
+    final (name, confirmed) = picked;
+    final plan = await _switchActivePlanAndSync(
+      c,
+      () => c.planRepo.saveAiPlan(
+        name: name.isEmpty
+            ? (genMode
+                ? 'AI 生成 ${fmtDate(DateTime.now())}'
+                : 'AI 计划 ${fmtDate(DateTime.now())}')
+            : name,
+        specs: confirmed,
+        metaMap: c.ai.metaMap(),
+      ),
+    );
+    await _refresh();
+    if (!mounted) return;
+    toast(
+      context,
+      localMode
+          ? '本地模式已生成「${plan.name}」（AI 不可用），请逐日校对'
+          : '已保存并设为使用中「${plan.name}」，点任意一天可微调',
+    );
   }
 
-  /// 生成结果预览：用户看完点「保存为计划」才落库。返回计划名（放弃返回 null）。
-  Future<String?> _showPlanPreview(List<AiDaySpec> specs) async {
+  /// 生成结果预览：用户逐动作确认后点「保存为计划」才落库。
+  /// 返回 (计划名, 确认后的 specs)；放弃返回 null。
+  Future<(String, List<AiDaySpec>)?> _showPlanPreview(
+    List<AiDaySpec> specs, {
+    required bool localMode,
+  }) async {
     final nameCtrl = TextEditingController(
-      text: 'AI 生成 ${fmtDate(DateTime.now())}',
+      text: localMode
+          ? '本地计划 ${fmtDate(DateTime.now())}'
+          : 'AI 生成 ${fmtDate(DateTime.now())}',
     );
-    return showModalBottomSheet<String>(
+    // 可编辑副本（AiDaySpec 不可变，按 (日, 序) 定位替换动作）
+    final edited = [
+      for (final d in specs) List<AiExerciseSpec>.of(d.exercises),
+    ];
+    return showModalBottomSheet<(String, List<AiDaySpec>)>(
       context: context,
       isScrollControlled: true,
       isDismissible: false, // 90 秒的成果不能被随手拖没
@@ -1038,91 +1080,212 @@ class _PlanPageState extends State<PlanPage> {
         padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         child: SizedBox(
           height: MediaQuery.of(ctx).size.height * 0.82,
-          child: Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '计划预览（${specs.length} 个训练日）',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: '计划名'),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                  children: [
-                    for (final spec in specs)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+          child: StatefulBuilder(
+            builder: (ctx, setSheet) => Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
                           Text(
-                            '周${'一二三四五六日'[spec.weekday - 1]} · ${spec.title}',
+                            localMode ? '本地模式预览' : '计划预览',
                             style: const TextStyle(
-                              fontSize: 15,
+                              fontSize: 18,
                               fontWeight: FontWeight.w700,
-                              color: AppTheme.primary,
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          for (final ex in spec.exercises)
-                            Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 2),
-                              child: Text(
-                                '· ${ex.name}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
-                                style: const TextStyle(fontSize: 14),
-                              ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '（${specs.length} 个训练日）',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: AppTheme.textDim,
                             ),
-                          const SizedBox(height: 10),
+                          ),
                         ],
                       ),
-                  ],
-                ),
-              ),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () async {
-                            final ok = await confirmDialog(
-                              ctx,
-                              '丢弃刚生成的计划？',
-                              '放弃后需要重新让 AI 生成一遍。',
-                            );
-                            if (ok && ctx.mounted) Navigator.pop(ctx);
-                          },
-                          child: const Text('放弃'),
+                      const SizedBox(height: 4),
+                      Text(
+                        localMode
+                            ? 'AI 不可用（无网/未配置/失败），已按内置规则生成。点动作可调整。'
+                            : '点动作可换候选；标「待确认」的动作是 AI 名字没对上词表的，请务必确认。',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.textDim,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () =>
-                              Navigator.pop(ctx, nameCtrl.text.trim()),
-                          child: const Text('保存为计划'),
-                        ),
+                      const SizedBox(height: 10),
+                      TextField(
+                        controller: nameCtrl,
+                        decoration: const InputDecoration(labelText: '计划名'),
                       ),
                     ],
                   ),
                 ),
-              ),
-            ],
+                Expanded(
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                    children: [
+                      for (var i = 0; i < specs.length; i++)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '周${'一二三四五六日'[specs[i].weekday - 1]} · ${specs[i].title}',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            for (var j = 0; j < edited[i].length; j++)
+                              _previewExerciseRow(
+                                edited[i][j],
+                                onTap: () async {
+                                  final next =
+                                      await _pickExerciseCandidate(
+                                          ctx, edited[i][j]);
+                                  if (next != null) {
+                                    setSheet(() => edited[i][j] = next);
+                                  }
+                                },
+                              ),
+                            const SizedBox(height: 10),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+                SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () async {
+                              final ok = await confirmDialog(
+                                ctx,
+                                '丢弃刚生成的计划？',
+                                '放弃后需要重新生成一遍。',
+                              );
+                              if (ok && ctx.mounted) Navigator.pop(ctx);
+                            },
+                            child: const Text('放弃'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () {
+                              final confirmed = [
+                                for (var i = 0; i < specs.length; i++)
+                                  AiDaySpec(specs[i].weekday, specs[i].title,
+                                      edited[i]),
+                              ];
+                              Navigator.pop(
+                                  ctx, (nameCtrl.text.trim(), confirmed));
+                            },
+                            child: const Text('保存为计划'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 预览页的一行动作：待确认的加警示色与徽标，全部可点进候选选择。
+  Widget _previewExerciseRow(AiExerciseSpec ex, {required VoidCallback onTap}) {
+    final warn = ex.needsConfirm;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '· ${ex.name}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: warn ? AppTheme.warn : AppTheme.text,
+                ),
+              ),
+            ),
+            if (warn)
+              const Text(
+                '待确认 ›',
+                style: TextStyle(fontSize: 12, color: AppTheme.warn),
+              )
+            else
+              const Text(
+                '›',
+                style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 候选选择：六级匹配的 top5 候选 + 保留原名（保存后走动作库沉淀兜底）。
+  /// 无候选（已确认动作）不弹窗。
+  Future<AiExerciseSpec?> _pickExerciseCandidate(
+    BuildContext ctx,
+    AiExerciseSpec ex,
+  ) async {
+    if (ex.candidates.isEmpty) return null;
+    final original =
+        ex.rawName.isNotEmpty ? ex.rawName : ex.name;
+    return showModalBottomSheet<AiExerciseSpec>(
+      context: ctx,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          children: [
+            Text(
+              '「$original」匹配到以下动作，请确认',
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            for (final cand in ex.candidates)
+              ListTile(
+                dense: true,
+                title: Text(cand),
+                leading: const Icon(Icons.fitness_center,
+                    size: 18, color: AppTheme.primary),
+                onTap: () => Navigator.pop(sheetCtx, ex.withName(cand)),
+              ),
+            const Divider(height: 1),
+            ListTile(
+              dense: true,
+              title: Text('保留「$original」'),
+              subtitle: const Text(
+                '保存后沉淀进动作库，肌群按 AI 判定归类',
+                style: TextStyle(fontSize: 12, color: AppTheme.textDim),
+              ),
+              leading:
+                  const Icon(Icons.edit_note, size: 18, color: AppTheme.textDim),
+              onTap: () => Navigator.pop(sheetCtx, ex.withName(original)),
+            ),
+          ],
         ),
       ),
     );

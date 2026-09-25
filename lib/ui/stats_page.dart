@@ -297,6 +297,9 @@ class _OverviewTabState extends State<_OverviewTab> {
     final now = DateTime.now();
     final from = fmtDate(now.subtract(const Duration(days: 365)));
     final rows = await c.db.sessionRowsBetween(from, fmtDate(now));
+    // 自重容量折算（点名条目二）：引体/俯卧撑类按 系数×体重 计入容量；
+    // 体重未设（0）时自动回旧口径（自重记 0）。
+    final bodyWeight = c.settings.bodyWeightKg;
     // 休息趋势：按会话取休息净时长（老记录为 0 跳过）
     final sessionsForRest = await c.db.sessionsBetween(from, fmtDate(now));
     final restMinutes = <FlSpot>[];
@@ -336,7 +339,9 @@ class _OverviewTabState extends State<_OverviewTab> {
       if (kind == SetKind.working) {
         final weekKey =
             mondayOf(parseDate(date)).millisecondsSinceEpoch ~/ 86400000;
-        weekly[weekKey] = (weekly[weekKey] ?? 0) + entry.volume;
+        weekly[weekKey] = (weekly[weekKey] ?? 0) +
+            setVolumeWithBodyweight(entry,
+                exerciseName: name, bodyWeightKg: bodyWeight);
         // 所有动作都算 1RM 序列，"主力动作"由容量排序动态选出
         final rm = estimate1RM(weight, reps);
         final list = big4.putIfAbsent(name, () => <FlSpot>[]);
@@ -352,7 +357,10 @@ class _OverviewTabState extends State<_OverviewTab> {
     for (final e in setsByName.entries) {
       volumeByName[e.key] = e.value
           .where((s) => s.kind == SetKind.working)
-          .fold(0.0, (a, b) => a + b.volume);
+          .fold(
+              0.0,
+              (a, b) => a + setVolumeWithBodyweight(b,
+                  exerciseName: e.key, bodyWeightKg: bodyWeight));
     }
     final topLifts = volumeByName.keys.where((k) => volumeByName[k]! > 0)
         .toList()
@@ -542,6 +550,7 @@ class _MuscleTabState extends State<_MuscleTab> {
               e.key, e.value.where((x) => x.kind == SetKind.working).toList()))
           .toList(),
       metaMap,
+      bodyWeightKg: c.settings.bodyWeightKg,
     );
   }
 }

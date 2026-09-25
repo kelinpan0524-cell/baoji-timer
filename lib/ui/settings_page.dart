@@ -37,6 +37,12 @@ class SettingsPage extends StatelessWidget {
                 s.restAssistanceSec = v;
                 s.save();
               }),
+              // 体重（自重容量折算用，点名条目二）：引体/俯卧撑类动作
+              // 按 系数×体重 计入容量趋势；设 0 关闭折算。
+              _weightRow('体重（自重容量折算用）', s.bodyWeightKg, (v) {
+                s.bodyWeightKg = v;
+                s.save();
+              }),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('完成组时震动'),
@@ -207,6 +213,27 @@ class SettingsPage extends StatelessWidget {
       ],
     );
   }
+
+  Widget _weightRow(String label, double value, ValueChanged<double> onChanged) {
+    return Row(
+      children: [
+        Expanded(child: Text(label)),
+        IconButton(
+          onPressed: () => onChanged((value - 1).clamp(0, 200)),
+          icon: const Icon(Icons.remove_circle_outline),
+        ),
+        Text(value <= 0 ? '关' : '${_fmtWeight(value)} kg',
+            style: const TextStyle(fontSize: 17)),
+        IconButton(
+          onPressed: () => onChanged((value + 1).clamp(0, 200)),
+          icon: const Icon(Icons.add_circle_outline),
+        ),
+      ],
+    );
+  }
+
+  String _fmtWeight(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
 
   /// 空闲提醒阈值：离散档位 5/10/15/30/60 分钟（步进沿档位移动）。
   Widget _nudgeRow(String label, int value, ValueChanged<int> onChanged) {

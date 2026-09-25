@@ -1182,7 +1182,12 @@ class _RestViewState extends State<_RestView> {
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，
     // 「跳过休息，直接开练」不再被挤出屏幕。
     return LayoutBuilder(
-      builder: (context, viewport) => SingleChildScrollView(
+      builder: (context, viewport) {
+        // 轻量战报只在竖向空间充裕时显示（调研条目 9）：矮屏（横屏手机）
+        // 保持"倒计时+操作区"的冻结布局不增高——战报默认收起、绝不占屏，
+        // 空间不够时整个收起。
+        final showBrief = viewport.maxHeight >= 480;
+        return SingleChildScrollView(
         child: ConstrainedBox(
           constraints: BoxConstraints(minHeight: viewport.maxHeight),
           child: IntrinsicHeight(
@@ -1221,6 +1226,13 @@ class _RestViewState extends State<_RestView> {
                           );
                         },
                       ),
+                      if (showBrief) ...[
+                        const SizedBox(height: 12),
+                        // 轻量战报（调研条目 9，Fast N Fitness 思路）：
+                        // 只放休息等待页、默认收起、点开可展开——
+                        // 绝不进训练计时主界面、绝不默认占屏。
+                        _RestBrief(),
+                      ],
                       const SizedBox(height: 12),
                       // 点"下一组"展开重量步进：休息中就能调下一组重量
                       GestureDetector(
@@ -1463,12 +1475,94 @@ class _RestViewState extends State<_RestView> {
             ),
           ),
         ),
-      ),
+      );
+      }
     );
   }
 
   bool _isWide(BuildContext context) =>
       MediaQuery.of(context).size.width >= 840;
+}
+
+/// 休息页轻量战报（调研条目 9）：默认收起的一行入口，点开展开 3 行小结
+/// （已完成组数 / 本日容量 / 已练时长）。放在休息等待页而非计时主界面，
+/// 默认不占屏——不碰"交互三要素以外信息一律收起"的红线。
+class _RestBrief extends StatefulWidget {
+  @override
+  State<_RestBrief> createState() => _RestBriefState();
+}
+
+class _RestBriefState extends State<_RestBrief> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = app(context);
+    final s = c.session;
+    final sess = s.session;
+    if (!s.hasActive || sess == null) return const SizedBox.shrink();
+    final stats = sessionStatsFrom(
+      s.setsByEx,
+      s.exercises,
+      // 自重动作按 系数×体重 折算进容量（点名条目二）
+      bodyWeightKg: c.settings.bodyWeightKg,
+    );
+    final minutes =
+        ((DateTime.now().millisecondsSinceEpoch - sess.startedAt) / 60000)
+            .floor();
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _open = !_open);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppTheme.cardHi,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.assessment_outlined,
+                    size: 16, color: AppTheme.textDim),
+                const SizedBox(width: 6),
+                Text(
+                  '本次战报 · ${stats.workingSets} 组',
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 13),
+                ),
+                Icon(
+                  _open
+                      ? Icons.keyboard_arrow_up
+                      : Icons.keyboard_arrow_down,
+                  size: 18,
+                  color: AppTheme.textDim,
+                ),
+              ],
+            ),
+            if (_open) ...[
+              const SizedBox(height: 6),
+              Text(
+                '已完成 ${stats.workingSets} 个正式组'
+                '${stats.totalSets > stats.workingSets ? '（含热身 ${stats.totalSets - stats.workingSets} 组）' : ''}'
+                ' · ${stats.exercises.length}/${s.exercises.length} 个动作',
+                style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+              Text(
+                '本日容量 ${fmtVolume(stats.volume)} · 已练 $minutes 分钟',
+                style: const TextStyle(color: AppTheme.text, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ================= 结束 + 总结 =================
