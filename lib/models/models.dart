@@ -16,6 +16,70 @@ class MuscleGroups {
       );
 }
 
+/// 渐进超负荷规则链的单条规则（调研条目 15，学 LiftLog 的规则链语义，
+/// 见 docs/progression-rules.md）。
+///
+/// - [axis]：推进轴。'reps' = 次数轴（达标后目标次数 +step）；
+///   'load' = 重量轴（达标后重量 +step kg）。
+/// - [step]：每次推进的步长（次数轴为整数次；重量轴为正 kg）。
+/// - [ceiling]：天花板。次数轴 = 次数上限；重量轴 = 重量上限 kg；null = 不设限。
+///   当前轴位 >= ceiling 时该规则「无空间」。
+/// - [advanceOnCap]：触顶后行为。true = 进位到链中下一条规则；
+///   false = 停在当前档（hold，整链不再推进）。
+/// - [resetRepsTo]：本规则执行后把目标次数重置为该值（null = 保持不变）。
+///   「加重归 8」的 8 就是重量轴规则携带的 resetRepsTo（一般取 reps_min）。
+class ChainRule {
+  final String axis; // 'reps' | 'load'
+  final double step;
+  final double? ceiling;
+  final bool advanceOnCap;
+  final int? resetRepsTo;
+
+  const ChainRule({
+    required this.axis,
+    required this.step,
+    this.ceiling,
+    this.advanceOnCap = true,
+    this.resetRepsTo,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'axis': axis,
+        'step': step,
+        if (ceiling != null) 'ceiling': ceiling,
+        'advance_on_cap': advanceOnCap,
+        if (resetRepsTo != null) 'reset_reps_to': resetRepsTo,
+      };
+
+  factory ChainRule.fromJson(Map<String, dynamic> j) => ChainRule(
+        axis: (j['axis'] as String?) ?? 'reps',
+        step: (j['step'] as num?)?.toDouble() ?? 1,
+        ceiling: (j['ceiling'] as num?)?.toDouble(),
+        advanceOnCap: (j['advance_on_cap'] as bool?) ?? true,
+        resetRepsTo: (j['reset_reps_to'] as num?)?.toInt(),
+      );
+
+  ChainRule copyWith({double? ceiling, bool? advanceOnCap}) => ChainRule(
+        axis: axis,
+        step: step,
+        ceiling: ceiling ?? this.ceiling,
+        advanceOnCap: advanceOnCap ?? this.advanceOnCap,
+        resetRepsTo: resetRepsTo,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChainRule &&
+      other.axis == axis &&
+      other.step == step &&
+      other.ceiling == ceiling &&
+      other.advanceOnCap == advanceOnCap &&
+      other.resetRepsTo == resetRepsTo;
+
+  @override
+  int get hashCode => Object.hash(axis, step, ceiling, advanceOnCap, resetRepsTo);
+}
+
 /// 渐进超负荷规则（存 plan_exercises.rule JSON）
 class ProgressionRule {
   final int repsMin;
@@ -25,6 +89,11 @@ class ProgressionRule {
   final int workingSets;
   final String desc;
 
+  /// 可编排规则链（null = 未配置，由引擎按 reps_min/reps_max/increment_kg
+  /// 派生默认「次数轴→重量轴」双阶梯，见 ProgressionChain.defaultFor）。
+  /// 老 JSON 无 chain 键 → null，行为由派生链保证连续。
+  final List<ChainRule>? chain;
+
   const ProgressionRule({
     required this.repsMin,
     required this.repsMax,
@@ -32,6 +101,7 @@ class ProgressionRule {
     this.rirTarget = 2,
     this.workingSets = 3,
     this.desc = '全部正式组达到次数上限且末组余力达标则加重；连续两次未达下限则减重 5%',
+    this.chain,
   });
 
   Map<String, dynamic> toJson() => {
@@ -41,16 +111,27 @@ class ProgressionRule {
         'rir_target': rirTarget,
         'working_sets': workingSets,
         'desc': desc,
+        if (chain != null)
+          'chain': [for (final r in chain!) r.toJson()],
       };
 
-  factory ProgressionRule.fromJson(Map<String, dynamic> j) => ProgressionRule(
-        repsMin: (j['reps_min'] as num?)?.toInt() ?? 5,
-        repsMax: (j['reps_max'] as num?)?.toInt() ?? 8,
-        incrementKg: (j['increment_kg'] as num?)?.toDouble() ?? 2.5,
-        rirTarget: (j['rir_target'] as num?)?.toInt() ?? 2,
-        workingSets: (j['working_sets'] as num?)?.toInt() ?? 3,
-        desc: (j['desc'] as String?) ?? '全部正式组达到次数上限且末组余力达标则加重',
-      );
+  factory ProgressionRule.fromJson(Map<String, dynamic> j) {
+    final chainRaw = j['chain'] as List?;
+    return ProgressionRule(
+      repsMin: (j['reps_min'] as num?)?.toInt() ?? 5,
+      repsMax: (j['reps_max'] as num?)?.toInt() ?? 8,
+      incrementKg: (j['increment_kg'] as num?)?.toDouble() ?? 2.5,
+      rirTarget: (j['rir_target'] as num?)?.toInt() ?? 2,
+      workingSets: (j['working_sets'] as num?)?.toInt() ?? 3,
+      desc: (j['desc'] as String?) ?? '全部正式组达到次数上限且末组余力达标则加重',
+      chain: chainRaw == null
+          ? null
+          : [
+              for (final e in chainRaw)
+                ChainRule.fromJson(Map<String, dynamic>.from(e as Map))
+            ],
+    );
+  }
 
   static const ProgressionRule fallback =
       ProgressionRule(repsMin: 5, repsMax: 8);
@@ -398,6 +479,13 @@ class SessionExercise {
   final int restSec; // 该动作的休息秒数（计划里配置，0=按全局设置）
   final ProgressionRule rule;
 
+  /// 计划模板目标参数快照（条目 14，学 Fast N Fitness：启动时把模板参数
+  /// 全套复制进记录行，防模板日后修改导致老记录的完成度判定翻车）。
+  /// 0 = 老记录无快照（v6 之前），消费端回退到 [rule] 里的对应参数。
+  final int targetSets;
+  final int targetRepsMin;
+  final int targetRepsMax;
+
   /// 临时调整痕迹（点名条目三）：'' = 计划原样；
   /// '替换自：X' = 训练中把 X 换成当前动作（器械被占等）；'追加于：Y' =
   /// 训练中在动作 Y 之后临时追加。只写本会话记录行，不改计划本体，
@@ -412,6 +500,9 @@ class SessionExercise {
     required this.kind,
     this.restSec = 0,
     required this.rule,
+    this.targetSets = 0,
+    this.targetRepsMin = 0,
+    this.targetRepsMax = 0,
     this.trace = '',
   });
 
@@ -423,6 +514,9 @@ class SessionExercise {
         'kind': kind,
         'rest_sec': restSec,
         'rule': ruleToJson(rule),
+        'target_sets': targetSets,
+        'target_reps_min': targetRepsMin,
+        'target_reps_max': targetRepsMax,
         'trace': trace,
       };
 
@@ -434,6 +528,9 @@ class SessionExercise {
         kind: (m['kind'] as String?) ?? 'assistance',
         restSec: (m['rest_sec'] as num?)?.toInt() ?? 0,
         rule: ruleFromJson(m['rule']),
+        targetSets: (m['target_sets'] as num?)?.toInt() ?? 0,
+        targetRepsMin: (m['target_reps_min'] as num?)?.toInt() ?? 0,
+        targetRepsMax: (m['target_reps_max'] as num?)?.toInt() ?? 0,
         trace: (m['trace'] as String?) ?? '',
       );
 
@@ -445,6 +542,9 @@ class SessionExercise {
         kind: kind,
         restSec: restSec,
         rule: rule,
+        targetSets: targetSets,
+        targetRepsMin: targetRepsMin,
+        targetRepsMax: targetRepsMax,
         trace: trace,
       );
 }

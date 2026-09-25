@@ -5,6 +5,22 @@ import 'package:path/path.dart' as p;
 import '../models/models.dart';
 
 /// SQLite 本地库：唯一数据源。所有查询经 DatabaseProvider。
+///
+/// ## 统计过滤纪律（调研条目 14，Fast N Fitness 的教训）
+///
+/// 统计/渐进/PR 类查询必须显式排除「未开始行」与模板行，防止没练的
+/// 数据污染曲线。本库的对应纪律（新增查询时必须遵守）：
+/// - **模板行**：plans/plan_days/plan_exercises 是模板表，sets 永远只挂在
+///   session_exercises 下——模板天然不进统计，无需过滤；
+/// - **未开始/未完成的会话**：一切聚合查询（historySets / maxWeightOf /
+///   lastWorkingSets / sessionRowsBetween / sessionsBetween /
+///   recentSessions）显式限定 `sessions.status = 'done'`——进行中
+///   （active）与中途放弃（quit）的会话不产生曲线数据点；
+/// - **热身组**：容量/渐进统计一律 `sets.kind = 'working'`
+///   （或 model 层 `SetEntry.volume` 对 warmup 记 0）；
+/// - **计划目标快照**：session_exercises.target_sets / target_reps_min /
+///   target_reps_max（v6 起）是"本次训练当时"的模板参数，用于完成度
+///   对比；模板表本身被修改不影响老记录。
 class Db {
   Db._() : _override = null;
   static final Db instance = Db._();
@@ -32,7 +48,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 5,
+          version: 6,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -95,6 +111,25 @@ class Db {
       await db.execute(
           "ALTER TABLE session_exercises ADD COLUMN trace TEXT NOT NULL DEFAULT ''");
     }
+    if (oldV < 6) {
+      await upgradeV5to6(db);
+    }
+  }
+
+  /// v6：计划模板目标参数快照进训练记录（调研条目 14）。
+  /// 一次迁移只动 session_exercises 一层：开始训练时把模板日的
+  /// 目标组数 / 目标次数区间整套快照进动作行（Fast N Fitness 的
+  /// 「防程序日后修改导致老记录判定翻车」口径），模板日后怎么改
+  /// 都不影响老记录的完成度对比。
+  /// 老数据平滑兼容：DEFAULT 0 = 无快照，消费端回退 rule JSON 里的参数。
+  @visibleForTesting
+  Future<void> upgradeV5to6(Database db) async {
+    await db.execute(
+        'ALTER TABLE session_exercises ADD COLUMN target_sets INTEGER NOT NULL DEFAULT 0');
+    await db.execute(
+        'ALTER TABLE session_exercises ADD COLUMN target_reps_min INTEGER NOT NULL DEFAULT 0');
+    await db.execute(
+        'ALTER TABLE session_exercises ADD COLUMN target_reps_max INTEGER NOT NULL DEFAULT 0');
   }
 
   /// 建表（onCreate 与单元测试共用）。
@@ -165,6 +200,9 @@ class Db {
         kind TEXT NOT NULL DEFAULT 'assistance',
         rest_sec INTEGER NOT NULL DEFAULT 0,
         rule TEXT NOT NULL DEFAULT '{}',
+        target_sets INTEGER NOT NULL DEFAULT 0,
+        target_reps_min INTEGER NOT NULL DEFAULT 0,
+        target_reps_max INTEGER NOT NULL DEFAULT 0,
         trace TEXT NOT NULL DEFAULT ''
       )''');
     await db.execute('''
