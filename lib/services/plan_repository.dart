@@ -44,6 +44,19 @@ class PlanRepository extends ChangeNotifier {
   Future<Map<int, List<PlanExercise>>> exercisesOfDays(List<int> dayIds) =>
       _db.daysExercisesMap(dayIds);
 
+  /// 计划里「有动作」的模板日数——循环排程每轮真正会轮到的训练日上限。
+  /// 连练天数小于它时，多出的模板日在推导里永远轮不到（排程页据此警示）。
+  Future<int> trainableDayCount(int planId) async {
+    final days = await _db.planDays(planId);
+    if (days.isEmpty) return 0;
+    final exMap = await _db.daysExercisesMap(days.map((e) => e.id!).toList());
+    var n = 0;
+    for (final day in days) {
+      if ((exMap[day.id] ?? const <PlanExercise>[]).isNotEmpty) n++;
+    }
+    return n;
+  }
+
   /// 复制计划（含全部训练日与动作与排程模式），新计划不启用。返回新计划 id。
   Future<int> duplicatePlan(int sourcePlanId, String newName) async {
     final srcDays = await _db.planDays(sourcePlanId);
