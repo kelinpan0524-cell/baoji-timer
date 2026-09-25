@@ -70,6 +70,46 @@ class AiService {
     ];
   }
 
+  /// 对话式排计划的补充契约（叠加在教练人设之上，AI 教练「排计划模式」用）。
+  /// 关键设计：每次产出/修改都输出**完整最新版**计划的严格 JSON（```json 围栏），
+  /// App 端用 extractJsonPayload + parseResponse 提取清洗——与计划页
+  /// 「描述生成」完全同一套 JSON 契约与容错，不另起炉灶。
+  static String planChatContract() {
+    final lib =
+        kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
+    return '【排计划模式】用户正在通过对话让你安排或调整训练计划，规则：\n'
+        '1. 信息不足时先用 1-2 个问题问清（每周练几天、健身房还是居家、有哪些器械、目标是增肌还是力量）；'
+        '描述已经足够就直接给计划，不要挤牙膏式反问。\n'
+        '2. 每次给出或修改计划：先用不超过 3 句话讲设计思路，再输出完整最新版计划——'
+        '严格 JSON 数组，包在 ```json 代码块里，每个元素是一个训练日：\n'
+        '[{"weekday":1-7(周一=1),"title":"训练日名称","exercises":[{"name":"规范中文动作名",'
+        '"sets":组数,"reps_min":最少次数,"reps_max":最多次数,"rest_sec":组间休息秒数,'
+        '"kind":"compound或assistance","main_muscle":"胸/肩/背/手臂/腿/核心 之一"}]}]\n'
+        '3. 用户要调整（换动作/改组次/加减训练日/改频率）时，重新输出调整后的**完整**计划 JSON，'
+        '不是只给改动项。\n'
+        '4. 每周 3-5 个训练日（用户明确指定则照办）；同一肌群两次训练至少间隔 48 小时；'
+        '容量安排符合渐进超负荷原则；热身组不写入；rest_sec：复合动作 150-180、辅助动作 90-120。\n'
+        '5. 可以参考训练数据里用户的水平与弱项安排，但计划本身仍按上面的 JSON 输出。\n'
+        '6. 动作名优先用参考词表：$lib';
+  }
+
+  /// 排计划模式的对话消息：人设 + 排计划契约合并为首个 system 段
+  /// （契约是行为指令，与人设同属"你是谁/怎么做"，拆开会被数据包隔断），
+  /// 数据包紧随其后，再接历史与用户输入。
+  List<AiMessage> buildPlanChatMessages(
+    String dataPack, {
+    List<AiMessage> history = const [],
+    String userText = '',
+  }) {
+    return [
+      AiMessage('system', '$kCoachPersona\n\n${planChatContract()}'),
+      AiMessage('system',
+          '以下是用户 App 导出的真实训练数据（参考其水平与弱项用）：\n\n$dataPack'),
+      ...history,
+      AiMessage('user', userText),
+    ];
+  }
+
   /// 连接测试：发一条最小请求，返回 (耗时 ms, 模型回复)。
   /// 成功/失败都由调用方（设置页「测试连接」）直接展示给用户。
   Future<(int elapsedMs, String reply)> testConnection() async {
@@ -352,6 +392,17 @@ $planText
     } catch (_) {
       // 字段强转的 TypeError 等统一归一，避免英文原始报错透传到 UI
       throw const AiException('AI 返回格式无法解析，请重试或换模型');
+    }
+  }
+
+  /// 从教练回复文本提取计划（对话式排计划用）：复用 parseResponse 的
+  /// 三层 JSON 容错与集中清洗。提取不到（AI 在问澄清、讲思路的轮次）
+  /// 返回 null 而不是抛错——由 UI 决定是否挂「保存为计划」入口。
+  List<AiDaySpec>? tryExtractPlan(String reply) {
+    try {
+      return parseResponse(reply);
+    } on AiException {
+      return null;
     }
   }
 
