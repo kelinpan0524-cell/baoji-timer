@@ -324,18 +324,19 @@ class SessionController extends ChangeNotifier {
   }
 
   double _recommendFor(String name) {
-    // 上次该动作那次训练的正式组 → 应用渐进判定
+    // 上次该动作那次训练的正式组 → 走规则链判定（调研条目 15）：
+    // 达标推进「第一条还有空间的规则」（次数轴爬升 / 重量轴加重归下限），
+    // 未达下限减重 5%，其余保持。
     final last = lastWorkout[name] ?? const <SetEntry>[];
     if (last.isNotEmpty) {
       final rule = currentEx?.rule ?? ProgressionRule.fallback;
-      final v = evaluateProgression(
-        workingSets: last,
-        currentWeight: last.last.weightKg,
-        rule: rule,
-      );
+      final state = chainStateFromHistory(last, rule);
+      if (state.weightKg == 0) return _presetStartFor(name);
+      final v = evaluateChain(rule: rule, state: state, workingSets: last);
       // 负重量（辅助配重）同样渐进：-30 → -27.5 = 辅助减少 2.5kg，是进步。
       // 不再做 next>0 检查——那会让辅助器械动作永远卡在原配重。
-      return round05(last.last.weightKg + v.deltaKg);
+      final w = round05(v.next.weightKg);
+      return w != 0 ? w : _presetStartFor(name);
     }
     return _presetStartFor(name);
   }
@@ -386,6 +387,11 @@ class SessionController extends ChangeNotifier {
           kind: pe.kind,
           restSec: pe.restSec,
           rule: pe.rule,
+          // 条目 14：模板目标参数全套快照进训练记录——模板日后修改
+          // 不影响老记录的完成度对比（v6 前老记录 target=0 走回退语义）。
+          targetSets: pe.sets,
+          targetRepsMin: pe.repsMin,
+          targetRepsMax: pe.repsMax,
         ),
     ];
     final (s, withIds) = await _db.insertSessionWithExercises(
@@ -908,16 +914,18 @@ class SessionController extends ChangeNotifier {
   }
 
   /// 渐进判定建议（结束时展示 + AI 分析包引用）。
+  /// 走规则链引擎（调研条目 15）；文案带上条目 14 的模板目标快照
+  /// （计划目标 N组×a-b 次），老记录无快照（target=0）时回退规则参数。
   Future<List<String>> verdicts() async {
     final out = <String>[];
     for (final ex in exercises) {
       final sets = setsByEx[ex.id!] ?? [];
-      final v = evaluateProgression(
-        workingSets: sets,
-        currentWeight: sets.isEmpty ? 0 : sets.last.weightKg,
-        rule: ex.rule,
-      );
-      out.add('${ex.name}：${v.reason}');
+      final state = chainStateFromHistory(sets, ex.rule);
+      final v = evaluateChain(rule: ex.rule, state: state, workingSets: sets);
+      final tSets = ex.targetSets > 0 ? ex.targetSets : ex.rule.workingSets;
+      final tMin = ex.targetRepsMin > 0 ? ex.targetRepsMin : ex.rule.repsMin;
+      final tMax = ex.targetRepsMax > 0 ? ex.targetRepsMax : ex.rule.repsMax;
+      out.add('${ex.name}（计划目标 $tSets×$tMin-$tMax 次）：${v.reason}');
     }
     return out;
   }

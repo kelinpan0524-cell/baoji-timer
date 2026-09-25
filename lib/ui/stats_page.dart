@@ -7,6 +7,7 @@ import '../engine/engine.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
 import 'muscle_body_view.dart';
+import 'recovery_card.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -440,6 +441,8 @@ class _MuscleTabState extends State<_MuscleTab> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
+            // 肌群恢复度（点名条目四）：只进计划页/统计页，不进训练中三要素
+            const MuscleRecoveryCard(),
             SectionCard(
               title: '本周肌群容量占比',
               child: Column(

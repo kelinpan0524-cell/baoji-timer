@@ -10,6 +10,7 @@ import '../services/ai_service.dart';
 import '../services/plan_repository.dart';
 import 'exercise_library_page.dart';
 import 'plan_editor_page.dart';
+import 'recovery_card.dart';
 import 'schedule_views.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -72,6 +73,8 @@ class _PlanPageState extends State<PlanPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
+        // 肌群恢复度（点名条目四）：只进计划页/统计页，不进训练中三要素
+        const MuscleRecoveryCard(),
         Row(
           children: [
             // 计划切换器

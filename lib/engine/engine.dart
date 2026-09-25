@@ -3,6 +3,8 @@ import 'volume.dart';
 
 export '../models/models.dart';
 export 'local_plan.dart';
+export 'progression_chain.dart';
+export 'recovery.dart';
 export 'rest_rules.dart';
 export 'volume.dart';
 export 'workout_flow.dart';
