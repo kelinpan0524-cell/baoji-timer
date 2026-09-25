@@ -245,6 +245,70 @@ void main() {
     });
   });
 
+  group('自重动作（0kg 档位）', () {
+    // 0kg 是自重动作的合法历史档位，不是「无历史」：
+    // 判定正常走链（hold 保持 0 / 顶格进位负重 2.5kg，与旧引擎 0+delta 一致），
+    // 文案按实际判定生成，不得误报「无正式组记录」。
+    final rule = const ProgressionRule(repsMin: 5, repsMax: 8);
+
+    test('0kg 次数未达目标 → hold 保持 0，文案不报「无正式组」', () {
+      // 目标 6 次只做到 5 次（5 >= reps_min 5，不触发减重）→ hold
+      final v = evaluateChain(
+        rule: rule,
+        state: const ChainState(weightKg: 0, targetReps: 6),
+        workingSets: _session(0, 5),
+      );
+      expect(v.action, 'hold');
+      expect(v.next.weightKg, 0);
+      expect(v.reason, isNot(contains('无正式组')));
+      expect(v.reason, contains('6 次目标'));
+    });
+
+    test('0kg 中间档达标 → 次数爬升、重量保持 0', () {
+      final v = evaluateChain(
+        rule: rule,
+        state: const ChainState(weightKg: 0, targetReps: 6),
+        workingSets: _session(0, 6),
+      );
+      expect(v.action, 'advance');
+      expect(v.next.weightKg, 0);
+      expect(v.next.targetReps, 7);
+    });
+
+    test('0kg 顶格全达标 → 进位负重 2.5kg（与旧引擎 0+delta 一致）', () {
+      final last = _session(0, 8);
+      final state = chainStateFromHistory(last, rule);
+      final v = evaluateChain(rule: rule, state: state, workingSets: last);
+      expect(v.action, 'advance');
+      expect(v.next.weightKg, 2.5);
+      expect(v.next.targetReps, 5);
+      // 旧引擎同场对比
+      final old =
+          evaluateProgression(workingSets: last, currentWeight: 0, rule: rule);
+      expect(old.action, ProgressionAction.increase);
+      expect(old.deltaKg, 2.5);
+    });
+
+    test('0kg 到达链尽头 → 文案用「自重档位」而非「重量 0kg 触顶」', () {
+      const rule2 = ProgressionRule(
+        repsMin: 5,
+        repsMax: 8,
+        chain: [
+          ChainRule(axis: 'reps', step: 1, ceiling: 5),
+          ChainRule(axis: 'load', step: 2.5, ceiling: 0, advanceOnCap: false),
+        ],
+      );
+      final v = evaluateChain(
+        rule: rule2,
+        state: const ChainState(weightKg: 0, targetReps: 5),
+        workingSets: _session(0, 5),
+      );
+      expect(v.action, 'hold');
+      expect(v.reason, contains('自重档位'));
+      expect(v.reason, isNot(contains('0kg')));
+    });
+  });
+
   group('JSON 序列化与老数据兼容', () {
     test('带 chain 的 rule 序列化回环', () {
       const rule = ProgressionRule(

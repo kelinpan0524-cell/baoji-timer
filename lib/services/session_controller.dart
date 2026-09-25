@@ -327,16 +327,17 @@ class SessionController extends ChangeNotifier {
     // 上次该动作那次训练的正式组 → 走规则链判定（调研条目 15）：
     // 达标推进「第一条还有空间的规则」（次数轴爬升 / 重量轴加重归下限），
     // 未达下限减重 5%，其余保持。
+    // 「有历史」只看 last.isNotEmpty：0kg 是自重动作的合法历史档位
+    // （hold 保持 0、顶格进位负重 2.5kg，与旧引擎一致），
+    // 不能把重量 0 当作「无历史」回退到预设起始重量。
     final last = lastWorkout[name] ?? const <SetEntry>[];
     if (last.isNotEmpty) {
       final rule = currentEx?.rule ?? ProgressionRule.fallback;
       final state = chainStateFromHistory(last, rule);
-      if (state.weightKg == 0) return _presetStartFor(name);
       final v = evaluateChain(rule: rule, state: state, workingSets: last);
       // 负重量（辅助配重）同样渐进：-30 → -27.5 = 辅助减少 2.5kg，是进步。
       // 不再做 next>0 检查——那会让辅助器械动作永远卡在原配重。
-      final w = round05(v.next.weightKg);
-      return w != 0 ? w : _presetStartFor(name);
+      return round05(v.next.weightKg);
     }
     return _presetStartFor(name);
   }
@@ -847,6 +848,11 @@ class SessionController extends ChangeNotifier {
       kind: ex.kind,
       restSec: ex.restSec,
       rule: ex.rule,
+      // 条目 14：快照列原样保留——整行覆写若丢这三列会把已快照的
+      // 模板目标抹成 0，老记录完成度对比就失真了。
+      targetSets: ex.targetSets,
+      targetRepsMin: ex.targetRepsMin,
+      targetRepsMax: ex.targetRepsMax,
       trace: '替换自：${ex.name}',
     );
     await _db.updateSessionExercise(updated);

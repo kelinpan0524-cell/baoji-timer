@@ -138,4 +138,104 @@ void main() {
     expect(vs, hasLength(1));
     expect(vs.single, contains('计划目标 4×6-10'));
   });
+
+  test('训练中替换动作后快照仍在（整行覆写不丢 target 列）', () async {
+    final (day, exs) = await makeDay();
+    final c = SessionController(db, Settings(prefs), prefs, null);
+    controllers.add(c);
+    await c.startFromDay(day: day, planExercises: exs);
+
+    final ok = await c.replaceCurrentExercise(const ExerciseMeta(
+      '上斜哑铃卧推',
+      MuscleGroups(main: '胸'),
+      false,
+    ));
+    expect(ok, isTrue);
+
+    expect(c.exercises.first.targetSets, 4);
+    expect(c.exercises.first.targetRepsMin, 6);
+    expect(c.exercises.first.targetRepsMax, 10);
+    expect(c.exercises.first.trace, '替换自：杠铃卧推');
+
+    // 落库读回一致（updateSessionExercise 整行覆写路径）
+    final rows = await db.sessionExercises(c.session!.id!);
+    expect(rows.first.targetSets, 4);
+    expect(rows.first.targetRepsMin, 6);
+    expect(rows.first.targetRepsMax, 10);
+  });
+
+  test('自重历史（0kg）动作的建议重量走链判定而非回退预设 20kg', () async {
+    // 历史：done 会话里 "单杠悬垂举腿" 0kg×6×3，末组余力 0（不满足 RIR 门槛）
+    // → 规则链 hold → 建议重量保持 0；修复前这里会把 0 误判为「无历史」，
+    // 回退 presetStartOf 的默认 20kg。
+    const rule = ProgressionRule(repsMin: 5, repsMax: 8);
+    final (hist, histEx) = await db.insertSessionWithExercises(
+      const Session(
+        date: '2026-09-24',
+        planDayTitle: '核心日',
+        startedAt: 1000,
+        endedAt: 2000,
+        status: 'done',
+      ),
+      [
+        const SessionExercise(
+          sessionId: 0,
+          name: '单杠悬垂举腿',
+          orderIdx: 0,
+          kind: 'assistance',
+          rule: rule,
+        ),
+      ],
+    );
+    for (var i = 0; i < 3; i++) {
+      await db.insertSet(SetEntry(
+        sessionExerciseId: histEx.first.id!,
+        weightKg: 0,
+        reps: 6,
+        rir: 0,
+        kind: SetKind.working,
+        doneAt: 1100 + i,
+      ));
+    }
+
+    final plan = await db.insertPlan(Plan(
+      name: '自重计划',
+      source: 'manual',
+      createdAt: '2026-09-25',
+      isActive: 1,
+    ));
+    final dayId = await db.insertPlanDay(
+        PlanDay(planId: plan.id!, weekday: 4, title: '核心日'));
+    final ex = PlanExercise(
+      id: await db.insertPlanExercise(PlanExercise(
+        dayId: dayId,
+        name: '单杠悬垂举腿',
+        orderIdx: 0,
+        sets: 3,
+        repsMin: 5,
+        repsMax: 8,
+        restSec: 90,
+        kind: 'assistance',
+        rule: rule,
+      )),
+      dayId: dayId,
+      name: '单杠悬垂举腿',
+      orderIdx: 0,
+      sets: 3,
+      repsMin: 5,
+      repsMax: 8,
+      restSec: 90,
+      kind: 'assistance',
+      rule: rule,
+    );
+    final c = SessionController(db, Settings(prefs), prefs, null);
+    controllers.add(c);
+    await c.startFromDay(
+      day: PlanDay(id: dayId, planId: plan.id!, weekday: 4, title: '核心日'),
+      planExercises: [ex],
+    );
+
+    // hold：0kg 保持 0（presetStartOf 对词表外动作返回 20）
+    expect(c.weightDraft, 0);
+  });
 }

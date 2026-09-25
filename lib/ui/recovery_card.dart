@@ -81,6 +81,28 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
       child: FutureBuilder<Map<String, int>>(
         future: _future,
         builder: (context, snap) {
+          if (snap.hasError) {
+            // DB 打开失败/迁移异常等：明确告知不可用并给重试，
+            // 不让卡片永久停在加载态
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('恢复度暂不可用',
+                        style:
+                            TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () => setState(() => _future = _load()),
+                      child: const Text('重试'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           if (!snap.hasData) {
             return const Center(
               child: Padding(

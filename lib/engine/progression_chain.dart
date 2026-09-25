@@ -187,10 +187,13 @@ ChainVerdict evaluateChain({
   final ws = workingSets
       .where((s) => s.kind == SetKind.working)
       .toList(growable: false);
-  if (ws.isEmpty || state.weightKg == 0) {
-    return ChainVerdict(
-        'hold', state, '本次无正式组记录，重量保持不变');
+  if (ws.isEmpty) {
+    return ChainVerdict('hold', state, '本次无正式组记录，重量保持不变');
   }
+  // 注意：state.weightKg == 0（自重动作的合法档位）不在此提前返回——
+  // 0 档参与正常判定（±5% 档位过滤天然只收 0kg 组），达标同样可进位到
+  // 负重 2.5kg（与旧引擎 evaluateProgression 的 0+delta 行为一致）；
+  // 各分支文案按实际判定生成，不会把自重动作误报成「无正式组记录」。
   // 只统计当前重量附近的正式组（重量波动 >5% 视为另一档）。
   // 负重量（辅助配重）下 5% 容差同样取绝对值，否则阈值变负、
   // 过滤恒为空 → 辅助器械动作永远判不出渐进。
@@ -213,9 +216,12 @@ ChainVerdict evaluateChain({
     final chain = ProgressionChain.of(rule);
     final next = chain.advance(state, rule);
     if (next == state) {
-      return ChainVerdict(
-          'hold', state, '已到规则链尽头（次数 ${state.targetReps} 次、'
-              '重量 ${state.weightKg}kg 触顶）→ 保持当前档');
+      // 自重档位（0kg）不展示「重量 0kg 触顶」——0 是档位起点不是天花板
+      final capDesc = state.weightKg == 0
+          ? '自重档位已到规则链尽头（次数 ${state.targetReps} 次）'
+          : '已到规则链尽头（次数 ${state.targetReps} 次、'
+              '重量 ${state.weightKg}kg 触顶）';
+      return ChainVerdict('hold', state, '$capDesc → 保持当前档');
     }
     if (next.weightKg != state.weightKg) {
       return ChainVerdict(
