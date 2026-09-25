@@ -40,6 +40,10 @@ class Settings extends ChangeNotifier {
   String distractingApps =
       'com.smile.gifmaker,com.kuaishou.app,com.ss.android.ugc.aweme,com.tencent.weishi,com.xingin.xhs,com.sina.weibo,tv.danmaku.bili';
 
+  // 空闲提醒（调研条目 4）：训练态连续超阈值发一次性通知拉回
+  bool idleNudgeEnabled = true;
+  int idleNudgeMinutes = 10; // 可选 5/10/15/30/60
+
   // 应用更新（GitHub 私仓 Releases）
   String ghUpdateToken = ''; // 只读令牌，与 AI Key 同一本地存放策略
   AppRelease? pendingUpdate; // 运行时状态（发现的新版），不落盘
@@ -64,6 +68,8 @@ class Settings extends ChangeNotifier {
     focusAppCheckEnabled = _prefs.getBool('${_kprefix}focusApp') ?? true;
     distractingApps =
         _prefs.getString('${_kprefix}distract') ?? distractingApps;
+    idleNudgeEnabled = _prefs.getBool('${_kprefix}idleNudgeOn') ?? true;
+    idleNudgeMinutes = _prefs.getInt('${_kprefix}idleNudgeMin') ?? 10;
     ghUpdateToken = _prefs.getString('${_kprefix}ghToken') ?? '';
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
     larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
@@ -97,6 +103,8 @@ class Settings extends ChangeNotifier {
     await _prefs.setBool('${_kprefix}focusDnd', focusDndEnabled);
     await _prefs.setBool('${_kprefix}focusApp', focusAppCheckEnabled);
     await _prefs.setString('${_kprefix}distract', distractingApps);
+    await _prefs.setBool('${_kprefix}idleNudgeOn', idleNudgeEnabled);
+    await _prefs.setInt('${_kprefix}idleNudgeMin', idleNudgeMinutes);
     await _prefs.setString('${_kprefix}ghToken', ghUpdateToken);
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
     await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);

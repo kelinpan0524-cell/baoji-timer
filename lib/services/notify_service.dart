@@ -1,28 +1,55 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
-/// 通知：休息结束提醒（锁屏/切后台也能响）。
+import 'session_controller.dart' show TrainingCard;
+
+/// 通知与通知栏训练卡（调研条目 1/2/3/4）：
+/// - 休息结束精确提醒（系统闹钟，锁屏/杀进程也响）——休息态原有能力保留；
+/// - 训练卡常驻通知（原生前台服务承载，当前动作/本组目标/剩余时间+进度，
+///   休息态带暂停/±10 秒按钮，点通知回训练页）；
+/// - 双通道互斥：人在屏上时休息到点只走屏内提示（由 App 容器按生命周期
+///   取消/重挂精确提醒），人离开前台才由系统提醒；
+/// - 空闲提醒：训练态连续超阈值的一次性系统通知（每段只提醒一次）。
 class NotifyService {
+  NotifyService() {
+    // 原生前台服务转发的通知栏按钮动作（暂停/继续/±10 秒）
+    _trainingChannel.setMethodCallHandler((call) async {
+      if (call.method == 'notifAction') {
+        final args = call.arguments;
+        final action = args is Map ? args['action'] as String? : null;
+        if (action != null && action.isNotEmpty) onNotifAction?.call(action);
+      }
+      return null;
+    });
+  }
+
   final _plugin = FlutterLocalNotificationsPlugin();
   bool _ready = false;
+
+  /// 前台服务通道（Dart → Kotlin：启停与内容推送；Kotlin → Dart：按钮动作）
+  static const _trainingChannel = MethodChannel('baoji/training');
+
+  /// 通知栏按钮动作回调（App 容器接到 SessionController）
+  void Function(String action)? onNotifAction;
 
   static const _restChannel = AndroidNotificationChannel(
     'rest_timer',
     '组间休息提醒',
-    description: '组间休息结束的提醒（声音+震动）',
+    description: '组间休息结束的提醒（声音+震动，勿扰下穿透）',
     importance: Importance.high,
     playSound: true,
     enableVibration: true,
   );
 
-  static const _ongoingChannel = AndroidNotificationChannel(
-    'rest_ongoing',
-    '休息倒计时',
-    description: '休息期间的静默常驻通知',
-    importance: Importance.low,
-    playSound: false,
-    enableVibration: false,
+  static const _idleChannel = AndroidNotificationChannel(
+    'idle_reminder',
+    '空闲提醒',
+    description: '训练中放下手机太久时的一次性拉回提醒',
+    importance: Importance.defaultImportance,
+    playSound: true,
+    enableVibration: true,
   );
 
   Future<void> init() async {
@@ -40,32 +67,37 @@ class NotifyService {
     await _plugin
         .resolvePlatformSpecificImplementation<
             AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(_ongoingChannel);
+        ?.createNotificationChannel(_idleChannel);
     _ready = true;
+    // rest_timer 的勿扰穿透由原生侧在通道首次创建时设置（bypassDnd 只在
+    // 创建时生效），这里无需也不应重复设置。
   }
 
-  /// 休息中：常驻通知显示结束时刻（静默）。
-  Future<void> showOngoing(int endAtMs) async {
-    if (!_ready) return;
-    final remain =
-        ((endAtMs - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
-    await _plugin.show(
-      1,
-      '组间休息中',
-      '约 ${remain ~/ 60}分${remain % 60}秒后开始下一组',
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          _ongoingChannel.id,
-          _ongoingChannel.name,
-          channelDescription: _ongoingChannel.description,
-          ongoing: true,
-          onlyAlertOnce: true,
-          importance: Importance.low,
-          priority: Priority.low,
-        ),
-      ),
-    );
+  // ---------- 训练卡（前台服务，条目 1/3） ----------
+
+  /// 启动或幂等更新训练卡通知。内容与按钮语义由 [TrainingCard] 描述。
+  Future<void> showTrainingCard(TrainingCard card) async {
+    try {
+      await _trainingChannel.invokeMethod('start', card.toMap());
+    } on PlatformException {
+      // 原生侧异常不拖垮训练
+    } on MissingPluginException {
+      // 测试环境/非 Android 平台
+    }
   }
+
+  /// 结束训练：停掉前台服务与常驻通知。
+  Future<void> stopTrainingCard() async {
+    try {
+      await _trainingChannel.invokeMethod('stop');
+    } on PlatformException {
+      // 同上
+    } on MissingPluginException {
+      // 同上
+    }
+  }
+
+  // ---------- 休息结束精确提醒（原有能力，条目 2 双通道的系统侧） ----------
 
   /// 预约休息结束的精确提醒。
   Future<void> scheduleRestEnd(int endAtMs) async {
@@ -100,10 +132,37 @@ class NotifyService {
     await _plugin.cancel(2);
   }
 
-  /// 只取消休息结束的精确提醒（id=2），不动常驻倒计时（id=1）。
-  /// 休息暂停时调用：暂停期间到点不应照响。
+  /// 只取消休息结束的精确提醒（id=2）。
+  /// 休息暂停/提前跳过/人在屏上时调用：到点不应再由系统提醒。
   Future<void> cancelRestEnd() async {
     if (!_ready) return;
     await _plugin.cancel(2);
+  }
+
+  // ---------- 空闲提醒（条目 4） ----------
+
+  /// 训练态连续超阈值的一次性拉回通知（独立 id=20，不覆盖休息提醒）。
+  /// 是否真发由 App 容器判断：人在屏上时走 App 内横幅，不进这里。
+  Future<void> showIdleNudge(int minutes) async {
+    if (!_ready) return;
+    await _plugin.show(
+      20,
+      '该回来练了',
+      '你已运动 $minutes 分钟，下一组等你很久了',
+      NotificationDetails(
+        android: AndroidNotificationDetails(
+          _idleChannel.id,
+          _idleChannel.name,
+          channelDescription: _idleChannel.description,
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+        ),
+      ),
+    );
+  }
+
+  Future<void> cancelIdleNudge() async {
+    if (!_ready) return;
+    await _plugin.cancel(20);
   }
 }

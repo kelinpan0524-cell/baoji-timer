@@ -30,11 +30,7 @@ class _WorkoutPageState extends State<WorkoutPage>
     WidgetsBinding.instance.addObserver(this);
       _distractTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _checkDistractingApp();
-      // 常驻通知的"约 X 分 Y 秒"文案每 30s 刷新一次
-      final c = app(context);
-      if (c.session.hasActive && c.session.phase == WorkoutPhase.resting) {
-        c.notify.showOngoing(c.session.restEndAt);
-      }
+      // 常驻通知文案由 SessionController 心跳驱动（秒级、屏幕内外都更新）
     });
   }
 
@@ -87,20 +83,15 @@ class _WorkoutPageState extends State<WorkoutPage>
     super.dispose();
   }
 
-  /// 休息开始/结束时挂接通知。精确结束提醒不在这里挂：时间源统一走
-  /// SessionController.onRestAlarmChanged 回调（开始/加时/继续/暂停统一重排，
-  /// 见 App 容器接线），页面只负责常驻倒计时文案。
+  /// 相位切换的页面级兜底：离开休息态时取消可能残留的精确提醒。
+  /// 常驻训练卡与精确提醒的常规调度统一在 SessionController/App 容器
+  /// （屏幕内外一致），页面不再单独刷新通知文案。
   void _syncPhaseSideEffects(WorkoutPhase phase) {
     if (_lastPhase == phase) return;
     final old = _lastPhase;
     _lastPhase = phase;
-    final c = app(context);
-    final s = c.session;
-    if (phase == WorkoutPhase.resting) {
-      c.notify.showOngoing(s.restEndAt);
-    }
     if (old == WorkoutPhase.resting && phase != WorkoutPhase.resting) {
-      c.notify.cancelRest();
+      app(context).notify.cancelRest();
     }
   }
 
@@ -1032,7 +1023,6 @@ class _RestViewState extends State<_RestView> {
                             child: OutlinedButton.icon(
                               onPressed: () {
                                 HapticFeedback.selectionClick();
-                                c.notify.cancelRest();
                                 s.startExtraSet();
                               },
                               icon: const Icon(Icons.replay,
@@ -1056,11 +1046,7 @@ class _RestViewState extends State<_RestView> {
                                   HapticFeedback.selectionClick();
                                   s.extendRest(-30);
                                   // 精确闹钟由控制器 onRestAlarmChanged 回调随
-                                  // restEndAt 统一重排；暂停态 restEndAt 不更新
-                                  // （加时改的是冻结值），只即时刷新常驻倒计时文案。
-                                  if (!s.isRestPaused) {
-                                    c.notify.showOngoing(s.restEndAt);
-                                  }
+                                  // restEndAt 统一重排；训练卡由控制器心跳驱动
                                 },
                                 style: OutlinedButton.styleFrom(
                                   backgroundColor: AppTheme.cardHi,
@@ -1081,9 +1067,6 @@ class _RestViewState extends State<_RestView> {
                                 onPressed: () {
                                   HapticFeedback.selectionClick();
                                   s.extendRest(30);
-                                  if (!s.isRestPaused) {
-                                    c.notify.showOngoing(s.restEndAt);
-                                  }
                                 },
                                 style: OutlinedButton.styleFrom(
                                   backgroundColor: AppTheme.cardHi,

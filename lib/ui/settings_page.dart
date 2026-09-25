@@ -47,6 +47,23 @@ class SettingsPage extends StatelessWidget {
                   s.save();
                 },
               ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('空闲提醒'),
+                subtitle: const Text('训练中放下手机太久，发通知拉你回来',
+                    style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                value: s.idleNudgeEnabled,
+                activeThumbColor: AppTheme.primary,
+                onChanged: (v) {
+                  s.idleNudgeEnabled = v;
+                  s.save();
+                },
+              ),
+              if (s.idleNudgeEnabled)
+                _nudgeRow('放下手机多久后提醒', s.idleNudgeMinutes, (v) {
+                  s.idleNudgeMinutes = v;
+                  s.save();
+                }),
             ],
           ),
         ),
@@ -138,6 +155,27 @@ class SettingsPage extends StatelessWidget {
         Text('$value', style: const TextStyle(fontSize: 17)),
         IconButton(
             onPressed: () => onChanged((value + 15).clamp(30, 600)),
+            icon: const Icon(Icons.add_circle_outline)),
+      ],
+    );
+  }
+
+  /// 空闲提醒阈值：离散档位 5/10/15/30/60 分钟（步进沿档位移动）。
+  Widget _nudgeRow(String label, int value, ValueChanged<int> onChanged) {
+    const choices = [5, 10, 15, 30, 60];
+    var i = choices.indexOf(value);
+    if (i < 0) i = 1; // 脏值回落到默认档 10
+    return Row(
+      children: [
+        Expanded(child: Text(label)),
+        IconButton(
+            onPressed: i > 0 ? () => onChanged(choices[i - 1]) : null,
+            icon: const Icon(Icons.remove_circle_outline)),
+        Text('${choices[i]} 分钟', style: const TextStyle(fontSize: 17)),
+        IconButton(
+            onPressed: i < choices.length - 1
+                ? () => onChanged(choices[i + 1])
+                : null,
             icon: const Icon(Icons.add_circle_outline)),
       ],
     );

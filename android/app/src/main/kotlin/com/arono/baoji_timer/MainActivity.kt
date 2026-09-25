@@ -17,12 +17,69 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
+    companion object {
+        /** TrainingForegroundService 回传通知栏按钮动作的入口（onDestroy 置空防泄漏）。 */
+        @JvmStatic
+        var instance: MainActivity? = null
+    }
+
     private val channelName = "baoji/focus"
     private val updaterChannelName = "baoji/updater"
+    private val trainingChannelName = "baoji/training"
     private var dndFilterBeforeTraining: Int? = null
+    private var trainingChannel: MethodChannel? = null
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        instance = this
+    }
+
+    override fun onDestroy() {
+        if (instance === this) instance = null
+        trainingChannel = null
+        TrainingForegroundService.actionSink = null
+        super.onDestroy()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // rest_timer 通道要支持勿扰穿透（Flexify 做法，条目 2）：通道的 bypassDnd
+        // 只在创建时生效（已存在通道不可改），所以必须在 flutter_local_notifications
+        // 的 Dart init 之前由原生先建好；插件随后同 id 创建时只更新名称/描述。
+        ensureRestChannel()
+        // 训练卡前台服务（条目 1/3）：Dart 推送内容，原生启停；通知栏按钮回传 Dart。
+        trainingChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, trainingChannelName)
+            .apply {
+                setMethodCallHandler { call, result ->
+                    try {
+                        when (call.method) {
+                            "start" -> {
+                                TrainingForegroundService.start(
+                                    this@MainActivity, call.arguments as? Map<*, *>)
+                                result.success(null)
+                            }
+                            "stop" -> {
+                                TrainingForegroundService.stop(this@MainActivity)
+                                result.success(null)
+                            }
+                            "setRestChannelBypassDnd" -> {
+                                ensureRestChannel()
+                                result.success(null)
+                            }
+                            else -> result.notImplemented()
+                        }
+                    } catch (e: Exception) {
+                        result.error("NATIVE_ERROR", e.message, null)
+                    }
+                }
+                TrainingForegroundService.actionSink = { action ->
+                    try {
+                        invokeMethod("notifAction", mapOf("action" to action))
+                    } catch (_: Exception) {
+                        // 引擎销毁/通道断开：丢弃
+                    }
+                }
+            }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, updaterChannelName)
             .setMethodCallHandler { call, result ->
                 try {
@@ -97,6 +154,18 @@ class MainActivity : FlutterActivity() {
     // ---- 勿扰 ----
     private fun nm(): NotificationManager =
         getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+    /** rest_timer 通道：重要性高 + 勿扰穿透（bypassDnd 只在首次创建时生效）。 */
+    private fun ensureRestChannel() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val ch = android.app.NotificationChannel(
+            "rest_timer", "组间休息提醒", NotificationManager.IMPORTANCE_HIGH
+        )
+        ch.description = "组间休息结束的提醒（声音+震动，勿扰下穿透）"
+        ch.enableVibration(true)
+        ch.setBypassDnd(true)
+        nm().createNotificationChannel(ch)
+    }
 
     private fun isDndGranted(): Boolean =
         nm().isNotificationPolicyAccessGranted

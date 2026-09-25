@@ -532,4 +532,207 @@ void main() {
         throwsFormatException);
     expect((await db.recentSessions(limit: 100)).length, 1);
   });
+
+  // ============ 训练态计时可靠化（调研条目 1：心跳恢复 + 训练卡） ============
+
+  Future<int> seedActiveSession(PlanDay day, String name) async {
+    final s = await db.insertSession(Session(
+        date: '2026-09-25',
+        planDayId: day.id,
+        planDayTitle: day.title,
+        startedAt: DateTime.now().millisecondsSinceEpoch,
+        status: 'active'));
+    await db.insertSessionExercise(SessionExercise(
+        sessionId: s.id!,
+        name: name,
+        orderIdx: 0,
+        kind: 'compound',
+        rule: const ProgressionRule(repsMin: 5, repsMax: 8, workingSets: 3)));
+    return s.id!;
+  }
+
+  test('T-N1：训练态被杀恢复——心跳按墙钟差值接续训练时长，不再清零', () async {
+    final day = await makePlanDay('腿日');
+    final sid = await seedActiveSession(day, '深蹲');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    // 模拟被杀前的最后心跳：已入桶训练 120s / 休息 30s，当前段起点在 5 分钟前
+    await prefs.setInt('sess.sid', sid);
+    await prefs.setInt('sess.since', now - 5 * 60000);
+    await prefs.setInt('sess.phase', 0);
+    await prefs.setInt('sess.restMs', 30000);
+    await prefs.setInt('sess.activeMs', 120000);
+
+    final c = makeController();
+    await c.restore();
+    expect(c.hasActive, isTrue);
+    expect(c.phase, WorkoutPhase.lifting, reason: '无 rest.endAt 时回动作态');
+    // 120000 + (now - since)：被杀的 5 分钟按墙钟差值补回（±3 秒容差）
+    expect(c.activeMs, inInclusiveRange(120000 + 297000, 120000 + 303000));
+    expect(c.restMs, 30000);
+    expect(c.phaseSinceMs, greaterThan(0));
+  });
+
+  test('T-N2：休息态被杀恢复——漏计时长接回休息桶，相位还原为休息', () async {
+    final day = await makePlanDay('推日');
+    final sid = await seedActiveSession(day, '卧推');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await prefs.setInt('sess.sid', sid);
+    await prefs.setInt('sess.since', now - 2 * 60000);
+    await prefs.setInt('sess.phase', 1);
+    await prefs.setInt('sess.restMs', 30000);
+    await prefs.setInt('sess.activeMs', 120000);
+    await prefs.setInt('rest.endAt', now + 60000);
+    await prefs.setInt('rest.sessionId', sid);
+
+    final c = makeController();
+    await c.restore();
+    expect(c.hasActive, isTrue);
+    expect(c.phase, WorkoutPhase.resting, reason: 'restEndAt 未到期，还原休息');
+    expect(c.restMs, inInclusiveRange(30000 + 117000, 30000 + 123000));
+    expect(c.activeMs, 120000);
+  });
+
+  test('T-N3：无心跳数据（老版本升级）维持旧行为从零起表', () async {
+    final day = await makePlanDay('日');
+    await seedActiveSession(day, '动作甲');
+    final c = makeController();
+    await c.restore();
+    expect(c.hasActive, isTrue);
+    expect(c.activeMs, 0);
+    expect(c.restMs, 0);
+  });
+
+  test('T-N4：相位切换时心跳落盘，结束训练清空心跳并停训练卡', () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+    final c = makeController();
+    final cards = <TrainingCard>[];
+    c.onCardChanged = cards.add;
+    await c.startFromDay(day: day, planExercises: [e]);
+
+    expect(prefs.getInt('sess.sid'), c.session!.id,
+        reason: '开始训练即落心跳');
+    expect(prefs.getInt('sess.phase'), 0);
+
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(prefs.getInt('sess.phase'), 1, reason: '进休息心跳相位更新');
+    expect(prefs.getInt('rest.endAt'), greaterThan(0));
+
+    await c.finish();
+    expect(prefs.getInt('sess.sid'), 0, reason: '结束清空心跳');
+    expect(cards.last.active, isFalse,
+        reason: '结束后最后一张卡为 inactive（停前台服务）');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('T-N5：训练卡内容对齐三要素（动作/目标/剩余+进度/按钮语义）', () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+    final c = makeController();
+    final cards = <TrainingCard>[];
+    c.onCardChanged = cards.add;
+    await c.startFromDay(day: day, planExercises: [e]);
+    var card = cards.last;
+    expect(card.active, isTrue);
+    expect(card.resting, isFalse);
+    expect(card.title, '动作甲', reason: '三要素之当前动作');
+    expect(card.text, contains('20kg×5-8 次'), reason: '三要素之本组目标');
+    expect(card.chronoStartMs, c.session!.startedAt,
+        reason: '动作态走系统 chronometer（从会话开始计时）');
+
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    card = cards.last;
+    expect(card.resting, isTrue);
+    expect(card.title, '组间休息中');
+    expect(card.remaining, inInclusiveRange(115, 120),
+        reason: '三要素之剩余时间（进度条当前值）');
+    expect(card.total, inInclusiveRange(118, 122));
+    expect(card.paused, isFalse);
+
+    c.pauseRest();
+    card = cards.last;
+    expect(card.paused, isTrue, reason: '暂停态通知按钮切「继续」');
+    expect(card.text, startsWith('已暂停'));
+    c.resumeRest();
+    expect(cards.last.paused, isFalse);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('T-N6：空闲提醒——训练态连续超阈值触发一次，休息中断，恢复重计，可关',
+      () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+    final settings = Settings(prefs)
+      ..idleNudgeEnabled = true
+      ..idleNudgeMinutes = 10;
+    final c = SessionController(db, settings, prefs, null);
+    controllers.add(c);
+    final nudges = <int>[];
+    c.onIdleNudge = (minutes) async => nudges.add(minutes);
+    await c.startFromDay(day: day, planExercises: [e]);
+    final start = DateTime.now().millisecondsSinceEpoch;
+
+    c.checkIdleNudge(start + 9 * 60000);
+    expect(nudges, isEmpty, reason: '未到阈值不提醒');
+    c.checkIdleNudge(start + 10 * 60000 + 2000);
+    expect(nudges, [10], reason: '超阈值触发一次，报实际连续分钟数');
+    c.checkIdleNudge(start + 20 * 60000);
+    expect(nudges, [10], reason: '每段只提醒一次');
+
+    // 休息中断：完成一组进休息，空闲计时不再走
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+    c.checkIdleNudge(start + 30 * 60000);
+    expect(nudges, [10], reason: '休息/暂停/结束不触发空闲提醒');
+
+    // 跳过休息回到 lifting：新一段重新起算（第二段的连续分钟含真实测试
+    // 耗时的秒级偏差，放宽到 41-42）
+    c.skipRest();
+    expect(c.phase, WorkoutPhase.lifting);
+    c.checkIdleNudge(start + 30 * 60000 + 12 * 60000);
+    expect(nudges.length, 2, reason: '恢复后重新连续计时并再次提醒');
+    expect(nudges[1], inInclusiveRange(41, 42));
+
+    // 关闭开关：不再提醒
+    nudges.clear();
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    c.skipRest();
+    settings.idleNudgeEnabled = false;
+    c.checkIdleNudge(start + 60 * 60000);
+    expect(nudges, isEmpty, reason: '设置关闭后不提醒');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('T-N7：休息提前跳过会取消精确提醒；自然到点不取消（双通道不漏）',
+      () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+    // 关提示音：自然到点走 SystemSound 通道，测试环境无宿主插件
+    final settings = Settings(prefs)..soundOn = false;
+    final c = SessionController(db, settings, prefs, null);
+    controllers.add(c);
+    final alarmCalls = <int?>[];
+    c.onRestAlarmChanged = (endAtMs) async => alarmCalls.add(endAtMs);
+    await c.startFromDay(day: day, planExercises: [e]);
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    expect(alarmCalls.last, c.restEndAt);
+
+    c.skipRest();
+    expect(alarmCalls.last, isNull, reason: '提前跳过休息：取消精确提醒');
+
+    await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    final endAt = c.restEndAt;
+    expect(alarmCalls.last, endAt);
+    // 模拟自然到点（不走 skipRest）：把结束时刻拨到过去，等下一次 tick 触发
+    c.restEndAt -= 121000;
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+    expect(c.phase, WorkoutPhase.lifting, reason: '到点回动作态');
+    expect(alarmCalls.last, endAt,
+        reason: '自然到点不取消闹钟：人在后台时系统提醒是唯一通道');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
 }
