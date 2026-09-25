@@ -573,4 +573,57 @@ void main() {
       expect(ms >= 0, isTrue);
     });
   });
+
+  group('对话式排计划', () {
+    test('契约包含 JSON 结构、多轮「完整输出」规则与参考词表', () {
+      final p = AiService.planChatContract();
+      expect(p.contains('```json'), isTrue);
+      expect(p.contains('"weekday"'), isTrue);
+      // 调整后必须重新输出完整计划（不是只给改动项）——多轮排计划的关键
+      expect(p.contains('完整'), isTrue);
+      expect(p.contains('间隔 48 小时'), isTrue);
+      // 参考词表进契约：动作名才能落在内置词表上
+      expect(p.contains('杠铃卧推'), isTrue);
+    });
+
+    test('buildPlanChatMessages：人设+排计划契约合并、数据包独立、历史与输入在尾', () {
+      final msgs = ai.buildPlanChatMessages('DATA-PACK',
+          history: const [AiMessage('assistant', '上次')],
+          userText: 'u');
+      expect(msgs.length, 4);
+      expect(msgs[0].role, 'system');
+      expect(msgs[0].content.contains('薄肌教练'), isTrue, reason: '人设保留');
+      expect(msgs[0].content.contains('排计划模式'), isTrue, reason: '契约叠加');
+      expect(msgs[1].role, 'system');
+      expect(msgs[1].content.contains('DATA-PACK'), isTrue);
+      expect(msgs[2].content, '上次');
+      expect(msgs[3].role, 'user');
+      expect(msgs[3].content, 'u');
+    });
+
+    test('tryExtractPlan：思路 + json 围栏 + 说明 的教练回复可提取出计划', () {
+      final reply = '好的，按每周三练设计，推拉腿分化，胸肩放在推日：\n'
+          '```json\n'
+          '[{"weekday":1,"title":"推日","exercises":[{"name":"杠铃卧推","sets":3,"reps_min":5,"reps_max":8,"rest_sec":180,"kind":"compound","main_muscle":"胸"}]}]\n'
+          '```\n'
+          '想调整随时说，比如「腿日加哈克深蹲」。';
+      final specs = ai.tryExtractPlan(reply);
+      expect(specs, isNotNull);
+      expect(specs!.length, 1);
+      expect(specs.first.title, '推日');
+      expect(specs.first.exercises.first.name, '杠铃卧推');
+      expect(specs.first.exercises.first.restSec, 180);
+    });
+
+    test('tryExtractPlan：纯文字轮次（AI 问澄清）返回 null 不抛错', () {
+      expect(ai.tryExtractPlan('你想每周练几天？家里有哑铃吗？'), isNull);
+    });
+
+    test('tryExtractPlan：无围栏裸 JSON 也能提取（三层容错第①层）', () {
+      final specs = ai.tryExtractPlan(
+          '[{"weekday":2,"title":"拉日","exercises":[{"name":"引体向上","sets":3,"reps_min":5,"reps_max":8}]}]');
+      expect(specs, isNotNull);
+      expect(specs!.first.title, '拉日');
+    });
+  });
 }

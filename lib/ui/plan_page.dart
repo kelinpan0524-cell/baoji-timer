@@ -7,9 +7,11 @@ import '../engine/engine.dart';
 import '../presets/baoji_plan.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
+import '../services/plan_actions.dart';
 import '../services/plan_repository.dart';
 import 'exercise_library_page.dart';
 import 'plan_editor_page.dart';
+import 'plan_preview_sheet.dart';
 import 'schedule_views.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -303,7 +305,7 @@ class _PlanPageState extends State<PlanPage> {
               final messenger = ScaffoldMessenger.of(context);
               final container = app(context);
               await container.planRepo.installBaojiPlan();
-              await _syncLarkDays(container);
+              await syncActivePlanToLark(container);
               if (mounted) {
                 messenger.showSnackBar(
                   const SnackBar(
@@ -356,7 +358,7 @@ class _PlanPageState extends State<PlanPage> {
   Future<void> _onScheduleChanged() async {
     final container = app(context);
     await _refresh();
-    await _syncLarkDays(container);
+    await syncActivePlanToLark(container);
   }
 
   /// 切换排程模式：按星期（固定周几）/ 循环（练 N 休 M，如"隔两天休息一天"）。
@@ -619,6 +621,7 @@ class _PlanPageState extends State<PlanPage> {
   /// 「撤旧 + 写新」唯一入口：更换使用中计划的全部路径（切换/安装/保存）都走这里。
   /// 先记下旧使用中计划的训练日 → 执行 action（action 内须完成切换并 reload，
   /// 使 activePlan 已指向新计划）→ 撤下旧计划的日历日程 → 把新使用中计划写上日历。
+  /// 撤旧/写新由 plan_actions 统一实现（与 AI 教练排计划共用，勿另写一份）。
   Future<T> _switchActivePlanAndSync<T>(
     AppContainer c,
     Future<T> Function() action,
@@ -628,8 +631,8 @@ class _PlanPageState extends State<PlanPage> {
         ? <int>[]
         : (await c.db.planDays(oldId)).map((d) => d.id!).toList();
     final result = await action();
-    unawaited(_removeOldEvents(oldDayIds));
-    await _syncLarkDays(c);
+    unawaited(removePlanDayEvents(c, oldDayIds));
+    await syncActivePlanToLark(c);
     return result;
   }
 
@@ -644,13 +647,6 @@ class _PlanPageState extends State<PlanPage> {
     if (mounted) {
       toast(context, '已设为使用中「${view.name}」');
       await _refresh(view: view);
-    }
-  }
-
-  Future<void> _removeOldEvents(List<int> dayIds) async {
-    final c = app(context);
-    for (final id in dayIds) {
-      await c.lark.removePlanDayEvent(id);
     }
   }
 
@@ -710,12 +706,12 @@ class _PlanPageState extends State<PlanPage> {
     final dayIds = (await c.db.planDays(planId)).map((d) => d.id!).toList();
     await c.planRepo.deletePlanAndFixActive(planId);
     // 撤下该计划在日历上的未来日程（尽力而为）
-    unawaited(_removeOldEvents(dayIds));
+    unawaited(removePlanDayEvents(c, dayIds));
     _view = null;
     await _refresh();
     // 删除后自动顶上的新使用中计划，把它的日程补写上日历
     if (c.planRepo.activePlan != null) {
-      await _syncLarkDays(c);
+      await syncActivePlanToLark(c);
     }
     if (mounted) toast(context, '已删除');
   }
@@ -1071,7 +1067,8 @@ class _PlanPageState extends State<PlanPage> {
     // 调研条目 12：无论哪种来源都先进预览页逐动作确认，确认后才落库。
     // 回落时带上 AI 失败原因摘要（评审修复）：自配 API 的用户能看出
     // 是 Key 错还是网络错，而不是只见笼统的「AI 不可用」。
-    final picked = await _showPlanPreview(
+    final picked = await showPlanPreviewSheet(
+      context,
       specs,
       localMode: localMode,
       aiError: localMode ? aiError : '',
@@ -1104,270 +1101,9 @@ class _PlanPageState extends State<PlanPage> {
     );
   }
 
-  /// 生成结果预览：用户逐动作确认后点「保存为计划」才落库。
-  /// [aiError] 回落进本地模式时的 AI 失败原因（摘要进副标题）。
-  /// 返回 (计划名, 确认后的 specs)；放弃返回 null。
-  Future<(String, List<AiDaySpec>)?> _showPlanPreview(
-    List<AiDaySpec> specs, {
-    required bool localMode,
-    String aiError = '',
-  }) async {
-    final nameCtrl = TextEditingController(
-      text: localMode
-          ? '本地计划 ${fmtDate(DateTime.now())}'
-          : 'AI 生成 ${fmtDate(DateTime.now())}',
-    );
-    // 可编辑副本（AiDaySpec 不可变，按 (日, 序) 定位替换动作）
-    final edited = [
-      for (final d in specs) List<AiExerciseSpec>.of(d.exercises),
-    ];
-    return showModalBottomSheet<(String, List<AiDaySpec>)>(
-      context: context,
-      isScrollControlled: true,
-      isDismissible: false, // 90 秒的成果不能被随手拖没
-      enableDrag: false,
-      backgroundColor: AppTheme.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
-        child: SizedBox(
-          height: MediaQuery.of(ctx).size.height * 0.82,
-          child: StatefulBuilder(
-            builder: (ctx, setSheet) => Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Text(
-                            localMode ? '本地模式预览' : '计划预览',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '（${specs.length} 个训练日）',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: AppTheme.textDim,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        localMode
-                            ? 'AI 不可用（${_truncateReason(aiError)}），已按内置规则生成。点动作可调整。'
-                            : '点动作可换候选；标「待确认」的动作是 AI 名字没对上词表的，请务必确认。',
-                        style: const TextStyle(
-                          fontSize: 12,
-                          color: AppTheme.textDim,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      TextField(
-                        controller: nameCtrl,
-                        decoration: const InputDecoration(labelText: '计划名'),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-                    children: [
-                      for (var i = 0; i < specs.length; i++)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '周${'一二三四五六日'[specs[i].weekday - 1]} · ${specs[i].title}',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: AppTheme.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            for (var j = 0; j < edited[i].length; j++)
-                              _previewExerciseRow(
-                                edited[i][j],
-                                onTap: () async {
-                                  final next =
-                                      await _pickExerciseCandidate(
-                                          ctx, edited[i][j]);
-                                  if (next != null) {
-                                    setSheet(() => edited[i][j] = next);
-                                  }
-                                },
-                              ),
-                            const SizedBox(height: 10),
-                          ],
-                        ),
-                    ],
-                  ),
-                ),
-                SafeArea(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () async {
-                              final ok = await confirmDialog(
-                                ctx,
-                                '丢弃刚生成的计划？',
-                                '放弃后需要重新生成一遍。',
-                              );
-                              if (ok && ctx.mounted) Navigator.pop(ctx);
-                            },
-                            child: const Text('放弃'),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () {
-                              final confirmed = [
-                                for (var i = 0; i < specs.length; i++)
-                                  AiDaySpec(specs[i].weekday, specs[i].title,
-                                      edited[i]),
-                              ];
-                              Navigator.pop(
-                                  ctx, (nameCtrl.text.trim(), confirmed));
-                            },
-                            child: const Text('保存为计划'),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// AI 失败原因摘要：截断到 40 字，空值给兜底文案（预览页副标题用，
-  /// 评审修复：回落成功时失败原因不再被整体吞掉）。
-  String _truncateReason(String aiError) {
-    final t = aiError.trim();
-    if (t.isEmpty) return '未配置或网络不可用';
-    return t.length <= 40 ? t : '${t.substring(0, 40)}…';
-  }
-
-  /// 预览页的一行动作：待确认的加警示色与徽标，全部可点进候选选择。
-  Widget _previewExerciseRow(AiExerciseSpec ex, {required VoidCallback onTap}) {
-    final warn = ex.needsConfirm;
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '· ${ex.name}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: warn ? AppTheme.warn : AppTheme.text,
-                ),
-              ),
-            ),
-            if (warn)
-              const Text(
-                '待确认 ›',
-                style: TextStyle(fontSize: 12, color: AppTheme.warn),
-              )
-            else
-              const Text(
-                '›',
-                style: TextStyle(fontSize: 12, color: AppTheme.textDim),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 候选选择：六级匹配的 top5 候选 + 保留原名（保存后走动作库沉淀兜底）。
-  /// 无候选（已确认动作）不弹窗。
-  Future<AiExerciseSpec?> _pickExerciseCandidate(
-    BuildContext ctx,
-    AiExerciseSpec ex,
-  ) async {
-    if (ex.candidates.isEmpty) return null;
-    final original =
-        ex.rawName.isNotEmpty ? ex.rawName : ex.name;
-    return showModalBottomSheet<AiExerciseSpec>(
-      context: ctx,
-      backgroundColor: AppTheme.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) => SafeArea(
-        child: ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          children: [
-            Text(
-              '「$original」匹配到以下动作，请确认',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            for (final cand in ex.candidates)
-              ListTile(
-                dense: true,
-                title: Text(cand),
-                leading: const Icon(Icons.fitness_center,
-                    size: 18, color: AppTheme.primary),
-                onTap: () => Navigator.pop(sheetCtx, ex.withName(cand)),
-              ),
-            const Divider(height: 1),
-            ListTile(
-              dense: true,
-              title: Text('保留「$original」'),
-              subtitle: const Text(
-                '保存后沉淀进动作库，肌群按 AI 判定归类',
-                style: TextStyle(fontSize: 12, color: AppTheme.textDim),
-              ),
-              leading:
-                  const Icon(Icons.edit_note, size: 18, color: AppTheme.textDim),
-              onTap: () => Navigator.pop(sheetCtx, ex.withName(original)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  /// 生成结果预览与逐动作候选确认已抽到 plan_preview_sheet.dart
+  /// （与 AI 教练「排计划模式」共用同一确认纪律）。
 
   // ================= 飞书同步 =================
-
-  /// 「使用中」计划的未来 14 天训练日写入飞书日历（编辑/切换/导入后调用）。
-  /// 只同步使用中的计划——编辑未启用计划不应把它的日程写上日历。
-  /// 同步前清理：有日历记录但已无动作的日子（用户清空了那天）先撤事件。
-  Future<void> _syncLarkDays(AppContainer c, {int? planId}) async {
-    final target = planId ?? c.planRepo.activePlan?.id;
-    if (target == null) return;
-    final specs = await c.planRepo.larkSpecsForPlan(target);
-    final withEx = specs.map((s) => s.planDayId).toSet();
-    for (final sync in await c.db.larkSyncRefsForPlan(target)) {
-      if (!withEx.contains(sync.refId)) {
-        await c.lark.removePlanDayEvent(sync.refId);
-      }
-    }
-    await c.lark.syncUpcomingDays(days: specs);
-  }
+  // 撤旧日程/写新日程由 plan_actions.dart 统一实现（勿在页面再留副本）。
 }
