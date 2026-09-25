@@ -11,13 +11,140 @@ import 'settings.dart';
 
 /// OpenAI 兼容 chat/completions 客户端：手机直连，key 只存本地。
 class AiService {
-  AiService(this._settings);
+  /// [httpClient] 仅测试注入（http/testing MockClient）；生产为 null，
+  /// 走顶层 http.post（IOClient）。
+  AiService(this._settings, {http.Client? httpClient}) {
+    // 赋值放构造体而非初始化列表：私有字段接公开具名参数，
+    // 初始化列表写法会触发 prefer_initializing_formals lint
+    _httpClient = httpClient;
+  }
 
   final Settings _settings;
+  late final http.Client? _httpClient;
 
   Map<String, ExerciseMeta> metaMap() => {
         for (final m in kExerciseLibrary) m.name: m,
       };
+
+  /// AI 教练人设（system prompt）。身份设定三原则：
+  /// ① 数据为准——只对训练数据说话，没有的不编造；
+  /// ② 大白话、给数字——建议具体到加重/组次/休息秒数；
+  /// ③ 安全边界——不诊断伤病、不给"忍痛练"方案。
+  static const String kCoachPersona = '你是「薄肌教练」——「薄肌训练计时器」App 内置的私人力量训练教练。\n\n'
+      '身份与口径：\n'
+      '- 用户是业余增肌训练者，跟随「薄肌计划」（每周 3-5 练，推/拉/腿三分化，四大项渐进超负荷），目标是增肌。\n'
+      '- 你看到的「训练数据」是 App 从手机本地导出的真实记录，一切结论以数据为准；数据里没有的不要编造，可以直接问用户。\n'
+      '- 恢复度、容量等指标是 App 的启发式估算（按训练容量与 48 小时衰减），不是生理测量，表述时保持"参考"口径。\n\n'
+      '回答风格：\n'
+      '- 中文大白话，结论先行，直接给可执行动作；少堆术语，必要术语用一句话解释。\n'
+      '- 建议具体到数字：加重多少 kg、几组几次、组间休息多少秒、弱项补什么动作。\n'
+      '- 用要点列表保持紧凑，通常 300 字以内（用户明确要求展开除外）。\n\n'
+      '边界：\n'
+      '- 不做医疗诊断。用户描述疼痛、麻木、关节异响等伤症状况时，先建议就医或休息，并降低受累部位训练量，绝不给"忍痛练"方案。\n'
+      '- 不推荐违禁药物；补剂只谈有共识证据的（蛋白粉、肌酸等），并提示遵说明使用。';
+
+  /// 一键阶段复盘的指令（数据包已作为上下文注入，这里只写分析要求）。
+  static const String kAnalysisInstruction =
+      '请基于上面的训练数据做一次阶段复盘，用要点列表输出：\n'
+      '1. 进步与退步：主力动作的力量/容量趋势，点名停滞或退步的动作；\n'
+      '2. 训练频率与容量是否足以支撑渐进超负荷；\n'
+      '3. 肌群均衡度：哪个肌群容量偏低；\n'
+      '4. 组间休息：对比"计划休息 vs 实际休息"，指出过长或过短的动作'
+      '（参考：复合动作 90-180 秒、辅助 60-90 秒、大重量力量组 3-5 分钟）；\n'
+      '5. 未来 2-4 周的 3-5 条具体调整建议。\n'
+      '总长控制在 600 字以内。';
+
+  /// 组装教练对话消息：人设 + 数据上下文 + 历史 + 本轮用户输入。
+  /// 数据包作独立 system 段注入；chat/completions 无状态，历史每轮重发。
+  List<AiMessage> buildCoachMessages(
+    String dataPack, {
+    List<AiMessage> history = const [],
+    String userText = '',
+  }) {
+    return [
+      const AiMessage('system', kCoachPersona),
+      AiMessage('system',
+          '以下是用户 App 导出的真实训练数据，回答必须以此为依据：\n\n$dataPack'),
+      ...history,
+      AiMessage('user', userText),
+    ];
+  }
+
+  /// 连接测试：发一条最小请求，返回 (耗时 ms, 模型回复)。
+  /// 成功/失败都由调用方（设置页「测试连接」）直接展示给用户。
+  Future<(int elapsedMs, String reply)> testConnection() async {
+    final sw = Stopwatch()..start();
+    final reply = await chat(const [
+      AiMessage('user', '连接测试：请只回复「连接正常」四个字。'),
+    ]);
+    sw.stop();
+    return (sw.elapsedMilliseconds, reply);
+  }
+
+  /// 多轮对话通用入口：messages 原样发给 /chat/completions。
+  /// 所有 AI 功能（计划拆解/描述生成/教练对话/分析）统一走这里，
+  /// 错误统一归一为 AiException 中文文案。
+  Future<String> chat(List<AiMessage> messages) async {
+    if (!_settings.aiConfigured) {
+      throw const AiException('未配置 AI 接口，请在设置里填入 Base URL 和 API Key');
+    }
+    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final schemeError = baseUrlSchemeError(base);
+    if (schemeError != null) {
+      throw AiException(schemeError);
+    }
+    final url = '$base/chat/completions';
+    final post = _httpClient?.post ?? http.post;
+    try {
+      final resp = await post(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ${_settings.aiApiKey}',
+            },
+            body: jsonEncode({
+              'model': _settings.aiModel,
+              'messages': [
+                for (final m in messages)
+                  {'role': m.role, 'content': m.content}
+              ],
+              'temperature': 0.2,
+            }),
+          )
+          .timeout(const Duration(seconds: 90));
+      if (resp.statusCode != 200) {
+        final friendly = switch (resp.statusCode) {
+          401 => 'API Key 无效',
+          403 => '无访问权限或地区受限',
+          429 => '额度不足或被限流，稍后再试',
+          _ => 'AI 接口返回 ${resp.statusCode}',
+        };
+        throw AiException(friendly);
+      }
+      final dynamic decoded;
+      try {
+        decoded = jsonDecode(utf8.decode(resp.bodyBytes));
+      } on FormatException {
+        throw const AiException('AI 返回的不是有效 JSON（网关错误页？），请检查 Base URL');
+      }
+      final data = decoded as Map<String, dynamic>;
+      final choices = data['choices'] as List?;
+      if (choices == null || choices.isEmpty) {
+        throw const AiException('AI 返回为空');
+      }
+      final msg = (choices.first as Map)['message'] as Map;
+      // 推理类模型可能把文本放 reasoning_content、content 置 null
+      final content = (msg['content'] as String?)?.trim() ?? '';
+      if (content.isEmpty) {
+        throw const AiException('模型没有输出内容（可能被截断或仅推理输出），请换模型或重试');
+      }
+      return content;
+    } on TimeoutException {
+      throw const AiException('AI 请求超时，请检查网络或稍后再试');
+    } on http.ClientException catch (e) {
+      throw AiException('无法连接 AI 接口：${e.message}');
+    }
+  }
 
   /// 把用户粘贴的计划文本拆解为结构化计划。
   /// 动作名尽量匹配内置词表；肌群映射走词表 + 关键词兜底。
@@ -26,7 +153,7 @@ class AiService {
       throw const AiException('未配置 AI 接口，请在设置里填入 Base URL 和 API Key');
     }
     final prompt = _buildPrompt(text);
-    final content = await _chat(prompt);
+    final content = await chat([AiMessage('user', prompt)]);
     return parseResponse(content);
   }
 
@@ -52,7 +179,7 @@ class AiService {
     if (!_settings.aiConfigured) {
       throw const AiException('未配置 AI 接口，请在设置里填入 Base URL 和 API Key');
     }
-    final content = await _chat(buildDesignerPrompt(description));
+    final content = await chat([AiMessage('user', buildDesignerPrompt(description))]);
     return parseResponse(content);
   }
 
@@ -92,64 +219,6 @@ $planText
       }
     }
     return null;
-  }
-
-  Future<String> _chat(String prompt) async {
-    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
-    final schemeError = baseUrlSchemeError(base);
-    if (schemeError != null) {
-      throw AiException(schemeError);
-    }
-    final url = '$base/chat/completions';
-    try {
-      final resp = await http
-          .post(
-            Uri.parse(url),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${_settings.aiApiKey}',
-            },
-            body: jsonEncode({
-              'model': _settings.aiModel,
-              'messages': [
-                {'role': 'user', 'content': prompt}
-              ],
-              'temperature': 0.2,
-            }),
-          )
-          .timeout(const Duration(seconds: 90));
-      if (resp.statusCode != 200) {
-        final friendly = switch (resp.statusCode) {
-          401 => 'API Key 无效',
-          403 => '无访问权限或地区受限',
-          429 => '额度不足或被限流，稍后再试',
-          _ => 'AI 接口返回 ${resp.statusCode}',
-        };
-        throw AiException(friendly);
-      }
-      final dynamic decoded;
-      try {
-        decoded = jsonDecode(utf8.decode(resp.bodyBytes));
-      } on FormatException {
-        throw const AiException('AI 返回的不是有效 JSON（网关错误页？），请检查 Base URL');
-      }
-      final data = decoded as Map<String, dynamic>;
-      final choices = data['choices'] as List?;
-      if (choices == null || choices.isEmpty) {
-        throw const AiException('AI 返回为空');
-      }
-      final msg = (choices.first as Map)['message'] as Map;
-      // 推理类模型可能把文本放 reasoning_content、content 置 null
-      final content = (msg['content'] as String?)?.trim() ?? '';
-      if (content.isEmpty) {
-        throw const AiException('模型没有输出内容（可能被截断或仅推理输出），请换模型或重试');
-      }
-      return content;
-    } on TimeoutException {
-      throw const AiException('AI 请求超时，请检查网络或稍后再试');
-    } on http.ClientException catch (e) {
-      throw AiException('无法连接 AI 接口：${e.message}');
-    }
   }
 
   /// 局域网 http 白名单：localhost 精确匹配 + 数值 IPv4 私有段。
@@ -586,6 +655,13 @@ class AiException implements Exception {
   const AiException(this.message);
   @override
   String toString() => message;
+}
+
+/// 一条对话消息（role: system/user/assistant，OpenAI 兼容口径）。
+class AiMessage {
+  final String role;
+  final String content;
+  const AiMessage(this.role, this.content);
 }
 
 /// 一条动作名的匹配结果（六级级联，见 matchExerciseNames 注释）。

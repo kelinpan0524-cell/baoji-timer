@@ -1,7 +1,12 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/engine/engine.dart';
 import 'package:baoji_timer/services/ai_service.dart';
 import 'package:baoji_timer/services/settings.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -390,6 +395,182 @@ void main() {
         '杠铃深蹲': [setOf(0, 100), setOf(0, 60)],
       });
       expect(insights, isEmpty);
+    });
+  });
+
+  group('AI 教练：人设与消息组装', () {
+    test('人设包含身份、数据为准与安全边界要素', () {
+      expect(AiService.kCoachPersona.contains('薄肌教练'), isTrue);
+      expect(AiService.kCoachPersona.contains('以数据为准'), isTrue);
+      expect(AiService.kCoachPersona.contains('不做医疗诊断'), isTrue);
+      expect(AiService.kCoachPersona.contains('渐进超负荷'), isTrue);
+    });
+
+    test('一键复盘指令覆盖各分析维度', () {
+      final p = AiService.kAnalysisInstruction;
+      expect(p.contains('渐进超负荷'), isTrue);
+      expect(p.contains('肌群均衡'), isTrue);
+      expect(p.contains('计划休息 vs 实际休息'), isTrue);
+      expect(p.contains('调整建议'), isTrue);
+    });
+
+    test('buildCoachMessages：人设开头、数据包独立段、用户输入在末尾', () {
+      final msgs = ai.buildCoachMessages('DATA-PACK',
+          history: const [AiMessage('assistant', '上次回答')],
+          userText: '我练得怎么样？');
+      expect(msgs.length, 4);
+      expect(msgs[0].role, 'system');
+      expect(msgs[0].content, AiService.kCoachPersona);
+      expect(msgs[1].role, 'system');
+      expect(msgs[1].content.contains('DATA-PACK'), isTrue);
+      expect(msgs[2].role, 'assistant');
+      expect(msgs[2].content, '上次回答');
+      expect(msgs[3].role, 'user');
+      expect(msgs[3].content, '我练得怎么样？');
+    });
+
+    test('未配置时 chat() 抛可读错误（教练对话绝不静默回落本地）', () {
+      expect(
+        () => ai.chat(const [AiMessage('user', '你好')]),
+        throwsA(isA<AiException>().having(
+            (e) => e.message, 'message',
+            contains('未配置 AI 接口'))),
+      );
+    });
+  });
+
+  group('连接测试与多轮对话（http 注入 + 本机模拟服务器）', () {
+    // flutter_test 会拦截测试内所有 HttpClient 请求（一律回 400），因此：
+    // - 各失败分支用 http/testing MockClient 注入 AiService（无 socket，确定性）；
+    // - 真实连通性用 HttpOverrides.runZoned 放行 socket + 本机 HttpServer 验证
+    //   （没有真实 API Key——Key 只存手机本地——这是本机/CI 能做的最实连接测试）。
+    Future<AiService> serviceWith(http.Client client) async {
+      SharedPreferences.setMockInitialValues({
+        'set.aiBaseUrl': 'http://127.0.0.1:1',
+        'set.aiApiKey': 'sk-test',
+        'set.aiModel': 'test-model',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      return AiService(Settings(prefs), httpClient: client);
+    }
+
+    // http.Response(String) 默认 latin1，中文必须走 utf8 字节
+    http.Response jsonResponse(Map<String, dynamic> body, [int status = 200]) =>
+        http.Response.bytes(utf8.encode(jsonEncode(body)), status,
+            headers: {'content-type': 'application/json; charset=utf-8'});
+
+    test('testConnection 成功：带 Bearer 头与 model，返回模型回复', () async {
+      String? auth;
+      Map<String, dynamic>? sent;
+      final svc = await serviceWith(MockClient((req) async {
+        auth = req.headers['authorization'];
+        sent = jsonDecode(req.body) as Map<String, dynamic>;
+        return jsonResponse({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': '连接正常'}
+            }
+          ]
+        });
+      }));
+      final (ms, reply) = await svc.testConnection();
+      expect(reply, '连接正常');
+      expect(ms >= 0, isTrue);
+      expect(auth, 'Bearer sk-test');
+      expect(sent!['model'], 'test-model');
+    });
+
+    test('教练多轮对话：system 人设+数据包在前，历史与用户输入按序重发', () async {
+      List<dynamic>? roles;
+      final svc = await serviceWith(MockClient((req) async {
+        roles = (jsonDecode(req.body)['messages'] as List)
+            .map((m) => m['role'])
+            .toList();
+        return jsonResponse({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': '根据数据，胸落后了'}
+            }
+          ]
+        });
+      }));
+      final reply = await svc.chat(svc.buildCoachMessages('近8周数据',
+          history: const [AiMessage('assistant', '上次说练背')], userText: '弱项是啥'));
+      expect(reply, '根据数据，胸落后了');
+      expect(roles, ['system', 'system', 'assistant', 'user']);
+    });
+
+    test('401 → 归一为「API Key 无效」', () async {
+      final svc = await serviceWith(
+          MockClient((req) async => http.Response('{"error":"bad"}', 401)));
+      await expectLater(
+        svc.testConnection(),
+        throwsA(isA<AiException>()
+            .having((e) => e.message, 'message', 'API Key 无效')),
+      );
+    });
+
+    test('200 但返回网关错误页 → 归一为「不是有效 JSON」', () async {
+      final svc = await serviceWith(
+          MockClient((req) async => http.Response('<html>502</html>', 200)));
+      await expectLater(
+        svc.testConnection(),
+        throwsA(isA<AiException>().having((e) => e.message, 'message',
+            contains('AI 返回的不是有效 JSON'))),
+      );
+    });
+
+    test('choices 里 content 为空 → 归一为「模型没有输出内容」', () async {
+      final svc = await serviceWith(MockClient((req) async => jsonResponse({
+            'choices': [
+              {
+                'message': {'role': 'assistant', 'content': ''}
+              }
+            ]
+          })));
+      await expectLater(
+        svc.testConnection(),
+        throwsA(isA<AiException>().having(
+            (e) => e.message, 'message',
+            contains('模型没有输出内容'))),
+      );
+    });
+
+    test('真实 socket 连通：本机 HttpServer + runZoned 放行，走生产 IOClient 路径',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() => server.close(force: true));
+      server.listen((req) async {
+        await utf8.decoder.bind(req).join();
+        req.response.headers.contentType = ContentType.json;
+        req.response.write(jsonEncode({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': '连接正常'}
+            }
+          ]
+        }));
+        await req.response.close();
+      });
+      SharedPreferences.setMockInitialValues({
+        'set.aiBaseUrl': 'http://127.0.0.1:${server.port}',
+        'set.aiApiKey': 'sk-test',
+        'set.aiModel': 'test-model',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final svc = AiService(Settings(prefs)); // 不注入：走生产 http.post
+      // flutter_test 装了"一律 400"的全局 HttpOverrides（只写不可读）。
+      // 摘除后造真 HttpClient（本文件独立 isolate，后续用例不依赖假客户端）；
+      // runZoned 的 createHttpClient 回调里直接 new HttpClient() 会递归
+      // 自引用爆栈，所以必须在 zone 外把真 client 造好再交进去。
+      HttpOverrides.global = null;
+      final realClient = HttpClient();
+      final (ms, reply) = await HttpOverrides.runZoned(
+        () => svc.testConnection(),
+        createHttpClient: (_) => realClient,
+      );
+      expect(reply, '连接正常');
+      expect(ms >= 0, isTrue);
     });
   });
 }

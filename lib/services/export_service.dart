@@ -87,30 +87,18 @@ class ExportService {
     return (data['sessions'] as List).length;
   }
 
-  /// AI 分析包：人类可读摘要 + 预制提示词 + 精简 JSON 数据。
-  /// 目标：直接整段复制给任意大模型，即可获得训练分析与总结。
-  /// [bodyWeightKg]：自重容量折算体重（评审拉齐口径）——不传/传 0 时
-  /// 自重动作容量记 0（旧口径）。调用点传 settings.bodyWeightKg 与
-  /// 统计页/总结页/休息页战报保持同一容量口径。
-  Future<String> buildAiPack({int weeks = 8, double bodyWeightKg = 0}) async {
+  /// AI 数据包（纯数据，无提示词）：App 内「AI 教练」的对话上下文。
+  /// [bodyWeightKg]：自重容量折算体重——不传/传 0 时自重动作容量记 0
+  /// （旧口径）。调用点传 settings.bodyWeightKg 与统计页保持同一容量口径。
+  Future<String> buildAiData({int weeks = 8, double bodyWeightKg = 0}) async {
     final now = DateTime.now();
     final from = fmtDate(now.subtract(Duration(days: weeks * 7)));
     final to = fmtDate(now);
     final sessions = await _db.sessionsBetween(from, to);
 
     final buf = StringBuffer();
-    buf.writeln('# 训练数据分析请求');
-    buf.writeln();
-    buf.writeln('你是一位专业力量训练教练。请基于下面的结构化数据分析：');
-    buf.writeln('1. 各大项（深蹲/卧推/硬拉/推举）的进步趋势，指出停滞或退步的动作；');
-    buf.writeln('2. 训练频率与容量是否足以支撑渐进超负荷；');
-    buf.writeln('3. 肌群均衡度（哪个肌群训练量偏低）；');
-    buf.writeln('4. 组间休息是否合适：结合"计划休息 vs 实际休息"判断哪些动作休息过长或过短'
-        '（参考：增肌复合动作 90-180 秒、辅助动作 60-90 秒、大重量低次数力量组 3-5 分钟）；');
-    buf.writeln('5. 给出未来 2-4 周的具体调整建议（加重策略、弱项补强、恢复建议）。');
-    buf.writeln('数据时间范围：$from 至 $to。');
-    buf.writeln();
     buf.writeln('## 训练概要');
+    buf.writeln('- 数据时间范围：$from 至 $to');
     buf.writeln('- 训练次数：${sessions.length} 次');
     if (sessions.isNotEmpty) {
       final span = sessions.last.date == sessions.first.date
@@ -191,6 +179,24 @@ class ExportService {
     buf.writeln('```json');
     buf.writeln(jsonEncode(compact));
     buf.writeln('```');
+    return buf.toString();
+  }
+
+  /// AI 分析包：预制教练提示词 + 数据包（buildAiData）。
+  /// 目标：直接整段复制给任意大模型，即可获得训练分析与总结。
+  Future<String> buildAiPack({int weeks = 8, double bodyWeightKg = 0}) async {
+    final buf = StringBuffer();
+    buf.writeln('# 训练数据分析请求');
+    buf.writeln();
+    buf.writeln('你是一位专业力量训练教练。请基于下面的结构化数据分析：');
+    buf.writeln('1. 各大项（深蹲/卧推/硬拉/推举）的进步趋势，指出停滞或退步的动作；');
+    buf.writeln('2. 训练频率与容量是否足以支撑渐进超负荷；');
+    buf.writeln('3. 肌群均衡度（哪个肌群训练量偏低）；');
+    buf.writeln('4. 组间休息是否合适：结合"计划休息 vs 实际休息"判断哪些动作休息过长或过短'
+        '（参考：增肌复合动作 90-180 秒、辅助动作 60-90 秒、大重量低次数力量组 3-5 分钟）；');
+    buf.writeln('5. 给出未来 2-4 周的具体调整建议（加重策略、弱项补强、恢复建议）。');
+    buf.writeln();
+    buf.write(await buildAiData(weeks: weeks, bodyWeightKg: bodyWeightKg));
     return buf.toString();
   }
 }
