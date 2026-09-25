@@ -490,6 +490,36 @@ class SessionController extends ChangeNotifier {
     }
   }
 
+  /// 跳页（调研条目 8 页面流的"跳页走收起面板"）：把当前动作切到 [exIdx]，
+  /// 该动作剩余的第一个未完成正式组成为当前记录页。已记的组原样保留。
+  /// 只允许跳到未练满的动作（练满的加练走休息页「再来一组」，防误触打乱
+  /// 计数）；目标即当前动作时为幂等 no-op。休息中跳页会先结束本段休息
+  /// （取消精确闹钟，与跳过休息同口径）。
+  Future<bool> jumpToExercise(int exIdx) async {
+    if (session == null || exercises.isEmpty) return false;
+    if (exIdx < 0 || exIdx >= exercises.length) return false;
+    if (exIdx == curExIdx) return false;
+    final target = exercises[exIdx];
+    final done = (setsByEx[target.id] ?? const <SetEntry>[])
+        .where((e) => e.kind == SetKind.working)
+        .length;
+    if (done >= target.rule.workingSets) return false; // 已练满：不可跳入
+    if (phase == WorkoutPhase.resting) _finishRest(cancelAlarm: true);
+    curExIdx = exIdx;
+    final list = setsByEx[target.id] ?? const <SetEntry>[];
+    workingSetsDone = done;
+    curSetIdx = list.length;
+    await _loadContextForCurrent();
+    // 重量起点：该动作已有实际组就取最后一组的实际值，否则用推荐值
+    weightDraft = list.isNotEmpty
+        ? list.last.weightKg
+        : _recommendFor(target.name);
+    _setPhase(WorkoutPhase.lifting);
+    notifyCard();
+    notifyListeners();
+    return true;
+  }
+
   /// 完成后未休息先看下一动作（下一组自动带入上次重量）。
   /// 休息时长（调研条目 9 分档规则）：
   /// ① 逐动作覆盖优先——计划里该动作配置的 restSec（>0 生效）；
@@ -770,9 +800,12 @@ class SessionController extends ChangeNotifier {
 
   /// 训练中临时加动作：从动作库挑的动作追加到队尾（只进本次会话，不改计划）。
   /// 规则用默认（5-8 次 × 3 组），休息跟随全局偏好（restSec=0）。
+  /// 每行带『追加于：前一动作』痕迹（点名条目三），便于统计追溯。
   Future<void> appendExercises(List<ExerciseMeta> metas) async {
     if (!hasActive || metas.isEmpty) return;
     var order = exercises.length;
+    var prevName =
+        exercises.isEmpty ? '' : exercises.last.name; // 痕迹：追加在谁后面
     for (final m in metas) {
       final draft = SessionExercise(
         sessionId: session!.id!,
@@ -781,16 +814,19 @@ class SessionController extends ChangeNotifier {
         kind: m.isCompound ? 'compound' : 'assistance',
         restSec: 0,
         rule: ProgressionRule.fallback,
+        trace: prevName.isEmpty ? '追加于：会话开头' : '追加于：$prevName',
       );
       final id = await _db.insertSessionExercise(draft);
       exercises.add(draft.copyWithId(id));
+      prevName = m.name;
     }
     notifyCard();
     notifyListeners();
   }
 
   /// 训练中替换当前动作（仅限还没记过组的动作）：沿用原组次规则/休息/排序，
-  /// 只换名字。已记组或队列里已有同名动作时不动作（返回 false）。
+  /// 只换名字，行上留『替换自：原动作』痕迹（点名条目三）。
+  /// 已记组或队列里已有同名动作时不动作（返回 false）。
   Future<bool> replaceCurrentExercise(ExerciseMeta meta) async {
     final ex = currentEx;
     if (!hasActive || ex == null) return false;
@@ -805,6 +841,7 @@ class SessionController extends ChangeNotifier {
       kind: ex.kind,
       restSec: ex.restSec,
       rule: ex.rule,
+      trace: '替换自：${ex.name}',
     );
     await _db.updateSessionExercise(updated);
     exercises[curExIdx] = updated;

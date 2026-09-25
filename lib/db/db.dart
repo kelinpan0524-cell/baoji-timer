@@ -32,7 +32,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 4,
+          version: 5,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -88,6 +88,12 @@ class Db {
           'ALTER TABLE sessions ADD COLUMN rest_ms INTEGER NOT NULL DEFAULT 0');
       await db.execute(
           'ALTER TABLE sessions ADD COLUMN active_ms INTEGER NOT NULL DEFAULT 0');
+    }
+    if (oldV < 5) {
+      // v5：会话动作行保留临时替换/追加痕迹（点名条目三）：
+      // ''=计划原样；'替换自：X'/'追加于：Y' 便于历史与统计追溯。
+      await db.execute(
+          "ALTER TABLE session_exercises ADD COLUMN trace TEXT NOT NULL DEFAULT ''");
     }
   }
 
@@ -158,7 +164,8 @@ class Db {
         order_idx INTEGER NOT NULL DEFAULT 0,
         kind TEXT NOT NULL DEFAULT 'assistance',
         rest_sec INTEGER NOT NULL DEFAULT 0,
-        rule TEXT NOT NULL DEFAULT '{}'
+        rule TEXT NOT NULL DEFAULT '{}',
+        trace TEXT NOT NULL DEFAULT ''
       )''');
     await db.execute('''
       CREATE TABLE sets(

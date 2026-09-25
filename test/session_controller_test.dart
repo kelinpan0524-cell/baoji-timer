@@ -485,6 +485,8 @@ void main() {
       where: "name = '临时动作'",
     );
     expect(added.length, 1, reason: '追加动作落库');
+    expect(added.first['trace'], '追加于：动作甲',
+        reason: '点名条目三：追加痕迹落库（追加在谁后面）');
 
     // 当前动作还没记组：可替换（沿用规则只换名）
     final ok = await c.replaceCurrentExercise(
@@ -492,12 +494,16 @@ void main() {
     );
     expect(ok, isTrue);
     expect(c.exercises[0].name, '替换动作');
+    expect(c.exercises[0].trace, '替换自：动作甲',
+        reason: '内存模型带替换痕迹');
     final renamed = await rawDb.query(
       'session_exercises',
       where: 'id = ?',
       whereArgs: [c.exercises[0].id],
     );
     expect(renamed.first['name'], '替换动作');
+    expect(renamed.first['trace'], '替换自：动作甲',
+        reason: '点名条目三：替换痕迹落库（原动作是什么）');
 
     // 已记组：不可替换（防把已记的组串到别的动作名下）
     await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
@@ -506,6 +512,52 @@ void main() {
     );
     expect(ok2, isFalse);
     expect(c.exercises[0].name, '替换动作');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('B3b：跳页——可跳到未练满动作并带上下文；练满/越界/原地不可跳；休息中跳页结束休息', () async {
+    final day = await makePlanDay('日');
+    final a = await addPlanEx(day, '动作甲', 0, sets: 2, workingSets: 2);
+    final b = await addPlanEx(day, '动作乙', 1, sets: 2, workingSets: 2);
+    final c2 = await addPlanEx(day, '动作丙', 2, sets: 1, workingSets: 1);
+
+    final c = makeController();
+    final alarmCalls = <int?>[];
+    c.onRestAlarmChanged = (endAtMs) async => alarmCalls.add(endAtMs);
+    await c.startFromDay(day: day, planExercises: [a, b, c2]);
+
+    // 原地/越界：no-op
+    expect(await c.jumpToExercise(0), isFalse);
+    expect(await c.jumpToExercise(99), isFalse);
+    expect(c.curExIdx, 0);
+
+    // 动作甲记 1 组后跳到动作乙：上下文跟随（推荐重量/计数/相位）
+    c.setWeightDraft(55);
+    await c.completeSet(weight: 55, reps: 8, rir: 2, kind: SetKind.working);
+    expect(c.phase, WorkoutPhase.resting);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+
+    expect(await c.jumpToExercise(1), isTrue, reason: '跳到未练满的动作乙');
+    expect(c.phase, WorkoutPhase.lifting, reason: '休息中跳页先结束休息');
+    expect(alarmCalls.last, isNull, reason: '跳页取消精确闹钟（跳过休息同口径）');
+    expect(c.curExIdx, 1);
+    expect(c.workingSetsDone, 0);
+    expect(c.weightDraft, presetStartOf('动作乙'), reason: '无历史组用推荐值');
+    // 甲的已记组原样保留
+    final map = await db.setsOfSession(c.session!.id!);
+    expect((map[c.exercises[0].id] ?? []).length, 1);
+
+    // 动作乙记满后：不可再跳入（防打乱计数），但可跳到未练满的丙
+    await c.completeSet(weight: 40, reps: 8, rir: 2, kind: SetKind.working);
+    await c.completeSet(weight: 40, reps: 8, rir: 2, kind: SetKind.working);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(c.curExIdx, 2, reason: '乙练满已自动推进到丙');
+    expect(await c.jumpToExercise(1), isFalse, reason: '练满的动作不可跳入');
+    // 跳回甲（还有 1 个正式组没做）：带实际组重量
+    expect(await c.jumpToExercise(0), isTrue);
+    expect(c.curExIdx, 0);
+    expect(c.workingSetsDone, 1);
+    expect(c.weightDraft, 55, reason: '有实际组时重量继承最后一组实际值');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
 

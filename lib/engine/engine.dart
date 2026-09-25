@@ -5,6 +5,7 @@ export '../models/models.dart';
 export 'local_plan.dart';
 export 'rest_rules.dart';
 export 'volume.dart';
+export 'workout_flow.dart';
 
 /// 纯函数业务引擎：渐进超负荷判定、1RM、容量、肌肉分布。
 /// 不依赖 Flutter，全部可单元测试。

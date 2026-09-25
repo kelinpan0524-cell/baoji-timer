@@ -23,6 +23,25 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   WorkoutPhase? _lastPhase;
   Timer? _distractTimer;
 
+  // ---------- 页面流（调研条目 8，wger gym_mode 思路） ----------
+  /// 当前展示的页：由「会话动作 + 已记组」库内真值推导（workout_flow.dart），
+  /// 不维护手工导航堆栈——保存一组→写库→状态机重算当前页→这里自动翻页。
+  FlowPage? _shown;
+
+  /// 起始页可见性：null = 尚未决定（首次构建时按"零记录"判定）。
+  /// 全新会话先看一眼今天练什么；中途恢复（已有记录）直接落到当前记录页。
+  bool? _startVisible;
+
+  /// 总结页数据（收尾流程采集；null = 尚未收尾）。
+  TrainingSummary? _summary;
+  bool _finishing = false;
+
+  /// 保存一组的"划线标记"确认窗口：窗口内冻结当前页并盖「已记录」章
+  /// （划线展示刚存的组），窗口结束才应用状态机算出的下一页（自动翻页）。
+  bool _holdMark = false;
+  String _markText = '';
+  Timer? _markTimer;
+
   @override
   void initState() {
     super.initState();
@@ -78,6 +97,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _distractTimer?.cancel();
+    _markTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
@@ -95,6 +115,207 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     }
   }
 
+  // ---------- 页面流推导与翻页 ----------
+
+  /// 目标页：起始页（入口态）→ 记录/休息页（状态机算）→ 总结页（收尾后）。
+  /// 返回 null = 会话已结束但总结未就绪（收尾中：保持当前页不闪占位）。
+  FlowPage? _deriveTarget(SessionController s, WorkoutFlow flow) {
+    if (!s.hasActive) {
+      return _summary == null ? null : const FlowPage.summary();
+    }
+    if (_startVisible ?? false) return const FlowPage.start();
+    return flow.currentPage(
+      resting: s.phase == WorkoutPhase.resting,
+      curExIdx: s.curExIdx,
+    );
+  }
+
+  /// 每次控制器通知后对齐展示页。划线确认窗口内冻结当前页，
+  /// 窗口结束（_markTimer）后下一次构建才应用新页。
+  void _syncShown(SessionController s, WorkoutFlow flow) {
+    _startVisible ??= flow.donePlannedSets == 0;
+    final target = _deriveTarget(s, flow);
+    if (target == null || _holdMark) return;
+    _shown = target;
+  }
+
+  /// 保存一组成功（会话未结束）→ 划线标记窗口 → 自动翻到下一页。
+  /// wger 的"保存→划线→自动翻页"三步：写库已由控制器完成，
+  /// 这里盖「已记录」章（划线展示刚存的组），900ms 后放行翻页。
+  void _onSetRecorded(String mark) {
+    _markTimer?.cancel();
+    setState(() {
+      _holdMark = true;
+      _markText = mark;
+    });
+    _markTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) return;
+      setState(() => _holdMark = false);
+    });
+  }
+
+  /// 收尾并进入总结页（最后一组自动结束 / 顶栏"结束并保存"共用）。
+  /// 幂等：_finishing 防重入；finish() 自身幂等（已结束的会话不重复落库），
+  /// 飞书回填保持与收尾入口一致的无条件语义。
+  Future<void> _finishFlow() async {
+    if (_finishing || _summary != null) return;
+    final c = app(context);
+    final s = c.session;
+    if (s.session == null) return;
+    _finishing = true;
+    try {
+      final stats = await s.stats();
+      final verdicts = await s.verdicts();
+      final date = s.session?.date ?? fmtDate(DateTime.now());
+      final title = s.session?.planDayTitle ?? '';
+      final prNames = s.prHit.toList();
+      final durationMin = s.session?.durationMin ?? 0;
+      await s.finish();
+      c.notify.cancelRest();
+      // 净时长（训练/休息分桶）在 finish 落库后回读
+      final restMin = ((s.session?.restMs ?? 0) / 60000).ceil();
+      final activeMin = ((s.session?.activeMs ?? 0) / 60000).ceil();
+      final summaryBuf = StringBuffer();
+      summaryBuf.writeln(
+        '$title 完成：总容量 ${fmtVolume(stats.volume)}，${stats.workingSets} 个正式组，${stats.exercises.length} 个动作，总时长 $durationMin 分钟（训练 $activeMin / 休息 $restMin）。',
+      );
+      for (final v in verdicts) {
+        summaryBuf.writeln('- $v');
+      }
+      unawaited(
+        c.lark.backfillSessionSummary(date: date, summary: summaryBuf.toString()),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _summary = TrainingSummary(
+          stats: stats,
+          verdicts: verdicts,
+          title: title,
+          prNames: prNames,
+          durationMin: durationMin,
+          activeMin: activeMin,
+          restMin: restMin,
+        );
+      });
+    } finally {
+      _finishing = false;
+    }
+  }
+
+  /// 跳页面板（收起面板，红线禁弹窗）：列出全程每个计划组页，已完成的
+  /// 划线标记且不可跳；点其他未练满动作的行直接跳过去（jumpToExercise）。
+  Future<void> _showJumpSheet(BuildContext context) async {
+    final s = app(context).session;
+    final flow = WorkoutFlow(exercises: s.exercises, setsByEx: s.setsByEx);
+    final refs = flow.setRefs();
+    final cur = _shown;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                '全程页面 · 点未完成组的行直接跳过去',
+                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
+            ),
+            for (var i = 0; i < s.exercises.length; i++) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '${i + 1}. ${s.exercises[i].name}',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '已完成 '
+                      '${refs.where((r) => r.exerciseIndex == i && r.done).length}'
+                      '/${s.exercises[i].rule.workingSets}',
+                      style: const TextStyle(
+                        color: AppTheme.textDim,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              for (final ref in refs)
+                if (ref.exerciseIndex == i)
+                  ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    // 已完成的组划线锁定；当前动作的组按序推进不从面板跳
+                    enabled: !ref.done && ref.exerciseIndex != s.curExIdx,
+                    onTap: () {
+                      Navigator.pop(sheetCtx);
+                      s.jumpToExercise(ref.exerciseIndex);
+                    },
+                    leading: ref.done
+                        ? const Icon(
+                            Icons.check_rounded,
+                            size: 18,
+                            color: AppTheme.primary,
+                          )
+                        : SizedBox(
+                            width: 18,
+                            child: Center(
+                              child: Text(
+                                '${ref.setNumber}',
+                                style: const TextStyle(
+                                  color: AppTheme.textDim,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ),
+                    title: Text(
+                      '第 ${ref.setNumber} 组',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: ref.done ? AppTheme.textDim : AppTheme.text,
+                        decoration:
+                            ref.done ? TextDecoration.lineThrough : null,
+                      ),
+                    ),
+                    trailing: _isCurrentPage(cur, ref)
+                        ? const Text(
+                            '当前',
+                            style: TextStyle(
+                              color: AppTheme.accent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          )
+                        : null,
+                  ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isCurrentPage(FlowPage? cur, FlowSetRef ref) =>
+      cur != null &&
+      (cur.kind == FlowPageKind.record || cur.kind == FlowPageKind.rest) &&
+      cur.exerciseIndex == ref.exerciseIndex &&
+      cur.setNumber == ref.setNumber;
+
   @override
   Widget build(BuildContext context) {
     final c = app(context);
@@ -105,19 +326,22 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       listenable: s,
       builder: (context, _) {
         _syncPhaseSideEffects(s.phase);
-        if (!s.hasActive) {
+        if (!s.hasActive && _summary == null && !_finishing) {
           return const Scaffold(
             backgroundColor: AppTheme.bg,
             body: Center(child: Text('本次训练已结束')),
           );
         }
+        final flow = WorkoutFlow(exercises: s.exercises, setsByEx: s.setsByEx);
+        _syncShown(s, flow);
+        final page = _shown;
         return Scaffold(
           backgroundColor: AppTheme.bg,
           // 整屏状态色（条目 11）：练=暗绿调、歇=暗红调，渐变过渡不闪变
           body: AnimatedContainer(
             duration: const Duration(milliseconds: 350),
             curve: Curves.easeOut,
-            color: s.phase == WorkoutPhase.resting
+            color: s.phase == WorkoutPhase.resting && page != null && page.kind == FlowPageKind.rest
                 ? AppTheme.bgRest
                 : AppTheme.bgLift,
             child: SafeArea(
@@ -159,29 +383,60 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                             ),
                           ),
                   ),
+                  // 页面流顶部条：计划文案 +『第 N/M 组』（条目 8；点开跳页面板）
+                  if (page != null &&
+                      (page.kind == FlowPageKind.record ||
+                          page.kind == FlowPageKind.rest))
+                    _FlowHeader(
+                      s: s,
+                      page: page,
+                      onJumpSheet: () => _showJumpSheet(context),
+                    ),
                   Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, cons) {
-                        final wide = cons.maxWidth >= 840;
-                        // 600dp 断点：更窄的屏（手机竖屏/分屏小窗）用紧凑面板，
-                        // 压大数字字号并收起备注行，给「完成本组」留出空间。
-                        final narrow = cons.maxWidth < 600;
-                        Widget content = s.phase == WorkoutPhase.resting
-                            ? const _RestView()
-                            : _LiftView(s: s, compact: narrow);
-                        // 窄屏/中屏：操作区最大宽度 560，单手可达
-                        if (!wide) {
-                          content = Center(
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(maxWidth: 560),
-                              child: content,
-                            ),
-                          );
-                        }
-                        return content;
-                      },
+                    child: Stack(
+                      children: [
+                        Positioned.fill(
+                          child: LayoutBuilder(
+                            builder: (context, cons) {
+                              // 600dp 断点：更窄的屏（手机竖屏/分屏小窗）用紧凑面板，
+                              // 压大数字字号并收起备注行，给「完成本组」留出空间。
+                              final narrow = cons.maxWidth < 600;
+                              final wide = cons.maxWidth >= 840;
+                              Widget? content = _pageChild(
+                                s,
+                                flow,
+                                page,
+                                compact: narrow,
+                              );
+                              // 窄屏/中屏：操作区最大宽度 560，单手可达
+                              // （总结页自带全宽布局，不参与收窄）
+                              if (content != null &&
+                                  !wide &&
+                                  page?.kind != FlowPageKind.summary) {
+                                content = Center(
+                                  child: ConstrainedBox(
+                                    constraints:
+                                        const BoxConstraints(maxWidth: 560),
+                                    child: content,
+                                  ),
+                                );
+                              }
+                              // 页面流翻页动画：换页由 FlowPage 判等驱动
+                              return AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 280),
+                                child: KeyedSubtree(
+                                  key: ValueKey(page?.key ?? 'empty'),
+                                  child: content ?? const SizedBox.shrink(),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        if (_holdMark) _buildMarkOverlay(),
+                      ],
                     ),
                   ),
+                  _buildProgressBar(flow, page),
                 ],
               ),
             ),
@@ -190,17 +445,285 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       },
     );
   }
+
+  /// 页面流各页的组件映射（起始 / 记录 / 休息 / 总结）。
+  Widget? _pageChild(
+    SessionController s,
+    WorkoutFlow flow,
+    FlowPage? page, {
+    required bool compact,
+  }) {
+    if (page == null) return null;
+    switch (page.kind) {
+      case FlowPageKind.start:
+        return _StartPage(
+          s: s,
+          flow: flow,
+          onStart: () => setState(() => _startVisible = false),
+        );
+      case FlowPageKind.record:
+        return _LiftView(
+          s: s,
+          compact: compact,
+          onRecorded: _onSetRecorded,
+          onSessionEnded: _finishFlow,
+        );
+      case FlowPageKind.rest:
+        return const _RestView();
+      case FlowPageKind.summary:
+        final sum = _summary;
+        if (sum == null) return null;
+        return _SummaryPage(
+          stats: sum.stats,
+          verdicts: sum.verdicts,
+          title: sum.title,
+          prNames: sum.prNames,
+          durationMin: sum.durationMin,
+          activeMin: sum.activeMin,
+          restMin: sum.restMin,
+        );
+    }
+  }
+
+  /// 保存划线确认（wger 的"保存→划线→翻页"里的划线步）：
+  /// 半透明遮罩上盖「已记录」章，刚存的组带删除线展示，不打断计时。
+  Widget _buildMarkOverlay() {
+    return Positioned.fill(
+      child: IgnorePointer(
+        child: ColoredBox(
+          color: AppTheme.bg.withValues(alpha: 0.55),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 22),
+              decoration: BoxDecoration(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppTheme.primary,
+                    size: 40,
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '已记录',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _markText,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      color: AppTheme.textDim,
+                      decoration: TextDecoration.lineThrough,
+                      decorationColor: AppTheme.textDim,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 底部 3px 细进度条（wger gym_mode navigation.dart 的
+  /// LinearProgressIndicator(minHeight: 3, ratioCompleted) 口径）：
+  /// 全程完成比例，加练不超 1，总结页恒为 1。
+  Widget _buildProgressBar(WorkoutFlow flow, FlowPage? page) {
+    final value = page?.kind == FlowPageKind.summary ? 1.0 : flow.ratioCompleted;
+    return Semantics(
+      label: '全程完成 ${(value * 100).round()}%',
+      child: LinearProgressIndicator(
+        key: const Key('workoutFlowProgress'),
+        minHeight: 3,
+        value: value,
+        backgroundColor: AppTheme.cardHi,
+        valueColor: const AlwaysStoppedAnimation(AppTheme.accent),
+      ),
+    );
+  }
+}
+
+/// 页面流顶部条（每页一致）：计划文案（日标题）+『第 N/M 组』，
+/// 组号 chip 点开跳页面板。起始/总结页有自己的标题，不显示本条。
+class _FlowHeader extends StatelessWidget {
+  const _FlowHeader({required this.s, required this.page, this.onJumpSheet});
+
+  final SessionController s;
+  final FlowPage page;
+  final VoidCallback? onJumpSheet;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = page.setLabel();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              s.session?.planDayTitle ?? '',
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
+            ),
+          ),
+          if (label.isNotEmpty)
+            GestureDetector(
+              onTap: onJumpSheet,
+              child: Semantics(
+                button: true,
+                label: '打开全程页面面板',
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppTheme.cardHi,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        label,
+                        style: const TextStyle(
+                          color: AppTheme.accent,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const Icon(
+                        Icons.keyboard_arrow_down,
+                        size: 18,
+                        color: AppTheme.textDim,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 起始页（wger gym_mode 的开始页思路）：先看一眼今天练什么——
+/// 计划文案 + 每个动作的组次目标；大按钮进第一记录页。
+/// 只在"零记录"的全新会话出现；中途恢复直接落到当前记录页。
+class _StartPage extends StatelessWidget {
+  const _StartPage({
+    required this.s,
+    required this.flow,
+    required this.onStart,
+  });
+
+  final SessionController s;
+  final WorkoutFlow flow;
+  final VoidCallback onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            s.session?.planDayTitle ?? '今日训练',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '共 ${s.exercises.length} 个动作 · ${flow.totalPlannedSets} 个正式组',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
+          ),
+          const SizedBox(height: 20),
+          for (var i = 0; i < s.exercises.length; i++)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              decoration: BoxDecoration(
+                color: AppTheme.card,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    '${i + 1}.',
+                    style: const TextStyle(
+                      color: AppTheme.textDim,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          s.exercises[i].name,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${s.exercises[i].rule.workingSets} 组 × '
+                          '${s.exercises[i].rule.repsMin}-${s.exercises[i].rule.repsMax} 次'
+                          ' · RIR ${s.exercises[i].rule.rirTarget}',
+                          style: const TextStyle(
+                            color: AppTheme.textDim,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 16),
+          // 冻结基线：主操作按钮高度 ≥88dp，拇指可达区
+          BigButton(label: '开始训练', height: 88, onPressed: onStart),
+        ],
+      ),
+    );
+  }
 }
 
 // ================= 动作态 =================
 
 class _LiftView extends StatelessWidget {
-  const _LiftView({required this.s, this.compact = false});
+  const _LiftView({
+    required this.s,
+    this.compact = false,
+    this.onRecorded,
+    this.onSessionEnded,
+  });
 
   final SessionController s;
 
   /// <600dp 窄屏：压缩面板（大数字字号降档、隐藏备注行）。
   final bool compact;
+
+  /// 保存一组成功后的划线标记回调（宿主盖「已记录」章并自动翻页）。
+  final void Function(String mark)? onRecorded;
+
+  /// 最后一组触发状态机自动结束后：宿主收尾并把总结页接进页面流。
+  final Future<void> Function()? onSessionEnded;
 
   @override
   Widget build(BuildContext context) {
@@ -213,7 +736,7 @@ class _LiftView extends StatelessWidget {
         if (wide) {
           return Column(
             children: [
-              _TopBar(s: s),
+              _TopBar(s: s, onFinish: onSessionEnded),
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -230,6 +753,8 @@ class _LiftView extends StatelessWidget {
                             s: s,
                             ex: ex,
                             key: ValueKey(ex.id),
+                            onRecorded: onRecorded,
+                            onSessionEnded: onSessionEnded,
                           ),
                         ),
                       ),
@@ -245,7 +770,7 @@ class _LiftView extends StatelessWidget {
         // 可用高、系统大字号）时整体可滚动，「完成本组」不再被挤出屏幕。
         return Column(
           children: [
-            _TopBar(s: s),
+            _TopBar(s: s, onFinish: onSessionEnded),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, viewport) => SingleChildScrollView(
@@ -267,6 +792,8 @@ class _LiftView extends StatelessWidget {
                             ex: ex,
                             key: ValueKey(ex.id),
                             compact: compact,
+                            onRecorded: onRecorded,
+                            onSessionEnded: onSessionEnded,
                           ),
                         ],
                       ),
@@ -283,9 +810,12 @@ class _LiftView extends StatelessWidget {
 }
 
 class _TopBar extends StatefulWidget {
-  const _TopBar({required this.s});
+  const _TopBar({required this.s, this.onFinish});
 
   final SessionController s;
+
+  /// 「结束并保存」：宿主收尾（finish 落库 + 飞书回填）并把总结页接进页面流。
+  final Future<void> Function()? onFinish;
 
   @override
   State<_TopBar> createState() => _TopBarState();
@@ -334,7 +864,7 @@ class _TopBarState extends State<_TopBar> {
     );
     if (!mounted || choice == null) return;
     if (choice == 'finish') {
-      await endTraining(context);
+      await widget.onFinish?.call();
     } else if (choice == 'quit') {
       final c = app(context);
       final navigator = Navigator.of(context);
@@ -364,38 +894,45 @@ class _TopBarState extends State<_TopBar> {
   Widget build(BuildContext context) {
     final isLastEx = widget.s.curExIdx >= widget.s.exercises.length - 1;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+      padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
+              // 计划文案与『第 N/M 组』由宿主顶栏条统一显示，这里只放操作；
+              // 两个入口用 Expanded+ellipsis：系统大字号下不挤出 HoldToEndButton
               Expanded(
-                child: Text(
-                  widget.s.session!.planDayTitle,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
+                child: TextButton(
+                  onPressed: () => _showExerciseAdjustSheet(context),
+                  child: Text(
+                    '换/加动作',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppTheme.textDim,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
               ),
-              TextButton(
-                onPressed: () => _showExerciseAdjustSheet(context),
-                child: const Text(
-                  '换/加动作',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 14),
-                ),
-              ),
-              TextButton(
-                onPressed: () {
-                  HapticFeedback.selectionClick();
-                  widget.s.skipExercise();
-                },
-                child: Text(
-                  isLastEx ? '已是最后一个' : '跳过动作',
-                  style: TextStyle(
-                    color: isLastEx
-                        ? AppTheme.textDim.withValues(alpha: 0.4)
-                        : AppTheme.textDim,
-                    fontSize: 14,
+              Expanded(
+                child: TextButton(
+                  onPressed: () {
+                    HapticFeedback.selectionClick();
+                    widget.s.skipExercise();
+                  },
+                  child: Text(
+                    isLastEx ? '已是最后一个' : '跳过动作',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: isLastEx
+                          ? AppTheme.textDim.withValues(alpha: 0.4)
+                          : AppTheme.textDim,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ),
@@ -664,6 +1201,15 @@ class _ExerciseInfo extends StatelessWidget {
           ex.name,
           style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
         ),
+        // 临时调整痕迹（点名条目三）：替换/追加过的动作显示来源，可追溯
+        if (ex.trace.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              ex.trace,
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+          ),
         const SizedBox(height: 8),
         Text(
           progressText,
@@ -778,6 +1324,8 @@ class _ActionPanel extends StatefulWidget {
     required this.s,
     required this.ex,
     this.compact = false,
+    this.onRecorded,
+    this.onSessionEnded,
   });
 
   final SessionController s;
@@ -786,6 +1334,12 @@ class _ActionPanel extends StatefulWidget {
   /// <600dp 窄屏压缩：重量大数字 84→56、收起备注行；
   /// 步进按钮与「完成本组」高度不动（冻结基线）。
   final bool compact;
+
+  /// 保存一组成功（会话未结束）：宿主盖「已记录」章并自动翻到下一页。
+  final void Function(String mark)? onRecorded;
+
+  /// 最后一组触发状态机自动结束：宿主收尾并把总结页接进页面流。
+  final Future<void> Function()? onSessionEnded;
 
   @override
   State<_ActionPanel> createState() => _ActionPanelState();
@@ -976,20 +1530,23 @@ class _ActionPanelState extends State<_ActionPanel> {
             ],
           ),
           const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // 组类型三选：Wrap 而非 Row——系统大字号（1.6x）下三枚 chip
+          // 挤不进一行的窄屏时自动换行，不再 RenderFlex 溢出
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 8,
             children: [
               _kindChip('热身', SetKind.warmup),
-              const SizedBox(width: 8),
               _kindChip('正式', SetKind.working),
-              const SizedBox(width: 8),
               _kindChip('力竭', SetKind.failure),
             ],
           ),
           const SizedBox(height: 8),
-          // RIR（余力）：默认用计划目标值，可点选覆盖
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          // RIR（余力）：默认用计划目标值，可点选覆盖。
+          // Wrap 而非 Row：系统大字号（1.6x）下窄屏一行放不下时自动换行
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Tooltip(
                 message: '余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
@@ -1102,8 +1659,9 @@ class _ActionPanelState extends State<_ActionPanel> {
                     _saving = true;
                     HapticFeedback.mediumImpact();
                     final reps = _reps ?? ex.rule.repsMin;
+                    final weight = s.weightDraft;
                     final pr = await s.completeSet(
-                      weight: s.weightDraft,
+                      weight: weight,
                       reps: reps,
                       rir: _rir ?? ex.rule.rirTarget,
                       kind: _kind,
@@ -1114,12 +1672,17 @@ class _ActionPanelState extends State<_ActionPanel> {
                     _note = '';
                     if (_noteOpen) setState(() => _noteOpen = false);
                     if (!context.mounted) return;
-                    // 最后一个动作的最后一组：状态机已自动结束，走完整收尾
-                    // （总结页 + 渐进建议 + 飞书回填）
+                    // 最后一个动作的最后一组：状态机已自动结束，
+                    // 宿主收尾（总结页 + 渐进建议 + 飞书回填）接进页面流
                     if (!s.hasActive) {
-                      await endTraining(context);
+                      await widget.onSessionEnded?.call();
                       return;
                     }
+                    // 保存流程（调研条目 8）：校验→写库（completeSet）→
+                    // 划线标记→自动翻页（宿主在窗口结束后应用下一页）
+                    widget.onRecorded?.call(
+                      '${fmtLoad(weight)}${weight != 0 ? 'kg' : ''} × $reps',
+                    );
                     if (pr) s.showFocusBanner('🏆 ${ex.name} 重量新高 PR！');
                   },
           ),
@@ -1567,57 +2130,25 @@ class _RestBriefState extends State<_RestBrief> {
 
 // ================= 结束 + 总结 =================
 
-bool _endTrainingInFlight = false;
+/// 一次训练的总结数据（页面流的总结页数据源）。
+class TrainingSummary {
+  const TrainingSummary({
+    required this.stats,
+    required this.verdicts,
+    required this.title,
+    required this.prNames,
+    required this.durationMin,
+    required this.activeMin,
+    required this.restMin,
+  });
 
-Future<void> endTraining(BuildContext context) async {
-  if (_endTrainingInFlight) return;
-  _endTrainingInFlight = true;
-  try {
-    await _doEndTraining(context);
-  } finally {
-    _endTrainingInFlight = false;
-  }
-}
-
-Future<void> _doEndTraining(BuildContext context) async {
-  final c = app(context);
-  final s = c.session;
-  final stats = await s.stats();
-  final verdicts = await s.verdicts();
-  final date = s.session?.date ?? fmtDate(DateTime.now());
-  final title = s.session?.planDayTitle ?? '';
-  final prNames = s.prHit.toList();
-  final durationMin = s.session?.durationMin ?? 0;
-  await s.finish();
-  c.notify.cancelRest();
-  // 净时长（训练/休息分桶）在 finish 落库后回读
-  final restMin = ((s.session?.restMs ?? 0) / 60000).ceil();
-  final activeMin = ((s.session?.activeMs ?? 0) / 60000).ceil();
-  final summaryBuf = StringBuffer();
-  summaryBuf.writeln(
-    '$title 完成：总容量 ${fmtVolume(stats.volume)}，${stats.workingSets} 个正式组，${stats.exercises.length} 个动作，总时长 $durationMin 分钟（训练 $activeMin / 休息 $restMin）。',
-  );
-  for (final v in verdicts) {
-    summaryBuf.writeln('- $v');
-  }
-  unawaited(
-    c.lark.backfillSessionSummary(date: date, summary: summaryBuf.toString()),
-  );
-
-  if (!context.mounted) return;
-  await Navigator.of(context).pushReplacement(
-    MaterialPageRoute(
-      builder: (_) => _SummaryPage(
-        stats: stats,
-        verdicts: verdicts,
-        title: title,
-        prNames: prNames,
-        durationMin: durationMin,
-        activeMin: activeMin,
-        restMin: restMin,
-      ),
-    ),
-  );
+  final SessionStats stats;
+  final List<String> verdicts;
+  final String title;
+  final List<String> prNames;
+  final int durationMin;
+  final int activeMin;
+  final int restMin;
 }
 
 class _SummaryPage extends StatelessWidget {
