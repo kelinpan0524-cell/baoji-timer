@@ -121,6 +121,32 @@ class AiService {
     return (sw.elapsedMilliseconds, reply);
   }
 
+  /// Base URL 归一（可见于测试）：去首尾空白、去结尾斜杠、
+  /// 去用户误粘的 /chat/completions 尾巴——把完整接口地址当 Base URL
+  /// 填，与缺 /v1 并列是 404 的两大来源。
+  @visibleForTesting
+  static String normalizeBaseUrl(String raw) {
+    var base = raw.trim().replaceAll(RegExp(r'/+$'), '');
+    base = base.replaceAll(RegExp(r'/chat/completions$'), '');
+    return base;
+  }
+
+  /// 从服务商错误响应体里提取人类可读原因（OpenAI 兼容形态的
+  /// error.message / message），提取不到返回 null。404 也可能是
+  /// 「模型名不存在」这类 body 里才写明的原因，透传给用户更好排查。
+  @visibleForTesting
+  static String? extractApiError(String body) {
+    try {
+      final v = jsonDecode(body);
+      if (v is! Map) return null;
+      final err = v['error'];
+      if (err is Map && err['message'] is String) return err['message'] as String;
+      if (err is String) return err;
+      if (v['message'] is String) return v['message'] as String;
+    } catch (_) {}
+    return null;
+  }
+
   /// 多轮对话通用入口：messages 原样发给 /chat/completions。
   /// 所有 AI 功能（计划拆解/描述生成/教练对话/分析）统一走这里，
   /// 错误统一归一为 AiException 中文文案。
@@ -128,36 +154,56 @@ class AiService {
     if (!_settings.aiConfigured) {
       throw const AiException('未配置 AI 接口，请在设置里填入 Base URL 和 API Key');
     }
-    var base = _settings.aiBaseUrl.trim().replaceAll(RegExp(r'/+$'), '');
+    final base = normalizeBaseUrl(_settings.aiBaseUrl);
     final schemeError = baseUrlSchemeError(base);
     if (schemeError != null) {
       throw AiException(schemeError);
     }
-    final url = '$base/chat/completions';
+    // 404 自愈：Base URL 只有域名没有路径（如 https://api.moonshot.cn）时，
+    // 多数 OpenAI 兼容服务商的真实端点在 /v1 下——先按原样请求，404 才
+    // 自动补 /v1 重试一次。DeepSeek 等根路径可用的服务商第一发就通，
+    // 不会多发请求。
+    final parsed = Uri.tryParse(base);
+    final pathEmpty =
+        parsed == null || parsed.path.isEmpty || parsed.path == '/';
+    final bases = pathEmpty ? [base, '$base/v1'] : [base];
     final post = _httpClient?.post ?? http.post;
+    Future<http.Response> send(String b) => post(
+          Uri.parse('$b/chat/completions'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ${_settings.aiApiKey}',
+          },
+          body: jsonEncode({
+            'model': _settings.aiModel,
+            'messages': [
+              for (final m in messages)
+                {'role': m.role, 'content': m.content}
+            ],
+            'temperature': 0.2,
+          }),
+        ).timeout(const Duration(seconds: 90));
     try {
-      final resp = await post(
-            Uri.parse(url),
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ${_settings.aiApiKey}',
-            },
-            body: jsonEncode({
-              'model': _settings.aiModel,
-              'messages': [
-                for (final m in messages)
-                  {'role': m.role, 'content': m.content}
-              ],
-              'temperature': 0.2,
-            }),
-          )
-          .timeout(const Duration(seconds: 90));
+      var resp = await send(bases.first);
+      if (resp.statusCode == 404 && bases.length > 1) {
+        resp = await send(bases.last);
+      }
       if (resp.statusCode != 200) {
+        final detail = extractApiError(utf8.decode(resp.bodyBytes));
+        final brief = detail == null
+            ? ''
+            : '（${detail.length > 80 ? '${detail.substring(0, 80)}…' : detail}）';
         final friendly = switch (resp.statusCode) {
-          401 => 'API Key 无效',
-          403 => '无访问权限或地区受限',
-          429 => '额度不足或被限流，稍后再试',
-          _ => 'AI 接口返回 ${resp.statusCode}',
+          401 => 'API Key 无效$brief',
+          403 => '无访问权限或地区受限$brief',
+          404 => pathEmpty
+              ? 'AI 接口返回 404，自动补 /v1 也没找到$brief。'
+                  '请检查 Base URL（要填到版本路径，如 https://api.moonshot.cn/v1，'
+                  '结尾不带 /chat/completions）和模型名是否写对'
+              : 'AI 接口返回 404$brief。多半是 Base URL 的路径不对'
+                  '（要填到版本路径，如 https://api.moonshot.cn/v1）或模型名写错',
+          429 => '额度不足或被限流，稍后再试$brief',
+          _ => 'AI 接口返回 ${resp.statusCode}$brief',
         };
         throw AiException(friendly);
       }

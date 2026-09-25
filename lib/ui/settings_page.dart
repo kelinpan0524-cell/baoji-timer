@@ -576,7 +576,9 @@ class _AiCardState extends State<_AiCard> {
           ),
           const SizedBox(height: 4),
           const Text(
-            '兼容 OpenAI 接口格式。例：Base URL 填 https://api.moonshot.cn/v1，模型填 kimi-k2。Key 只保存在手机本地。',
+            '兼容 OpenAI 接口。Base URL 填到版本路径为止，结尾不带 /chat/completions：'
+            'Moonshot 填 https://api.moonshot.cn/v1 · DeepSeek 填 https://api.deepseek.com · '
+            '智谱填 https://open.bigmodel.cn/api/paas/v4。模型名如 kimi-k2。Key 只存手机本地。',
             style: TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           const SizedBox(height: 10),
