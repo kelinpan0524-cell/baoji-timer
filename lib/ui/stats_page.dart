@@ -6,6 +6,7 @@ import '../core/app.dart';
 import '../engine/engine.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
+import 'ai_coach_page.dart';
 import 'muscle_body_view.dart';
 import 'recovery_card.dart';
 import 'theme.dart';
@@ -30,9 +31,16 @@ class _StatsPageState extends State<StatsPage> {
           title: const Text('数据'),
           actions: [
             TextButton.icon(
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const AiCoachPage()),
+              ),
+              icon: const Icon(Icons.smart_toy_outlined, size: 18),
+              label: const Text('AI 教练'),
+            ),
+            TextButton.icon(
               onPressed: () => _exportAiPack(),
-              icon: const Icon(Icons.auto_awesome, size: 18),
-              label: const Text('AI 分析包'),
+              icon: const Icon(Icons.ios_share, size: 18),
+              label: const Text('分析包'),
             ),
           ],
           bottom: const TabBar(
@@ -441,7 +449,8 @@ class _MuscleTabState extends State<_MuscleTab> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
-            // 肌群恢复度（点名条目四）：只进计划页/统计页，不进训练中三要素
+            // 肌群恢复度（点名条目四）：只进数据页，不进训练中三要素
+            // （2026-09-25 从计划页挪到数据页，计划页只管"练什么"）
             const MuscleRecoveryCard(),
             SectionCard(
               title: '本周肌群容量占比',

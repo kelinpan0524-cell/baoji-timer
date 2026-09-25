@@ -6,9 +6,11 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app.dart';
+import '../services/ai_service.dart';
 import '../services/focus_service.dart';
 import '../services/settings.dart';
 import '../services/update_service.dart';
+import 'ai_coach_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -502,6 +504,8 @@ class _AiCardState extends State<_AiCard> {
   late final _ctrlUrl = TextEditingController(text: widget.s.aiBaseUrl);
   late final _ctrlKey = TextEditingController(text: widget.s.aiApiKey);
   late final _ctrlModel = TextEditingController(text: widget.s.aiModel);
+  bool _testing = false;
+  String? _testResult; // null=没测过；成功文案 / 失败原因都放这
 
   @override
   void dispose() {
@@ -511,14 +515,66 @@ class _AiCardState extends State<_AiCard> {
     super.dispose();
   }
 
+  /// 测试连接：先保存当前输入，再发一条最小请求。
+  /// 成功/失败都在卡片内直接反馈给用户（2026-09-25 Arono 要求）。
+  Future<void> _testConnection() async {
+    final s = widget.s;
+    final c = app(context); // 先取容器：await 之后不再碰 context（use_build_context_synchronously）
+    s.aiBaseUrl = _ctrlUrl.text.trim();
+    s.aiApiKey = _ctrlKey.text.trim();
+    s.aiModel = _ctrlModel.text.trim();
+    await s.save();
+    setState(() {
+      _testing = true;
+      _testResult = null;
+    });
+    try {
+      final (ms, reply) = await c.ai.testConnection();
+      if (!mounted) return;
+      setState(() {
+        _testing = false;
+        _testResult =
+            '连接成功 ✓${reply.isEmpty ? '' : '（模型回复：${_brief(reply)}）'} · 用时 ${(ms / 1000).toStringAsFixed(1)} 秒';
+      });
+    } on AiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _testing = false;
+          _testResult = '连接失败：${e.message}';
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _testing = false;
+          _testResult = '连接失败：$e';
+        });
+      }
+    }
+  }
+
+  String _brief(String s) =>
+      s.length <= 24 ? s : '${s.substring(0, 24)}…';
+
   @override
   Widget build(BuildContext context) {
     final s = widget.s;
+    final configured = s.aiConfigured;
     return SectionCard(
-      title: 'AI 配置（计划拆解）',
+      title: 'AI 配置（计划拆解 · AI 教练）',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Text(
+            configured
+                ? '状态：已配置 ✓（AI 教练与计划拆解可用）'
+                : '状态：未配置（计划拆解与 AI 教练不可用）',
+            style: TextStyle(
+              color: configured ? AppTheme.primary : AppTheme.warn,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 4),
           const Text(
             '兼容 OpenAI 接口格式。例：Base URL 填 https://api.moonshot.cn/v1，模型填 kimi-k2。Key 只保存在手机本地。',
             style: TextStyle(color: AppTheme.textDim, fontSize: 13),
@@ -540,15 +596,54 @@ class _AiCardState extends State<_AiCard> {
             decoration: const InputDecoration(labelText: '模型名'),
           ),
           const SizedBox(height: 12),
-          FilledButton(
-            onPressed: () {
-              s.aiBaseUrl = _ctrlUrl.text.trim();
-              s.aiApiKey = _ctrlKey.text.trim();
-              s.aiModel = _ctrlModel.text.trim();
-              s.save();
-              toast(context, 'AI 配置已保存');
-            },
-            child: const Text('保存 AI 配置'),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton(
+                  onPressed: _testing ? null : () {
+                    s.aiBaseUrl = _ctrlUrl.text.trim();
+                    s.aiApiKey = _ctrlKey.text.trim();
+                    s.aiModel = _ctrlModel.text.trim();
+                    s.save();
+                    toast(context, 'AI 配置已保存');
+                  },
+                  child: const Text('保存 AI 配置'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: _testing ? null : _testConnection,
+                  child: Text(_testing ? '测试中…' : '测试连接'),
+                ),
+              ),
+            ],
+          ),
+          if (_testResult != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _testResult!,
+                style: TextStyle(
+                  color: _testResult!.startsWith('连接成功')
+                      ? AppTheme.primary
+                      : AppTheme.danger,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: configured
+                  ? () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const AiCoachPage()),
+                      )
+                  : null,
+              icon: const Icon(Icons.smart_toy_outlined, size: 18),
+              label: const Text('打开 AI 教练（对话与一键分析）'),
+            ),
           ),
         ],
       ),
