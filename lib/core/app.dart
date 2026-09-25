@@ -31,6 +31,27 @@ class AppContainer {
     session.onExitFocus = _onExitFocus;
     // 休息时间源 → 精确闹钟（开始/加时/继续重挂，暂停取消，恢复会话补挂）
     session.onRestAlarmChanged = _onRestAlarmChanged;
+    // 训练卡 → 前台服务常驻通知（会话进行中常驻，结束自动停）
+    session.onCardChanged = (card) {
+      if (card.active) {
+        unawaited(notify.showTrainingCard(card));
+      } else {
+        unawaited(notify.stopTrainingCard());
+      }
+    };
+    // 通知栏遥控按钮（暂停/继续/±10 秒）→ 会话状态机
+    notify.onNotifAction = _onNotifAction;
+    // 空闲提醒：人在屏上走 App 内横幅，离开前台才发系统通知
+    session.onIdleNudge = (minutes) async {
+      if (_inForeground) {
+        session.showFocusBanner('你已运动 $minutes 分钟了，回来继续！');
+      } else {
+        await notify.showIdleNudge(minutes);
+      }
+    };
+    // 生命周期：条目 2 双通道互斥——人在屏上时休息到点只走屏内提示，
+    // 离开前台才交回系统精确提醒；两通道互不重复。
+    WidgetsBinding.instance.addObserver(_LifecycleHook(this));
   }
 
   final SharedPreferences prefs;
@@ -43,6 +64,39 @@ class AppContainer {
   late final AiService ai;
   late final LarkService lark;
   late final ExportService export;
+
+  bool _inForeground = true;
+
+  void _onNotifAction(String action) {
+    final s = session;
+    if (!s.hasActive) return;
+    switch (action) {
+      case 'pause':
+        s.pauseRest();
+      case 'resume':
+        s.resumeRest();
+      case 'minus10':
+        s.extendRest(-10);
+      case 'plus10':
+        s.extendRest(10);
+    }
+  }
+
+  void onAppLifecycleChanged(AppLifecycleState state) {
+    final fg = state == AppLifecycleState.resumed;
+    if (fg == _inForeground) return;
+    _inForeground = fg;
+    // 会话层同步前台标记：休息到点的屏内提示（震动/提示音）只在前台做
+    session.setForeground(fg);
+    final s = session;
+    if (s.hasActive &&
+        s.phase == WorkoutPhase.resting &&
+        !s.isRestPaused &&
+        s.restEndAt > 0) {
+      // 屏内提示接管 / 交回系统提醒（暂停态闹钟本就取消，不重复处理）
+      s.onRestAlarmChanged?.call(fg ? null : s.restEndAt);
+    }
+  }
 
   Future<void> init() async {
     // 通知插件初始化不挡首帧（只有进休息倒计时才需要），失败静默重试
@@ -81,6 +135,11 @@ class AppContainer {
   Future<void> _onRestAlarmChanged(int? endAtMs) async {
     if (endAtMs == null) {
       await notify.cancelRestEnd();
+    } else if (_inForeground) {
+      // 人在屏上：屏内提示接管，不挂系统提醒（否则休息页等到自然到点时，
+      // heads-up 系统通知先于屏内 tick 到达，两通道同时触发）。
+      // 顺带清掉可能残留的已预约闹钟；离开前台时由生命周期钩子重挂。
+      await notify.cancelRestEnd();
     } else {
       await notify.scheduleRestEnd(endAtMs);
     }
@@ -90,6 +149,18 @@ class AppContainer {
     session.dispose();
     settings.dispose();
     planRepo.dispose();
+  }
+}
+
+/// App 全局生命周期探针：前台/后台状态供提醒双通道互斥使用。
+class _LifecycleHook with WidgetsBindingObserver {
+  _LifecycleHook(this._c);
+
+  final AppContainer _c;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _c.onAppLifecycleChanged(state);
   }
 }
 

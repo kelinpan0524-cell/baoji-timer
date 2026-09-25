@@ -65,9 +65,140 @@ class SessionController extends ChangeNotifier {
   }
 
   Timer? _tick;
+  Timer? _hbTimer; // 心跳：进度持久化 + 空闲检测（会话进行中每 2 秒）
   final ValueNotifier<int> restRemainingMs = ValueNotifier(0);
   final ValueNotifier<String> focusBanner = ValueNotifier('');
   bool _restNotified = false;
+  int _lastCardSec = -1; // 训练卡每秒去重（只在秒变化时推送）
+
+  // 心跳持久化（LibreFit 的 RUNNING 行思路，写 prefs 不写库）：
+  // 训练态被杀后恢复时按墙钟差值接续时长，不被清零。
+  DateTime? _lastPersist;
+  bool _idleNotified = false;
+
+  // ---------- 训练卡 / 空闲提醒回调（由 App 容器接线） ----------
+
+  /// 人是否在屏上（App 容器按生命周期接线）。休息到点的屏内提示
+  /// （震动+提示音）只在前台做：后台时系统提醒通道已带声音震动，
+  /// 再走一遍就是双重打扰。
+  bool inForeground = true;
+
+  void setForeground(bool fg) => inForeground = fg;
+
+  /// 训练卡状态变化：App 容器接 NotifyService（active=false 时停前台服务）。
+  void Function(TrainingCard card)? onCardChanged;
+
+  /// 空闲提醒触发：App 容器决定屏内横幅还是系统通知。
+  Future<void> Function(int minutes)? onIdleNudge;
+
+  void notifyCard() => onCardChanged?.call(buildCard());
+
+  /// 训练卡状态（从会话状态派生，对齐训练中三要素：当前动作/本组目标/剩余时间）。
+  TrainingCard buildCard() {
+    final s = session;
+    if (s == null || s.status != 'active') return const TrainingCard.inactive();
+    final rule = currentEx?.rule;
+    final reps = (rule == null || rule.repsMin == rule.repsMax)
+        ? '${rule?.repsMin ?? 0} 次'
+        : '${rule.repsMin}-${rule.repsMax} 次';
+    final w = weightDraft;
+    final wText =
+        w < 0 ? '辅 ${_fmtKg(-w)}kg' : (w == 0 ? '自重' : '${_fmtKg(w)}kg');
+    if (phase == WorkoutPhase.resting) {
+      final remainSec = restRemainingMs.value <= 0
+          ? 0
+          : (restRemainingMs.value / 1000).ceil();
+      final remainText = remainSec >= 60
+          ? '${remainSec ~/ 60}分${remainSec % 60}秒'
+          : '$remainSec 秒';
+      return TrainingCard(
+        active: true,
+        resting: true,
+        paused: _restPaused,
+        title: '组间休息中',
+        text:
+            '${_restPaused ? '已暂停 · ' : ''}还剩 $remainText · 下一组 $wText×$reps',
+        remaining: restTotalMs > 0 ? remainSec : -1,
+        total: (restTotalMs / 1000).round(),
+        chronoStartMs: s.startedAt,
+      );
+    }
+    return TrainingCard(
+      active: true,
+      resting: false,
+      paused: false,
+      title: currentEx?.name ?? '训练中',
+      // 组数封顶在本动作组数上：最后一个动作完成后、finish 落库前的瞬时
+      // 推卡不出现「第 4/3 组」越界文案。
+      text: '本组 $wText×$reps · 第 '
+          '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
+          '/${rule?.workingSets ?? 0} 组',
+      remaining: -1,
+      total: 0,
+      chronoStartMs: s.startedAt,
+    );
+  }
+
+  /// 当前相位起点 epoch ms（测试断言恢复接续用）。
+  @visibleForTesting
+  int get phaseSinceMs => _phaseSince?.millisecondsSinceEpoch ?? 0;
+
+  /// 空闲提醒检测（调研条目 4）：lifting 相位连续超阈值时回调一次，
+  /// 每段只提醒一次；休息/暂停/结束离开 lifting 即停，回到 lifting 重新起算。
+  /// [nowMs] 注入便于测试。
+  @visibleForTesting
+  void checkIdleNudge(int nowMs) {
+    if (phase != WorkoutPhase.lifting || _idleNotified || !hasActive) return;
+    if (!_settings.idleNudgeEnabled) return;
+    final since = _phaseSince;
+    if (since == null) return;
+    final thresholdMs = _settings.idleNudgeMinutes * 60000;
+    if (thresholdMs <= 0) return;
+    final elapsed = nowMs - since.millisecondsSinceEpoch;
+    if (elapsed >= thresholdMs) {
+      _idleNotified = true;
+      onIdleNudge?.call(elapsed ~/ 60000);
+    }
+  }
+
+  void _ensureHbTimer() {
+    _hbTimer ??=
+        Timer.periodic(const Duration(seconds: 2), (_) {
+      _persistProgress();
+      checkIdleNudge(DateTime.now().millisecondsSinceEpoch);
+    });
+  }
+
+  /// 心跳写 prefs（2 秒防抖）：会话、当前相位起点与已累计时长桶。
+  /// 被杀恢复时按墙钟差值接续（与 _accrueTime 同口径），精度损失 ≤2 秒。
+  void _persistProgress({bool force = false}) {
+    final sid = session?.id;
+    if (sid == null || session!.status != 'active') return;
+    final since = _phaseSince;
+    if (since == null) return;
+    final now = DateTime.now();
+    if (!force &&
+        _lastPersist != null &&
+        now.difference(_lastPersist!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastPersist = now;
+    _prefs.setInt('sess.sid', sid);
+    _prefs.setInt('sess.since', since.millisecondsSinceEpoch);
+    _prefs.setInt('sess.phase', phase == WorkoutPhase.resting ? 1 : 0);
+    _prefs.setInt('sess.restMs', restMs);
+    _prefs.setInt('sess.activeMs', activeMs);
+  }
+
+  void _clearProgress() {
+    _lastPersist = null;
+    _idleNotified = false;
+    _prefs.setInt('sess.sid', 0);
+    _prefs.setInt('sess.since', 0);
+    _prefs.setInt('sess.phase', 0);
+    _prefs.setInt('sess.restMs', 0);
+    _prefs.setInt('sess.activeMs', 0);
+  }
 
   bool get hasActive => session != null && session!.status == 'active';
   SessionExercise? get currentEx =>
@@ -82,16 +213,57 @@ class SessionController extends ChangeNotifier {
   Future<void> restore() async {
     try {
       final active = await _db.activeSession();
-      if (active == null) return;
+      if (active == null) {
+        _clearProgress();
+        return;
+      }
       final ok = await _loadSession(active.id!);
-      if (!ok) return;
-      // 时长统计从恢复时刻重新起表（历史段在进程被杀时已丢，无法追平）
-      restMs = 0;
-      activeMs = 0;
+      if (!ok) {
+        _clearProgress();
+        return;
+      }
+      // 训练态被杀恢复（LibreFit 的 RUNNING 行思路）：读最后心跳，
+      // 按墙钟差值把被杀期间漏计的时长接回对应桶（休息/训练）。
+      final hbSid = _prefs.getInt('sess.sid') ?? 0;
+      final hbSince = _prefs.getInt('sess.since') ?? 0;
+      final hbPhase = _prefs.getInt('sess.phase') ?? 0;
+      if (hbSid == active.id && hbSince > 0) {
+        // 先取回心跳里已入桶的累计值（新实例内存桶从 0 起），再补被杀段
+        restMs = _prefs.getInt('sess.restMs') ?? 0;
+        activeMs = _prefs.getInt('sess.activeMs') ?? 0;
+        final extra = DateTime.now().millisecondsSinceEpoch - hbSince;
+        if (extra > 0) {
+          if (hbPhase == 1) {
+            restMs += extra;
+          } else {
+            activeMs += extra;
+          }
+        }
+      } else {
+        // 无有效心跳（老版本升级/脏数据）：维持旧行为从零起表
+        restMs = 0;
+        activeMs = 0;
+      }
       _phaseSince = DateTime.now();
       final restEnd = _prefs.getInt('rest.endAt') ?? 0;
       final sid = _prefs.getInt('rest.sessionId') ?? 0;
-      if (sid == active.id && restEnd > DateTime.now().millisecondsSinceEpoch) {
+      // 暂停态被杀：还原冻结倒计时（不挂闹钟不启 tick，等用户点继续）。
+      // 心跳接续已把被杀段按暂停前相位入桶（口径与未死时一致）。
+      final pausedFlag = _prefs.getInt('rest.paused') ?? 0;
+      final pausedRemaining = _prefs.getInt('rest.remainingAtPause') ?? 0;
+      if (sid == active.id &&
+          pausedFlag == 1 &&
+          pausedRemaining > 0 &&
+          phase == WorkoutPhase.lifting) {
+        // _loadSession 默认落在 lifting，这里切回冻结的休息态
+        restEndAt = 0;
+        restTotalMs = pausedRemaining;
+        _restPaused = true;
+        _restRemainingWhenPaused = pausedRemaining;
+        restRemainingMs.value = pausedRemaining;
+        _setPhase(WorkoutPhase.resting, silent: false);
+      } else if (sid == active.id &&
+          restEnd > DateTime.now().millisecondsSinceEpoch) {
         _startRestAt(restEnd, notifyUi: false);
       } else {
         _setPhase(WorkoutPhase.lifting);
@@ -253,6 +425,7 @@ class SessionController extends ChangeNotifier {
       if (pr) prHit.add(ex.name);
     }
     await _vibrate();
+    notifyCard();
     notifyListeners();
 
     // 判断下一步：休息 or 换动作 or 结束
@@ -289,6 +462,7 @@ class SessionController extends ChangeNotifier {
       await _loadContextForCurrent();
       weightDraft = _recommendFor(currentEx!.name);
       _setPhase(WorkoutPhase.lifting);
+      notifyCard();
     }
   }
 
@@ -318,18 +492,26 @@ class SessionController extends ChangeNotifier {
     restEndAt = endAtMs;
     restTotalMs = (endAtMs - DateTime.now().millisecondsSinceEpoch).clamp(0, 1 << 31);
     _restNotified = false;
+    _lastCardSec = -1;
+    // 先刷剩余时间再切相位：_setPhase 会同步推训练卡，拿的是新值
+    _updateRemaining();
     _setPhase(WorkoutPhase.resting, silent: !notifyUi);
     _prefs.setInt('rest.endAt', endAtMs);
     _prefs.setInt('rest.sessionId', session?.id ?? 0);
     _tick?.cancel();
     _tick = Timer.periodic(const Duration(milliseconds: 250), (_) => _tickFn());
-    _updateRemaining();
     // 时间源统一：精确闹钟跟随 restEndAt（含恢复会话后补挂闹钟的场景）
     onRestAlarmChanged?.call(endAtMs);
   }
 
   void _tickFn() {
     _updateRemaining();
+    // 训练卡只在秒变化时推送（后台不必每 250ms 打扰通知栈）
+    final sec = restRemainingMs.value ~/ 1000;
+    if (sec != _lastCardSec) {
+      _lastCardSec = sec;
+      notifyCard();
+    }
     final now = DateTime.now().millisecondsSinceEpoch;
     if (restEndAt <= now && !_restNotified) {
       _restNotified = true;
@@ -343,25 +525,36 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _onRestFinished() async {
-    await _vibrate();
-    if (_settings.soundOn) {
-      // 系统提示音（无需音频资源，前台可闻）
-      SystemSound.play(SystemSoundType.alert);
+    // 屏内提示只在前台做：人在后台时系统精确提醒（rest_timer 通道）已带
+    // 声音+震动，这里再来一遍就是双重打扰。
+    if (inForeground) {
+      await _vibrate();
+      if (_settings.soundOn) {
+        // 系统提示音（无需音频资源，前台可闻）
+        SystemSound.play(SystemSoundType.alert);
+      }
     }
+    // 自然到点：不取消精确闹钟——人在后台时系统提醒是唯一通道，
+    // 屏内/系统双通道互斥由生命周期钩子（App 容器）保证。
     _finishRest();
     notifyListeners();
   }
 
-  void _finishRest() {
+  /// [cancelAlarm]：用户主动跳过休息（跳过/加练）时取消精确闹钟；
+  /// 自然到点不取消（见 _onRestFinished）。
+  void _finishRest({bool cancelAlarm = false}) {
     _tick?.cancel();
     _tick = null;
+    _lastCardSec = -1;
     _prefs.setInt('rest.endAt', 0);
+    _prefs.setInt('rest.paused', 0);
     extraSetExerciseName = null;
+    if (cancelAlarm) onRestAlarmChanged?.call(null);
     _setPhase(WorkoutPhase.lifting);
     restRemainingMs.value = 0;
   }
 
-  void skipRest() => _finishRest();
+  void skipRest() => _finishRest(cancelAlarm: true);
 
   /// 休息中「刚完成的动作再来一组」：回退到该动作进入动作态，
   /// 再完成的组按正式组记录（同样参与渐进判定与 PR）。
@@ -379,7 +572,7 @@ class SessionController extends ChangeNotifier {
     curSetIdx = list.length;
     await _loadContextForCurrent();
     weightDraft = list.isNotEmpty ? list.last.weightKg : _recommendFor(name);
-    _finishRest();
+    _finishRest(cancelAlarm: true);
     notifyListeners();
   }
 
@@ -398,6 +591,11 @@ class SessionController extends ChangeNotifier {
     _tick = null;
     // 暂停即取消精确闹钟（否则暂停期间到点照响）
     onRestAlarmChanged?.call(null);
+    // 暂停态落盘：暂停中被杀后 restore 能还原冻结倒计时（不然暂停被吞）
+    _prefs.setInt('rest.paused', 1);
+    _prefs.setInt('rest.remainingAtPause', _restRemainingWhenPaused);
+    _persistProgress(force: true);
+    notifyCard();
     notifyListeners();
   }
 
@@ -405,6 +603,7 @@ class SessionController extends ChangeNotifier {
   void resumeRest() {
     if (phase != WorkoutPhase.resting || !_restPaused) return;
     _restPaused = false;
+    _prefs.setInt('rest.paused', 0);
     final end =
         DateTime.now().millisecondsSinceEpoch + _restRemainingWhenPaused;
     restTotalMs = _restRemainingWhenPaused;
@@ -416,11 +615,14 @@ class SessionController extends ChangeNotifier {
     if (_restPaused) {
       // 暂停态加/减时：只动冻结值与总时长，不写 prefs、不改 restEndAt
       // （否则 resume 用冻结值重算时，加的秒数会被静默丢弃）；
-      // 地板 5 秒，减时不把休息直接减没
+      // 地板 5 秒，减时不把休息直接减没。冻结值变化同步进暂停落盘，
+      // 暂停中被杀恢复才能拿到加/减后的剩余时间。
       _restRemainingWhenPaused =
           (_restRemainingWhenPaused + sec * 1000).clamp(5000, 1 << 31);
       restTotalMs = (restTotalMs + sec * 1000).clamp(1000, 1 << 31);
       restRemainingMs.value = _restRemainingWhenPaused;
+      _prefs.setInt('rest.remainingAtPause', _restRemainingWhenPaused);
+      notifyCard();
       return;
     }
     // 非暂停态：地板 5 秒，防止 -30 把剩余时间减成已过期
@@ -431,6 +633,7 @@ class SessionController extends ChangeNotifier {
     _prefs.setInt('rest.endAt', restEndAt);
     _updateRemaining();
     onRestAlarmChanged?.call(restEndAt);
+    notifyCard();
   }
 
   /// 撤销最后一组（记错时用）。若当前动作还没有组而已完成上一动作，
@@ -466,6 +669,7 @@ class SessionController extends ChangeNotifier {
           .any((e) => e.kind == SetKind.working && isPrWeight(e.weightKg, history));
       if (!anyStillPr) prHit.remove(ex.name);
     }
+    notifyCard();
     notifyListeners();
   }
 
@@ -475,6 +679,7 @@ class SessionController extends ChangeNotifier {
     // 下限 -300kg 防手抖连点把数值打到无意义区间。
     if (weightDraft < -300) weightDraft = -300;
     if (weightDraft > 1000) weightDraft = 1000;
+    notifyCard();
     notifyListeners();
   }
 
@@ -510,6 +715,7 @@ class SessionController extends ChangeNotifier {
       final id = await _db.insertSessionExercise(draft);
       exercises.add(draft.copyWithId(id));
     }
+    notifyCard();
     notifyListeners();
   }
 
@@ -534,6 +740,7 @@ class SessionController extends ChangeNotifier {
     exercises[curExIdx] = updated;
     await _loadContextForCurrent();
     weightDraft = _recommendFor(meta.name);
+    notifyCard();
     notifyListeners();
     return true;
   }
@@ -544,6 +751,7 @@ class SessionController extends ChangeNotifier {
     if (session == null) return;
     if (session!.status != 'active') return; // 幂等：自动结束+手动结束不重复
     _finishRest();
+    onRestAlarmChanged?.call(null); // 会话结束：精确提醒一并取消
     await _db.updateSession(session!.id!, {
       'ended_at': DateTime.now().millisecondsSinceEpoch,
       'status': 'done',
@@ -561,6 +769,7 @@ class SessionController extends ChangeNotifier {
     if (session == null) return;
     if (session!.status != 'active') return;
     _finishRest();
+    onRestAlarmChanged?.call(null);
     await _db.updateSession(session!.id!, {
       'ended_at': DateTime.now().millisecondsSinceEpoch,
       'status': 'quit',
@@ -607,7 +816,8 @@ class SessionController extends ChangeNotifier {
 
   /// 休息精确闹钟的时间源回调：endAtMs 非 null = （重）挂 endAtMs 的闹钟，
   /// null = 取消。由 App 容器接 NotifyService（开始休息/加时/继续时重挂，
-  /// 暂停时取消，恢复会话时补挂）。
+  /// 暂停时取消，恢复会话时补挂）。人在屏上时容器会跳过挂钟、只走屏内
+  /// 提醒（双通道互斥，离开前台由生命周期钩子重挂）。
   Future<void> Function(int? endAtMs)? onRestAlarmChanged;
 
   Future<void> _enterFocus() async {
@@ -627,6 +837,17 @@ class SessionController extends ChangeNotifier {
   void _setPhase(WorkoutPhase p, {bool silent = false}) {
     if (phase != p) _accrueTime(); // 相位切换前把上一段时长入桶
     phase = p;
+    // 空闲提醒随相位切换重置（回到 lifting 重新起算，每段只提醒一次）
+    if (p == WorkoutPhase.lifting) _idleNotified = false;
+    if (p == WorkoutPhase.idle) {
+      _hbTimer?.cancel();
+      _hbTimer = null;
+      _clearProgress();
+    } else {
+      _ensureHbTimer();
+      _persistProgress(force: true);
+    }
+    notifyCard();
     if (!silent) notifyListeners();
   }
 
@@ -641,6 +862,7 @@ class SessionController extends ChangeNotifier {
   @override
   void dispose() {
     _tick?.cancel();
+    _hbTimer?.cancel();
     restRemainingMs.dispose();
     focusBanner.dispose();
     super.dispose();
@@ -655,4 +877,57 @@ double presetStartOf(String name) {
     }
   }
   return 20;
+}
+
+/// 重量显示（与 UI 层 fmtKg 同规则；controller 不 import UI，这里留私有副本）。
+String _fmtKg(double v) => v == v.roundToDouble()
+    ? v.toStringAsFixed(0)
+    : v
+        .toStringAsFixed(2)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
+
+/// 训练卡通知内容（原生前台服务展示，调研条目 1/3）。
+/// [remaining]/[total] 休息剩余秒与总秒（进度条，-1 = 无进度）；
+/// [chronoStartMs] 动作态 chronometer 起点（系统自己走秒，无需推送）。
+class TrainingCard {
+  const TrainingCard({
+    required this.active,
+    required this.resting,
+    required this.paused,
+    required this.title,
+    required this.text,
+    required this.remaining,
+    required this.total,
+    required this.chronoStartMs,
+  });
+
+  const TrainingCard.inactive()
+      : active = false,
+        resting = false,
+        paused = false,
+        title = '',
+        text = '',
+        remaining = -1,
+        total = 0,
+        chronoStartMs = 0;
+
+  final bool active; // 会话进行中（false = 停前台服务）
+  final bool resting; // 休息态：带暂停/±10 秒按钮与进度条
+  final bool paused;
+  final String title;
+  final String text;
+  final int remaining;
+  final int total;
+  final int chronoStartMs;
+
+  Map<String, Object?> toMap() => {
+        'phase': resting ? 1 : 0,
+        'title': title,
+        'text': text,
+        'paused': paused,
+        'remaining': remaining,
+        'total': total,
+        'chronoBase': chronoStartMs,
+      };
 }
