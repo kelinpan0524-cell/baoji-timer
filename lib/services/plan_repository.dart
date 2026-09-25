@@ -360,8 +360,13 @@ class PlanRepository extends ChangeNotifier {
     return null;
   }
 
-  /// 循环推导：patternStart 起第 k 天，k % (练N+休M) < N → 按顺序循环用模板日。
-  /// 只取有动作的模板日（空模板日跳过，避免循环到"空训练日"）。
+  /// 循环推导：patternStart 起第 k 天，k % (练N+休M) < N → 训练日。
+  /// 模板日按「全局训练序号」轮转（2026-09-26 Arono 拍板语义）：
+  /// 第 occ 次训练用第 occ % trainable.length 个模板日——练2休1 配 6 个
+  /// 训练日即 T1T2休T3T4休T5T6休T1…接着往下轮，练完一圈从头再来；
+  /// 连练数小于训练日数时训练日也全部轮得到（旧实现用窗口内 pos 取下标，
+  /// 连练 < 训练日数时多出的模板日永远排不上，已废弃）。
+  /// 只取有动作的模板日（空模板日跳过，避免轮到"空训练日"）。
   Future<PlanDay?> _cycleDayFor(Plan plan, DateTime d) async {
     if (plan.patternStart.isEmpty || plan.cycleTrain <= 0) return null;
     final period = plan.cycleTrain + (plan.cycleRest > 0 ? plan.cycleRest : 0);
@@ -382,7 +387,9 @@ class PlanRepository extends ChangeNotifier {
       }
     }
     if (trainable.isEmpty) return null;
-    return trainable[pos % trainable.length];
+    // 全局训练序号：已走完的整周期 × 每期训练数 + 本期内的第几次
+    final occ = (k ~/ period) * plan.cycleTrain + pos;
+    return trainable[occ % trainable.length];
   }
 
   /// 手动覆盖：把某天设为指定模板日（dayId=null = 显式休息）。
