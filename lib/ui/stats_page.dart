@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -85,8 +87,14 @@ class _OverviewTabState extends State<_OverviewTab> {
     super.initState();
     // initState 里不能同步读 InheritedWidget，延后一帧
     // （缓存 future：切 chip 等 setState 不再触发全量重查）
+    // setState 块体写法：箭头闭包会把 Future 返回给 setState，
+    // debug 断言直接抛「callback argument returned a Future」
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _future = _load(app(context)));
+      if (mounted) {
+        setState(() {
+          _future = _load(app(context));
+        });
+      }
     });
   }
 
@@ -432,7 +440,11 @@ class _MuscleTabState extends State<_MuscleTab> {
     super.initState();
     // initState 里不能同步读 InheritedWidget，延后一帧
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _future = _load(app(context)));
+      if (mounted) {
+        setState(() {
+          _future = _load(app(context));
+        });
+      }
     });
   }
 
@@ -446,6 +458,9 @@ class _MuscleTabState extends State<_MuscleTab> {
         }
         final share = snap.data!;
         final total = share.values.fold(0.0, (a, b) => a + b);
+        // 色带归一基准：列表内最大占比（重肌群→琥珀端、轻肌群→灰端）。
+        // 2026-09-26 Arono：容量颜色按程度分档，不再清一色绿
+        final maxShare = share.values.fold(0.0, math.max);
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
@@ -487,19 +502,35 @@ class _MuscleTabState extends State<_MuscleTab> {
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 300,
-                    child: MuscleBodyView(share: share, front: _front),
+                    child: MuscleBodyView(
+                      share: share,
+                      front: _front,
+                      ramp: (v) => maxShare <= 0
+                          ? AppTheme.cardHi
+                          : AppTheme.loadColor(v / maxShare),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   ...kMuscleRegions.map((r) {
                     final v = share[r] ?? 0;
+                    final color = maxShare <= 0
+                        ? AppTheme.cardHi
+                        : AppTheme.loadColor(v / maxShare);
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
                         children: [
+                          // FittedBox：大字号/窄屏下名称与百分比整体缩放，
+                          // 数字绝不被折行（如"30"拆成两行）
                           SizedBox(
-                              width: 44,
+                            width: 44,
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
                               child: Text(r,
-                                  style: const TextStyle(fontSize: 14))),
+                                  maxLines: 1,
+                                  style: const TextStyle(fontSize: 14)),
+                            ),
+                          ),
                           Expanded(
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(4),
@@ -507,17 +538,24 @@ class _MuscleTabState extends State<_MuscleTab> {
                                 value: total == 0 ? 0 : v,
                                 minHeight: 10,
                                 backgroundColor: AppTheme.cardHi,
-                                valueColor: AlwaysStoppedAnimation(
-                                    _heatColor(total == 0 ? 0 : v)),
+                                valueColor:
+                                    AlwaysStoppedAnimation(color),
                               ),
                             ),
                           ),
                           SizedBox(
                             width: 52,
-                            child: Text('${(v * 100).toStringAsFixed(0)}%',
-                                textAlign: TextAlign.right,
-                                style: const TextStyle(
-                                    color: AppTheme.textDim, fontSize: 13)),
+                            child: FittedBox(
+                              fit: BoxFit.scaleDown,
+                              child: Text('${(v * 100).toStringAsFixed(0)}%',
+                                  maxLines: 1,
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                      color: total == 0
+                                          ? AppTheme.textDim
+                                          : color,
+                                      fontSize: 13)),
+                            ),
                           ),
                         ],
                       ),
@@ -566,12 +604,6 @@ class _MuscleTabState extends State<_MuscleTab> {
     );
   }
 }
-
-Color _heatColor(double v) {
-  // 0 → 深灰，1 → 亮绿
-  final t = v.clamp(0.0, 1.0);
-  return Color.lerp(const Color(0xFF232B36), AppTheme.primary, t)!;
-}
 // ---------------- 身体 ----------------
 
 class _BodyTab extends StatefulWidget {
@@ -596,7 +628,11 @@ class _BodyTabState extends State<_BodyTab>
     super.initState();
     // initState 里不能同步读 InheritedWidget，延后一帧
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _future = app(context).db.bodyMetrics());
+      if (mounted) {
+        setState(() {
+          _future = app(context).db.bodyMetrics();
+        });
+      }
     });
   }
 
@@ -696,7 +732,9 @@ class _BodyTabState extends State<_BodyTab>
                       _fatCtrl.clear();
                       if (mounted) {
                         toast(this.context, '已记录');
-                        setState(() => _future = app(this.context).db.bodyMetrics());
+                        setState(() {
+                          _future = app(this.context).db.bodyMetrics();
+                        });
                       }
                     },
                     child: const Text('保存'),

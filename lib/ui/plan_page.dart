@@ -462,9 +462,14 @@ class _PlanPageState extends State<PlanPage> {
           onPressed: value - 1 < min ? null : () => setSheet(() => on(value - 1)),
           icon: const Icon(Icons.remove_circle_outline),
         ),
+        // FittedBox：大字号/窄屏下步进值整体缩放，数字不断行
         SizedBox(
             width: 44,
-            child: Text('$value', textAlign: TextAlign.center)),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text('$value',
+                  maxLines: 1, textAlign: TextAlign.center),
+            )),
         IconButton(
           onPressed: value + 1 > max ? null : () => setSheet(() => on(value + 1)),
           icon: const Icon(Icons.add_circle_outline),
