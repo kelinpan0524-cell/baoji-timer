@@ -84,7 +84,13 @@ class TrainingForegroundService : Service() {
             ACTION_PAUSE, ACTION_RESUME, ACTION_MINUS10, ACTION_PLUS10 -> {
                 // 通知栏遥控：转发给 Dart（会话状态机统一处理），服务自身不动
                 intent.action?.let { actionSink?.invoke(it) }
-                return START_STICKY
+                return START_NOT_STICKY
+            }
+            null -> {
+                // 系统重建（无 intent）：Dart 侧状态机已不在，复活只会渲染
+                // 一张与真实训练无关的假卡——直接退场，会话由 App 重启时恢复。
+                stopSelf()
+                return START_NOT_STICKY
             }
         }
         ensureChannel()

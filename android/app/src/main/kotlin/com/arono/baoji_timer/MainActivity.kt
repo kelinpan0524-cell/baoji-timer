@@ -17,25 +17,21 @@ import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
 class MainActivity : FlutterActivity() {
-    companion object {
-        /** TrainingForegroundService 回传通知栏按钮动作的入口（onDestroy 置空防泄漏）。 */
-        @JvmStatic
-        var instance: MainActivity? = null
-    }
-
     private val channelName = "baoji/focus"
     private val updaterChannelName = "baoji/updater"
     private val trainingChannelName = "baoji/training"
     private var dndFilterBeforeTraining: Int? = null
     private var trainingChannel: MethodChannel? = null
 
-    override fun onCreate(savedInstanceState: android.os.Bundle?) {
-        super.onCreate(savedInstanceState)
-        instance = this
-    }
-
     override fun onDestroy() {
-        if (instance === this) instance = null
+        // Activity 销毁 = Flutter 引擎随之死亡（状态机无人更新）：停掉训练
+        // 前台服务，避免留一张内容冻结、按钮失效的假卡。锁屏/切后台不触发
+        // onDestroy，主场景（屏幕外计时不丢）不受影响。
+        try {
+            stopService(Intent(this, TrainingForegroundService::class.java))
+        } catch (_: Exception) {
+            // 进程退出中：忽略
+        }
         trainingChannel = null
         TrainingForegroundService.actionSink = null
         super.onDestroy()
@@ -60,10 +56,6 @@ class MainActivity : FlutterActivity() {
                             }
                             "stop" -> {
                                 TrainingForegroundService.stop(this@MainActivity)
-                                result.success(null)
-                            }
-                            "setRestChannelBypassDnd" -> {
-                                ensureRestChannel()
                                 result.success(null)
                             }
                             else -> result.notImplemented()

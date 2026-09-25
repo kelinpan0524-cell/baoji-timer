@@ -735,4 +735,65 @@ void main() {
         reason: '自然到点不取消闹钟：人在后台时系统提醒是唯一通道');
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
+
+  test('T-N8：暂停态被杀恢复——冻结倒计时还原，暂停不被静默吞掉', () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+    final c1 = makeController();
+    await c1.startFromDay(day: day, planExercises: [e]);
+    await c1.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+    c1.pauseRest();
+    expect(c1.isRestPaused, isTrue);
+    final frozen = c1.restRemainingMs.value;
+    final sid = c1.session!.id!;
+    // 手动补齐被杀前的最后心跳（pauseRest 已 force 落盘一次，这里固化场景）
+    await prefs.setInt('sess.sid', sid);
+    await prefs.setInt(
+        'sess.since', DateTime.now().millisecondsSinceEpoch - 10000);
+    await prefs.setInt('sess.phase', 1);
+    await prefs.setInt('sess.restMs', 5000);
+    await prefs.setInt('sess.activeMs', 90000);
+    // rest.paused / rest.remainingAtPause 已由 pauseRest 落盘
+
+    final c2 = makeController();
+    final alarm2 = <int?>[];
+    c2.onRestAlarmChanged = (endAtMs) async => alarm2.add(endAtMs);
+    await c2.restore();
+    expect(c2.phase, WorkoutPhase.resting);
+    expect(c2.isRestPaused, isTrue, reason: '暂停态被杀后还原暂停，不再静默吞掉');
+    expect(c2.restRemainingMs.value, closeTo(frozen, 2000),
+        reason: '冻结的剩余时间原样还原');
+    expect(alarm2, isEmpty, reason: '暂停态恢复不挂精确闹钟');
+
+    c2.resumeRest();
+    expect(c2.isRestPaused, isFalse);
+    expect(alarm2, [c2.restEndAt], reason: '用户点继续后重挂闹钟');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
+
+  test('T-N9：最后一个动作练满——训练卡瞬时文案不越界（无「第 4/3 组」）',
+      () async {
+    final day = await makePlanDay('日');
+    final e = await addPlanEx(day, '动作甲', 0,
+        sets: 3, workingSets: 3, restSec: 120);
+    final c = makeController();
+    final cards = <TrainingCard>[];
+    c.onCardChanged = cards.add;
+    await c.startFromDay(day: day, planExercises: [e]);
+    // 练满 3 组：最后一次 completeSet 触发自动结束（先推卡后 finish）
+    for (var i = 0; i < 3; i++) {
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(c.hasActive, isFalse, reason: '唯一动作练满自动结束');
+    for (final card in cards) {
+      if (card.active && !card.resting) {
+        expect(card.text, isNot(contains('第 4/3')),
+            reason: '组数封顶在本动作组数上，finish 前的瞬时推卡不越界');
+      }
+    }
+    expect(cards.last.active, isFalse, reason: '结束后最后一张卡为 inactive');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  });
 }

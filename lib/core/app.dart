@@ -86,6 +86,8 @@ class AppContainer {
     final fg = state == AppLifecycleState.resumed;
     if (fg == _inForeground) return;
     _inForeground = fg;
+    // 会话层同步前台标记：休息到点的屏内提示（震动/提示音）只在前台做
+    session.setForeground(fg);
     final s = session;
     if (s.hasActive &&
         s.phase == WorkoutPhase.resting &&
@@ -132,6 +134,11 @@ class AppContainer {
 
   Future<void> _onRestAlarmChanged(int? endAtMs) async {
     if (endAtMs == null) {
+      await notify.cancelRestEnd();
+    } else if (_inForeground) {
+      // 人在屏上：屏内提示接管，不挂系统提醒（否则休息页等到自然到点时，
+      // heads-up 系统通知先于屏内 tick 到达，两通道同时触发）。
+      // 顺带清掉可能残留的已预约闹钟；离开前台时由生命周期钩子重挂。
       await notify.cancelRestEnd();
     } else {
       await notify.scheduleRestEnd(endAtMs);

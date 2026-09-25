@@ -78,6 +78,13 @@ class SessionController extends ChangeNotifier {
 
   // ---------- 训练卡 / 空闲提醒回调（由 App 容器接线） ----------
 
+  /// 人是否在屏上（App 容器按生命周期接线）。休息到点的屏内提示
+  /// （震动+提示音）只在前台做：后台时系统提醒通道已带声音震动，
+  /// 再走一遍就是双重打扰。
+  bool inForeground = true;
+
+  void setForeground(bool fg) => inForeground = fg;
+
   /// 训练卡状态变化：App 容器接 NotifyService（active=false 时停前台服务）。
   void Function(TrainingCard card)? onCardChanged;
 
@@ -121,8 +128,11 @@ class SessionController extends ChangeNotifier {
       resting: false,
       paused: false,
       title: currentEx?.name ?? '训练中',
-      text: '本组 $wText×$reps · 第 ${workingSetsDone + 1}/'
-          '${rule?.workingSets ?? 0} 组',
+      // 组数封顶在本动作组数上：最后一个动作完成后、finish 落库前的瞬时
+      // 推卡不出现「第 4/3 组」越界文案。
+      text: '本组 $wText×$reps · 第 '
+          '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
+          '/${rule?.workingSets ?? 0} 组',
       remaining: -1,
       total: 0,
       chronoStartMs: s.startedAt,
@@ -237,7 +247,23 @@ class SessionController extends ChangeNotifier {
       _phaseSince = DateTime.now();
       final restEnd = _prefs.getInt('rest.endAt') ?? 0;
       final sid = _prefs.getInt('rest.sessionId') ?? 0;
-      if (sid == active.id && restEnd > DateTime.now().millisecondsSinceEpoch) {
+      // 暂停态被杀：还原冻结倒计时（不挂闹钟不启 tick，等用户点继续）。
+      // 心跳接续已把被杀段按暂停前相位入桶（口径与未死时一致）。
+      final pausedFlag = _prefs.getInt('rest.paused') ?? 0;
+      final pausedRemaining = _prefs.getInt('rest.remainingAtPause') ?? 0;
+      if (sid == active.id &&
+          pausedFlag == 1 &&
+          pausedRemaining > 0 &&
+          phase == WorkoutPhase.lifting) {
+        // _loadSession 默认落在 lifting，这里切回冻结的休息态
+        restEndAt = 0;
+        restTotalMs = pausedRemaining;
+        _restPaused = true;
+        _restRemainingWhenPaused = pausedRemaining;
+        restRemainingMs.value = pausedRemaining;
+        _setPhase(WorkoutPhase.resting, silent: false);
+      } else if (sid == active.id &&
+          restEnd > DateTime.now().millisecondsSinceEpoch) {
         _startRestAt(restEnd, notifyUi: false);
       } else {
         _setPhase(WorkoutPhase.lifting);
@@ -499,10 +525,14 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _onRestFinished() async {
-    await _vibrate();
-    if (_settings.soundOn) {
-      // 系统提示音（无需音频资源，前台可闻）
-      SystemSound.play(SystemSoundType.alert);
+    // 屏内提示只在前台做：人在后台时系统精确提醒（rest_timer 通道）已带
+    // 声音+震动，这里再来一遍就是双重打扰。
+    if (inForeground) {
+      await _vibrate();
+      if (_settings.soundOn) {
+        // 系统提示音（无需音频资源，前台可闻）
+        SystemSound.play(SystemSoundType.alert);
+      }
     }
     // 自然到点：不取消精确闹钟——人在后台时系统提醒是唯一通道，
     // 屏内/系统双通道互斥由生命周期钩子（App 容器）保证。
@@ -517,6 +547,7 @@ class SessionController extends ChangeNotifier {
     _tick = null;
     _lastCardSec = -1;
     _prefs.setInt('rest.endAt', 0);
+    _prefs.setInt('rest.paused', 0);
     extraSetExerciseName = null;
     if (cancelAlarm) onRestAlarmChanged?.call(null);
     _setPhase(WorkoutPhase.lifting);
@@ -560,6 +591,9 @@ class SessionController extends ChangeNotifier {
     _tick = null;
     // 暂停即取消精确闹钟（否则暂停期间到点照响）
     onRestAlarmChanged?.call(null);
+    // 暂停态落盘：暂停中被杀后 restore 能还原冻结倒计时（不然暂停被吞）
+    _prefs.setInt('rest.paused', 1);
+    _prefs.setInt('rest.remainingAtPause', _restRemainingWhenPaused);
     _persistProgress(force: true);
     notifyCard();
     notifyListeners();
@@ -569,6 +603,7 @@ class SessionController extends ChangeNotifier {
   void resumeRest() {
     if (phase != WorkoutPhase.resting || !_restPaused) return;
     _restPaused = false;
+    _prefs.setInt('rest.paused', 0);
     final end =
         DateTime.now().millisecondsSinceEpoch + _restRemainingWhenPaused;
     restTotalMs = _restRemainingWhenPaused;
@@ -580,11 +615,13 @@ class SessionController extends ChangeNotifier {
     if (_restPaused) {
       // 暂停态加/减时：只动冻结值与总时长，不写 prefs、不改 restEndAt
       // （否则 resume 用冻结值重算时，加的秒数会被静默丢弃）；
-      // 地板 5 秒，减时不把休息直接减没
+      // 地板 5 秒，减时不把休息直接减没。冻结值变化同步进暂停落盘，
+      // 暂停中被杀恢复才能拿到加/减后的剩余时间。
       _restRemainingWhenPaused =
           (_restRemainingWhenPaused + sec * 1000).clamp(5000, 1 << 31);
       restTotalMs = (restTotalMs + sec * 1000).clamp(1000, 1 << 31);
       restRemainingMs.value = _restRemainingWhenPaused;
+      _prefs.setInt('rest.remainingAtPause', _restRemainingWhenPaused);
       notifyCard();
       return;
     }
@@ -779,7 +816,8 @@ class SessionController extends ChangeNotifier {
 
   /// 休息精确闹钟的时间源回调：endAtMs 非 null = （重）挂 endAtMs 的闹钟，
   /// null = 取消。由 App 容器接 NotifyService（开始休息/加时/继续时重挂，
-  /// 暂停时取消，恢复会话时补挂）。
+  /// 暂停时取消，恢复会话时补挂）。人在屏上时容器会跳过挂钟、只走屏内
+  /// 提醒（双通道互斥，离开前台由生命周期钩子重挂）。
   Future<void> Function(int? endAtMs)? onRestAlarmChanged;
 
   Future<void> _enterFocus() async {
