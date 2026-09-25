@@ -4,12 +4,15 @@ import android.app.AlarmManager
 import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.PowerManager
 import android.provider.Settings
 import android.app.usage.UsageStatsManager
+import android.view.WindowManager
 import androidx.core.content.FileProvider
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -22,6 +25,7 @@ class MainActivity : FlutterActivity() {
     private val trainingChannelName = "baoji/training"
     private var dndFilterBeforeTraining: Int? = null
     private var trainingChannel: MethodChannel? = null
+    private var toneGen: ToneGenerator? = null
 
     override fun onDestroy() {
         // Activity 销毁 = Flutter 引擎随之死亡（状态机无人更新）：停掉训练
@@ -32,6 +36,12 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             // 进程退出中：忽略
         }
+        try {
+            toneGen?.release()
+        } catch (_: Exception) {
+            // 同上
+        }
+        toneGen = null
         trainingChannel = null
         TrainingForegroundService.actionSink = null
         super.onDestroy()
@@ -56,6 +66,18 @@ class MainActivity : FlutterActivity() {
                             }
                             "stop" -> {
                                 TrainingForegroundService.stop(this@MainActivity)
+                                result.success(null)
+                            }
+                            // 休息音效四层（条目 10）：ToneGenerator 按层选音调，
+                            // 零新增依赖零音频资源；走媒体音量（STREAM_MUSIC），
+                            // 与用户自己的音乐混音而不是抢通知音量。
+                            "cue" -> {
+                                playCue(call.argument<String>("cue") ?: "")
+                                result.success(null)
+                            }
+                            // 锁屏时保持显示（条目 6）：锁屏后训练计时仍在锁屏可见
+                            "setLockScreenDisplay" -> {
+                                setLockScreenDisplay(call.argument<Boolean>("on") ?: false)
                                 result.success(null)
                             }
                             else -> result.notImplemented()
@@ -259,6 +281,46 @@ class MainActivity : FlutterActivity() {
                 Uri.parse("package:$packageName")))
         } catch (e: Exception) {
             // 部分ROM不支持，忽略
+        }
+    }
+
+    // ---- 休息音效（条目 10） ----
+    /** ToneGenerator 按层选音调：开始=确认音、半程=双哔、倒数=短哔。 */
+    private fun playCue(cue: String) {
+        val tone = when (cue) {
+            "start" -> ToneGenerator.TONE_PROP_ACK
+            "half" -> ToneGenerator.TONE_PROP_BEEP2
+            "countdown" -> ToneGenerator.TONE_PROP_BEEP
+            else -> return
+        }
+        try {
+            val gen = toneGen
+                ?: ToneGenerator(AudioManager.STREAM_MUSIC, 80).also { toneGen = it }
+            gen.startTone(tone, 350)
+        } catch (_: Exception) {
+            // 音频资源被占用/初始化失败：下次重试，不影响计时
+            toneGen = null
+        }
+    }
+
+    // ---- 锁屏保持显示（条目 6） ----
+    /** Android 8.1+ 用 setShowWhenLocked/setTurnScreenOn；8.0 走旧版 window flag。 */
+    private fun setLockScreenDisplay(on: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(on)
+            setTurnScreenOn(on)
+        } else {
+            @Suppress("DEPRECATION")
+            if (on) {
+                window.addFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            } else {
+                @Suppress("DEPRECATION")
+                window.clearFlags(
+                    WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                        WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON)
+            }
         }
     }
 

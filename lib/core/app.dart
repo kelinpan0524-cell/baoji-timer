@@ -16,9 +16,9 @@ import '../services/settings.dart';
 /// 全局容器：App 启动时构造一次，经 AppScope 注入整棵 Widget 树。
 class AppContainer {
   AppContainer({required this.prefs, Db? db})
-      : settings = Settings(prefs),
-        db = db ?? Db.instance,
-        notify = NotifyService() {
+    : settings = Settings(prefs),
+      db = db ?? Db.instance,
+      notify = NotifyService() {
     focus = FocusService(settings);
     planRepo = PlanRepository(this.db, settings);
     session = SessionController(this.db, settings, prefs, focus);
@@ -48,6 +48,11 @@ class AppContainer {
       } else {
         await notify.showIdleNudge(minutes);
       }
+    };
+    // 休息音效四层（条目 10）：调度由 SessionController（RestCueScheduler
+    // 区间阈值判断），这里只负责播——原生 ToneGenerator 按层选音调。
+    session.onRestCue = (cue) {
+      unawaited(notify.playRestCue(cue));
     };
     // 生命周期：条目 2 双通道互斥——人在屏上时休息到点只走屏内提示，
     // 离开前台才交回系统精确提醒；两通道互不重复。
@@ -119,6 +124,9 @@ class AppContainer {
   }
 
   Future<void> _onEnterFocus() async {
+    // 锁屏时保持显示（条目 6）：按设置开关，训练期间生效，结束还原。
+    // 失败静默（测试环境/低版本系统）。
+    unawaited(notify.setLockScreenDisplay(settings.lockScreenKeepOn));
     final f = focus;
     if (settings.focusDndEnabled && await f.isDndAccessGranted()) {
       await f.setDnd(true);
@@ -126,6 +134,7 @@ class AppContainer {
   }
 
   Future<void> _onExitFocus() async {
+    unawaited(notify.setLockScreenDisplay(false));
     final f = focus;
     if (settings.focusDndEnabled && await f.isDndAccessGranted()) {
       await f.setDnd(false);
@@ -166,18 +175,14 @@ class _LifecycleHook with WidgetsBindingObserver {
 
 class AppScope extends InheritedNotifier {
   // ignore: prefer_const_constructors_in_immutables
-  AppScope({
-    super.key,
-    required AppContainer container,
-    required super.child,
-  })  : _container = container,
-        super(notifier: container.settings);
+  AppScope({super.key, required AppContainer container, required super.child})
+    : _container = container,
+      super(notifier: container.settings);
 
   final AppContainer _container;
 
   static AppContainer of(BuildContext context) {
-    final scope =
-        context.dependOnInheritedWidgetOfExactType<AppScope>();
+    final scope = context.dependOnInheritedWidgetOfExactType<AppScope>();
     assert(scope != null, 'AppScope not found');
     return scope!._container;
   }

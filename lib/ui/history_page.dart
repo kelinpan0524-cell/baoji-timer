@@ -30,8 +30,7 @@ class _HistoryPageState extends State<HistoryPage> {
     final c = app(context);
     final first = _month;
     final last = DateTime(_month.year, _month.month + 1, 0);
-    final sessions =
-        await c.db.sessionsBetween(fmtDate(first), fmtDate(last));
+    final sessions = await c.db.sessionsBetween(fmtDate(first), fmtDate(last));
     final map = <String, List<Session>>{};
     for (final s in sessions) {
       map.putIfAbsent(s.date, () => []).add(s);
@@ -59,30 +58,33 @@ class _HistoryPageState extends State<HistoryPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
-                onPressed: () {
-                  setState(() {
-                    _month = DateTime(_month.year, _month.month - 1, 1);
-                    _selected = null; // 切月清空选中，避免跨月残留
-                    _loading = true;
-                  });
-                  _load();
-                },
-                icon: const Icon(Icons.chevron_left)),
+              onPressed: () {
+                setState(() {
+                  _month = DateTime(_month.year, _month.month - 1, 1);
+                  _selected = null; // 切月清空选中，避免跨月残留
+                  _loading = true;
+                });
+                _load();
+              },
+              icon: const Icon(Icons.chevron_left),
+            ),
             const SizedBox(width: 8),
-            Text('${_month.year} 年 ${_month.month} 月',
-                style: const TextStyle(
-                    fontSize: 17, fontWeight: FontWeight.w700)),
+            Text(
+              '${_month.year} 年 ${_month.month} 月',
+              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
             const SizedBox(width: 8),
             IconButton(
-                onPressed: () {
-                  setState(() {
-                    _month = DateTime(_month.year, _month.month + 1, 1);
-                    _selected = null;
-                    _loading = true;
-                  });
-                  _load();
-                },
-                icon: const Icon(Icons.chevron_right)),
+              onPressed: () {
+                setState(() {
+                  _month = DateTime(_month.year, _month.month + 1, 1);
+                  _selected = null;
+                  _loading = true;
+                });
+                _load();
+              },
+              icon: const Icon(Icons.chevron_right),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -96,18 +98,24 @@ class _HistoryPageState extends State<HistoryPage> {
                     for (final w in ['一', '二', '三', '四', '五', '六', '日'])
                       Expanded(
                         child: Center(
-                            child: Text('周$w',
-                                style: const TextStyle(
-                                    color: AppTheme.textDim, fontSize: 12))),
+                          child: Text(
+                            '周$w',
+                            style: const TextStyle(
+                              color: AppTheme.textDim,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
                       ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 ..._calendarRows(daysInMonth, firstWeekday, today),
                 const SizedBox(height: 6),
-                Text('点日期看当天明细 · 长按下方训练卡可删除误记的记录',
-                    style: const TextStyle(
-                        color: AppTheme.textDim, fontSize: 11)),
+                Text(
+                  '点日期看当天明细 · 长按下方训练卡可删除误记的记录',
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
+                ),
               ],
             ),
           ),
@@ -118,8 +126,7 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  List<Widget> _calendarRows(
-      int daysInMonth, int firstWeekday, String today) {
+  List<Widget> _calendarRows(int daysInMonth, int firstWeekday, String today) {
     final rows = <Widget>[];
     var cell = 1 - (firstWeekday - 1);
     while (cell <= daysInMonth) {
@@ -149,15 +156,15 @@ class _HistoryPageState extends State<HistoryPage> {
                       : null,
                 ),
                 child: Center(
-                  child: Text('$cell',
-                      style: TextStyle(
-                          color: has
-                              ? AppTheme.primary
-                              : (isToday
-                                  ? AppTheme.accent
-                                  : AppTheme.textDim),
-                          fontWeight:
-                              has || isToday ? FontWeight.w700 : null)),
+                  child: Text(
+                    '$cell',
+                    style: TextStyle(
+                      color: has
+                          ? AppTheme.primary
+                          : (isToday ? AppTheme.accent : AppTheme.textDim),
+                      fontWeight: has || isToday ? FontWeight.w700 : null,
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -174,9 +181,8 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   List<Widget> _dayDetailSections() {
-    final dates = (_selected != null)
-        ? [_selected!]
-        : _byDate.keys.toList()..sort((a, b) => b.compareTo(a));
+    final dates = (_selected != null) ? [_selected!] : _byDate.keys.toList()
+      ..sort((a, b) => b.compareTo(a));
     final out = <Widget>[];
     for (final date in dates.take(_selected == null ? 10 : 1)) {
       final sessions = _byDate[date];
@@ -186,27 +192,33 @@ class _HistoryPageState extends State<HistoryPage> {
       }
     }
     if (out.isEmpty) {
-      out.add(const Padding(
-        padding: EdgeInsets.all(24),
-        child: Center(
-            child: Text('本月还没有训练记录',
-                style: TextStyle(color: AppTheme.textDim))),
-      ));
+      out.add(
+        const Padding(
+          padding: EdgeInsets.all(24),
+          child: Center(
+            child: Text('本月还没有训练记录', style: TextStyle(color: AppTheme.textDim)),
+          ),
+        ),
+      );
     }
     return out;
   }
 
   Widget _sessionCard(Session s) {
     return FutureBuilder<List<Widget>>(
-      future:
-          _detailFutures.putIfAbsent(s.id!, () => _sessionDetailWidgets(s)),
+      future: _detailFutures.putIfAbsent(s.id!, () => _sessionDetailWidgets(s)),
       builder: (context, snap) {
         return SectionCard(
           title: '${s.date} · ${s.planDayTitle}',
           trailing: Text(
-              s.status == 'quit' ? '已中断' : '${s.durationMin} 分钟',
-              style: const TextStyle(color: AppTheme.textDim, fontSize: 13)),
-          // 长按删除误开的训练（配合训练页"放弃本次"）
+            s.status == 'quit' ? '已中断' : '${s.durationMin} 分钟',
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
+          // 长按删除误开的训练（配合训练页"放弃本次"，P1-12）；
+          // 读屏语义：标签完整朗读 + "双击并按住"提示作为长按的替代路径
+          semanticsLabel:
+              '${s.date} ${s.planDayTitle} 的训练记录${s.status == 'quit' ? '，已中断' : ''}',
+          longPressHint: '双击并按住，删除这条训练记录',
           onLongPress: () => _deleteSession(s),
           child: snap.hasData
               ? Column(
@@ -216,9 +228,11 @@ class _HistoryPageState extends State<HistoryPage> {
               : const Padding(
                   padding: EdgeInsets.all(8),
                   child: SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2))),
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
         );
       },
     );
@@ -226,9 +240,12 @@ class _HistoryPageState extends State<HistoryPage> {
 
   /// 长按删除单次训练记录（含全部组记录，不可恢复）。
   Future<void> _deleteSession(Session s) async {
-    final ok = await confirmDialog(context, '删除这次训练？',
-        '${s.date} · ${s.planDayTitle} 的全部记录将被删除，用于清理误开的训练。此操作无法撤销。',
-        okLabel: '删除');
+    final ok = await confirmDialog(
+      context,
+      '删除这次训练？',
+      '${s.date} · ${s.planDayTitle} 的全部记录将被删除，用于清理误开的训练。此操作无法撤销。',
+      okLabel: '删除',
+    );
     if (!ok || !mounted) return;
     final c = app(context);
     await c.db.deleteSession(s.id!);
@@ -244,37 +261,52 @@ class _HistoryPageState extends State<HistoryPage> {
     final widgets = <Widget>[];
     // 训练/休息净时长（新版本记录才有；老记录 rest/active 为 0 不显示）
     if (s.restMs > 0 || s.activeMs > 0) {
-      widgets.add(Padding(
-        padding: const EdgeInsets.only(bottom: 4),
-        child: Text(
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Text(
             '训练 ${((s.activeMs) / 60000).ceil()} 分 · 休息 ${((s.restMs) / 60000).ceil()} 分'
             '${s.restMs + s.activeMs > 0 ? '（休息占 ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%）' : ''}',
-            style: const TextStyle(color: AppTheme.textDim, fontSize: 13)),
-      ));
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
+        ),
+      );
     }
     for (final se in ses) {
       final sets = map[se.id!] ?? [];
       if (sets.isEmpty) continue;
       // 组记录带余力（RIR）：60×8 R2；热身/力竭组沿用 (热)/(竭) 标记
       final desc = sets
-          .map((x) =>
-              '${fmtKg(x.weightKg)}×${x.reps}${x.kind == SetKind.warmup ? '(热)' : x.kind == SetKind.failure ? '(竭)' : ' R${x.rir}'}')
+          .map(
+            (x) =>
+                '${fmtKg(x.weightKg)}×${x.reps}${x.kind == SetKind.warmup
+                    ? '(热)'
+                    : x.kind == SetKind.failure
+                    ? '(竭)'
+                    : ' R${x.rir}'}',
+          )
           .join('  ');
-      widgets.add(Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3),
-        child: Text('· ${se.name}:  $desc',
-            style: const TextStyle(fontSize: 14)),
-      ));
+      widgets.add(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Text(
+            '· ${se.name}:  $desc',
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      );
       // 单组备注逐条带出（记了就要看得到）
       final noted = sets.where((x) => x.note.trim().isNotEmpty).toList();
       if (noted.isNotEmpty) {
-        widgets.add(Padding(
-          padding: const EdgeInsets.only(left: 14, bottom: 2),
-          child: Text(
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.only(left: 14, bottom: 2),
+            child: Text(
               '备注：${noted.map((x) => '${fmtKg(x.weightKg)}kg：${x.note.trim()}').join('；')}',
-              style: const TextStyle(
-                  color: AppTheme.textDim, fontSize: 13)),
-        ));
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+          ),
+        );
       }
     }
     return widgets;

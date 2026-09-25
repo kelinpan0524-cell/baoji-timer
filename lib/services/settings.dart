@@ -44,6 +44,16 @@ class Settings extends ChangeNotifier {
   bool idleNudgeEnabled = true;
   int idleNudgeMinutes = 10; // 可选 5/10/15/30/60
 
+  // 休息音效四层触发（调研条目 10）：开始/半程/3-2-1 倒数/结束。
+  // 整体开关（分层配置 UI 过重，暂不做）；结束音不受此开关影响——
+  // 休息到点的提示沿用原有 _onRestFinished 通道（声音+震动）。
+  bool restCueEnabled = true;
+
+  // 锁屏时保持显示（调研条目 6，FitoTrack showOnLockScreen）：
+  // 系统锁屏后训练计时仍显示在锁屏上（Android 8.1+ setShowWhenLocked）。
+  // 默认关：与常亮（训练时屏幕不灭）是两个独立维度。
+  bool lockScreenKeepOn = false;
+
   // 应用更新（GitHub 私仓 Releases）
   String ghUpdateToken = ''; // 只读令牌，与 AI Key 同一本地存放策略
   AppRelease? pendingUpdate; // 运行时状态（发现的新版），不落盘
@@ -70,6 +80,8 @@ class Settings extends ChangeNotifier {
         _prefs.getString('${_kprefix}distract') ?? distractingApps;
     idleNudgeEnabled = _prefs.getBool('${_kprefix}idleNudgeOn') ?? true;
     idleNudgeMinutes = _prefs.getInt('${_kprefix}idleNudgeMin') ?? 10;
+    restCueEnabled = _prefs.getBool('${_kprefix}restCue') ?? true;
+    lockScreenKeepOn = _prefs.getBool('${_kprefix}lockScreenKeepOn') ?? false;
     ghUpdateToken = _prefs.getString('${_kprefix}ghToken') ?? '';
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
     larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
@@ -105,6 +117,8 @@ class Settings extends ChangeNotifier {
     await _prefs.setString('${_kprefix}distract', distractingApps);
     await _prefs.setBool('${_kprefix}idleNudgeOn', idleNudgeEnabled);
     await _prefs.setInt('${_kprefix}idleNudgeMin', idleNudgeMinutes);
+    await _prefs.setBool('${_kprefix}restCue', restCueEnabled);
+    await _prefs.setBool('${_kprefix}lockScreenKeepOn', lockScreenKeepOn);
     await _prefs.setString('${_kprefix}ghToken', ghUpdateToken);
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
     await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);
@@ -113,14 +127,17 @@ class Settings extends ChangeNotifier {
 
   bool get aiConfigured => aiBaseUrl.isNotEmpty && aiApiKey.isNotEmpty;
 
-  List<String> get distractingAppsList =>
-      distractingApps.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+  List<String> get distractingAppsList => distractingApps
+      .split(',')
+      .map((s) => s.trim())
+      .where((s) => s.isNotEmpty)
+      .toList();
 
   String debugSummary() => jsonEncode({
-        'aiConfigured': aiConfigured,
-        'larkEnabled': larkEnabled,
-        'larkCalendarConfigured': larkCalendarId.isNotEmpty,
-      });
+    'aiConfigured': aiConfigured,
+    'larkEnabled': larkEnabled,
+    'larkCalendarConfigured': larkCalendarId.isNotEmpty,
+  });
 }
 
 // 避免拼错：内部统一用小写前缀常量

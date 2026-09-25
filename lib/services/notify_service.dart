@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import 'rest_cue.dart';
 import 'session_controller.dart' show TrainingCard;
 
 /// 通知与通知栏训练卡（调研条目 1/2/3/4）：
@@ -62,11 +63,13 @@ class NotifyService {
     );
     await _plugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(_restChannel);
     await _plugin
         .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(_idleChannel);
     _ready = true;
     // rest_timer 的勿扰穿透由原生侧在通道首次创建时设置（bypassDnd 只在
@@ -90,6 +93,33 @@ class NotifyService {
   Future<void> stopTrainingCard() async {
     try {
       await _trainingChannel.invokeMethod('stop');
+    } on PlatformException {
+      // 同上
+    } on MissingPluginException {
+      // 同上
+    }
+  }
+
+  // ---------- 休息音效四层（条目 10） ----------
+
+  /// 播放一层休息提示音（开始/半程/3-2-1 倒数）。原生用 ToneGenerator
+  /// 按层选不同音调（复用现有 'baoji/training' 通道，零新增依赖、零音频资源）；
+  /// 只在屏内/前台服务场景播，触发时机与去重由 RestCueScheduler 决定。
+  Future<void> playRestCue(RestCue cue) async {
+    try {
+      await _trainingChannel.invokeMethod('cue', {'cue': cue.name});
+    } on PlatformException {
+      // 原生侧异常不拖垮训练
+    } on MissingPluginException {
+      // 测试环境/非 Android 平台
+    }
+  }
+
+  /// 锁屏时保持显示（条目 6，FitoTrack showOnLockScreen）：
+  /// Android 8.1+ setShowWhenLocked/setTurnScreenOn，训练开始/结束切换。
+  Future<void> setLockScreenDisplay(bool on) async {
+    try {
+      await _trainingChannel.invokeMethod('setLockScreenDisplay', {'on': on});
     } on PlatformException {
       // 同上
     } on MissingPluginException {
