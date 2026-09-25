@@ -27,6 +27,7 @@ class _PlanPageState extends State<PlanPage> {
   bool _loading = true;
   List<Plan> _plans = [];
   Plan? _view; // 正在查看的计划（可为未启用计划）
+  int? _trainableN; // 查看计划里「有动作」的模板日数（循环排程警示用）
 
   @override
   void initState() {
@@ -43,6 +44,15 @@ class _PlanPageState extends State<PlanPage> {
             ? c.planRepo.activePlan
             : _plans.where((p) => p.id == _view!.id).firstOrNull ??
                 c.planRepo.activePlan);
+
+    final vid = _view?.id;
+    if (vid != null && _view!.isCycle) {
+      final n = await c.planRepo.trainableDayCount(vid);
+      if (!mounted) return;
+      _trainableN = n;
+    } else {
+      _trainableN = null;
+    }
 
     if (!mounted) return;
     setState(() => _loading = false);
@@ -202,6 +212,26 @@ class _PlanPageState extends State<PlanPage> {
             ),
           ],
         ),
+        // 循环连练天数小于有动作的训练日数 = 多出的模板日永远排不上（静默搁浅）
+        if (_view?.isCycle == true &&
+            _trainableN != null &&
+            _trainableN! > _view!.cycleTrain)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: InkWell(
+              onTap: _showPatternSheet,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Text(
+                  '⚠ 连练${_view!.cycleTrain}天 < 计划的 $_trainableN 个训练日：'
+                  '多出的训练日永远排不上，点此把连练改为 $_trainableN',
+                  style: const TextStyle(color: AppTheme.warn, fontSize: 12),
+                ),
+              ),
+            ),
+          ),
         const SizedBox(height: 10),
         // 日期化排程：3日/周/月视图 + 拖拉改期（手动改动写覆盖行）
         if (_view != null)
@@ -334,8 +364,13 @@ class _PlanPageState extends State<PlanPage> {
   Future<void> _showPatternSheet() async {
     final plan = _view;
     if (plan == null || plan.id == null) return;
+    final trainableN = await app(context).planRepo.trainableDayCount(plan.id!);
+    if (!mounted) return;
     bool cycle = plan.isCycle;
-    int train = plan.cycleTrain > 0 ? plan.cycleTrain : 2;
+    // 首次设置连练天数：默认对齐计划的训练日数，避免 3 天计划被默认的 2 静默搁浅
+    int train = plan.cycleTrain > 0
+        ? plan.cycleTrain
+        : (trainableN > 0 ? trainableN.clamp(1, 7).toInt() : 2);
     int rest = plan.cycleRest > 0 ? plan.cycleRest : 1;
     DateTime start = plan.patternStart.isNotEmpty
         ? parseDate(plan.patternStart)
@@ -387,6 +422,16 @@ class _PlanPageState extends State<PlanPage> {
                 Text('循环示例：练 $train 休 $rest —— 从起始日开始每 ${train + rest} 天一轮。',
                     style:
                         const TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                if (trainableN > 1 && train < trainableN)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '⚠ 计划有 $trainableN 个有动作的训练日，连练 $train 会让 '
+                      '${trainableN - train} 个训练日永远排不上（建议连练 $trainableN）',
+                      style:
+                          const TextStyle(color: AppTheme.warn, fontSize: 12),
+                    ),
+                  ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -426,16 +471,16 @@ class _PlanPageState extends State<PlanPage> {
     await app(context).planRepo.updateSchedulePattern(
           planId: plan.id!,
           pattern: cycle ? 'cycle' : 'weekly',
-          patternStart: cycle
-              ? (plan.patternStart.isNotEmpty ? plan.patternStart : fmtDate(start))
-              : plan.patternStart,
+          // 起始日始终存所选值：之前 patternStart 已存在时会丢弃新选的日期
+          patternStart: cycle ? fmtDate(start) : plan.patternStart,
           cycleTrain: train,
           cycleRest: rest,
         );
     await _refresh();
     if (mounted) {
+      final stranded = cycle && trainableN > 1 && train < trainableN;
       toast(context,
-          cycle ? '已切为循环练$train休$rest' : '已切为按星期排程');
+          cycle ? (stranded ? '已保存，但连练 $train < $trainableN 个训练日，多出的训练日排不上' : '已切为循环练$train休$rest') : '已切为按星期排程');
     }
   }
 
