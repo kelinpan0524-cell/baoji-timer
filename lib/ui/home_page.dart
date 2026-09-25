@@ -39,7 +39,8 @@ class _HomePageState extends State<HomePage> {
     if (last.isNotEmpty) {
       final ses = await c.db.sessionExercises(last.first.id!);
       final map = await c.db.setsOfSession(last.first.id!);
-      stats = sessionStatsFrom(map, ses);
+      // 容量口径与统计页一致：自重动作按 系数×体重 折算（评审拉齐）
+      stats = sessionStatsFrom(map, ses, bodyWeightKg: c.settings.bodyWeightKg);
     }
     final today = await c.planRepo.dayForDate(DateTime.now());
     if (!mounted) return;

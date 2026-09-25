@@ -380,6 +380,18 @@ void main() {
       );
     });
 
+    test('评审回归：最长键优先——变体名不被短键「俯卧撑」抢先', () {
+      // 「上斜俯卧撑（宽距）」应命中 0.55（上斜俯卧撑）而非 0.64（俯卧撑）
+      expect(bodyweightLoadRatio('上斜俯卧撑（宽距）'), 0.55);
+      // 「下斜俯卧撑」（无后缀沉淀名）应命中 0.70 而非 0.64
+      expect(bodyweightLoadRatio('下斜俯卧撑'), 0.70);
+      expect(
+        setVolumeWithBodyweight(bwSet(reps: 10),
+            exerciseName: '下斜俯卧撑', bodyWeightKg: 70),
+        closeTo(490, 0.01),
+      );
+    });
+
     test('sessionStats 传入体重后自重动作进容量，不传则维持旧口径', () {
       const se = SessionExercise(
         sessionId: 1,

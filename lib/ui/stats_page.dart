@@ -50,7 +50,7 @@ class _StatsPageState extends State<StatsPage> {
 
   Future<void> _exportAiPack() async {
     final c = app(context);
-    final pack = await c.export.buildAiPack();
+    final pack = await c.export.buildAiPack(bodyWeightKg: c.settings.bodyWeightKg);
     await c.export.shareText('薄肌训练 · AI 分析包', pack, filename: 'ai_analysis_pack.md');
     // 同时尝试复制到剪贴板
     await Clipboard.setData(ClipboardData(text: pack));

@@ -273,4 +273,35 @@ void main() {
     expect(pack, contains('实际均休 ~150s'));
     expect(pack, contains('休息过长或过短'));
   });
+
+  test('S8（评审拉齐口径）：AI 分析包传体重时自重动作按系数×体重计入容量', () async {
+    final s = await db.insertSession(Session(
+        date: '2026-09-20',
+        planDayTitle: '背日',
+        startedAt: 1,
+        endedAt: 2,
+        status: 'done'));
+    final se = await db.insertSessionExercise(SessionExercise(
+        sessionId: s.id!,
+        name: '引体向上',
+        orderIdx: 0,
+        kind: 'compound',
+        restSec: 150,
+        rule: const ProgressionRule(repsMin: 5, repsMax: 10, workingSets: 3)));
+    await db.insertSet(SetEntry(
+        sessionExerciseId: se,
+        weightKg: 0, // 自重：旧口径记 0
+        reps: 10,
+        kind: SetKind.working,
+        doneAt: DateTime(2026, 9, 20, 10).millisecondsSinceEpoch));
+
+    // 传体重：0.70 × 70 × 10 = 490
+    final withBw = await ExportService(db).buildAiPack(bodyWeightKg: 70);
+    expect(withBw, contains('总容量 490kg'));
+    expect(withBw, contains('- 引体向上: 490'));
+
+    // 不传（旧口径）：自重仍记 0
+    final withoutBw = await ExportService(db).buildAiPack();
+    expect(withoutBw, contains('总容量 0kg'));
+  });
 }

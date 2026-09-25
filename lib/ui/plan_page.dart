@@ -943,10 +943,8 @@ class _PlanPageState extends State<PlanPage> {
       ),
     );
     if (ok != true || !mounted) return;
-    if (!c.settings.aiConfigured) {
-      toast(context, '请先在设置里配置 AI 接口');
-      return;
-    }
+    // 无 Key 不再前置拦截（评审修复）：AI 服务层会给出可读错误，
+    // 走下方「AI 不可用回落本地」路径，预览页明示本地模式与失败原因。
     final nav = Navigator.of(context, rootNavigator: true);
     showDialog(
       context: context,
@@ -979,9 +977,8 @@ class _PlanPageState extends State<PlanPage> {
     var localMode = false;
     var aiError = '';
     try {
-      if (!c.settings.aiConfigured) {
-        throw const AiException('未配置 AI 接口');
-      }
+      // 未配置 Key 由服务层抛可读错误（AiService.parsePlan/designPlanFromDescription
+      // 的 aiConfigured 检查），统一进回落路径，避免此处维护第二份拦截逻辑。
       specs = genMode
           ? await c.ai.designPlanFromDescription(ctrl.text.trim())
           : await c.ai.parsePlan(ctrl.text.trim());
@@ -1027,16 +1024,26 @@ class _PlanPageState extends State<PlanPage> {
     if (!mounted) return;
 
     // 调研条目 12：无论哪种来源都先进预览页逐动作确认，确认后才落库。
-    final picked = await _showPlanPreview(specs, localMode: localMode);
+    // 回落时带上 AI 失败原因摘要（评审修复）：自配 API 的用户能看出
+    // 是 Key 错还是网络错，而不是只见笼统的「AI 不可用」。
+    final picked = await _showPlanPreview(
+      specs,
+      localMode: localMode,
+      aiError: localMode ? aiError : '',
+    );
     if (picked == null || !mounted) return;
     final (name, confirmed) = picked;
     final plan = await _switchActivePlanAndSync(
       c,
       () => c.planRepo.saveAiPlan(
+        // 评审修复：本地模式空名回退「本地计划」而非「AI 生成/AI 计划」，
+        // 名字不误导产物来源。
         name: name.isEmpty
-            ? (genMode
-                ? 'AI 生成 ${fmtDate(DateTime.now())}'
-                : 'AI 计划 ${fmtDate(DateTime.now())}')
+            ? (localMode
+                ? '本地计划 ${fmtDate(DateTime.now())}'
+                : (genMode
+                    ? 'AI 生成 ${fmtDate(DateTime.now())}'
+                    : 'AI 计划 ${fmtDate(DateTime.now())}'))
             : name,
         specs: confirmed,
         metaMap: c.ai.metaMap(),
@@ -1053,10 +1060,12 @@ class _PlanPageState extends State<PlanPage> {
   }
 
   /// 生成结果预览：用户逐动作确认后点「保存为计划」才落库。
+  /// [aiError] 回落进本地模式时的 AI 失败原因（摘要进副标题）。
   /// 返回 (计划名, 确认后的 specs)；放弃返回 null。
   Future<(String, List<AiDaySpec>)?> _showPlanPreview(
     List<AiDaySpec> specs, {
     required bool localMode,
+    String aiError = '',
   }) async {
     final nameCtrl = TextEditingController(
       text: localMode
@@ -1110,7 +1119,7 @@ class _PlanPageState extends State<PlanPage> {
                       const SizedBox(height: 4),
                       Text(
                         localMode
-                            ? 'AI 不可用（无网/未配置/失败），已按内置规则生成。点动作可调整。'
+                            ? 'AI 不可用（${_truncateReason(aiError)}），已按内置规则生成。点动作可调整。'
                             : '点动作可换候选；标「待确认」的动作是 AI 名字没对上词表的，请务必确认。',
                         style: const TextStyle(
                           fontSize: 12,
@@ -1203,6 +1212,14 @@ class _PlanPageState extends State<PlanPage> {
         ),
       ),
     );
+  }
+
+  /// AI 失败原因摘要：截断到 40 字，空值给兜底文案（预览页副标题用，
+  /// 评审修复：回落成功时失败原因不再被整体吞掉）。
+  String _truncateReason(String aiError) {
+    final t = aiError.trim();
+    if (t.isEmpty) return '未配置或网络不可用';
+    return t.length <= 40 ? t : '${t.substring(0, 40)}…';
   }
 
   /// 预览页的一行动作：待确认的加警示色与徽标，全部可点进候选选择。

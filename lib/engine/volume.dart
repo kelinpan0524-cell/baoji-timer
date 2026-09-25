@@ -18,6 +18,7 @@ const kBodyweightLoadRatio = <String, double>{
   // —— 同口径工程估算（趋势参考，非逐项实测）——
   '负重引体向上': 0.70, // 自重部分同引体向上，外载另加
   '上斜俯卧撑': 0.55, // 手垫高、负荷减轻
+  '下斜俯卧撑': 0.70, // 脚垫高、负荷加重（兼容用户沉淀的无后缀变体名）
   '下斜俯卧撑（脚垫高）': 0.70, // 脚垫高、负荷加重
   '派克俯卧撑': 0.60, // 肩主导变体，负荷介于普通与下斜之间
   '双杠臂屈伸': 0.70,
@@ -32,13 +33,23 @@ const kBodyweightLoadRatio = <String, double>{
   '悬垂举腿': 0.55,
 };
 
-/// 查某动作的自重负荷系数：先精确名，再子串匹配（兼容用户沉淀的
-/// 变体名如「引体向上（宽握）」）。无系数动作返回 0（容量语义不变）。
+/// 子串匹配用的系数表快照：按键长度降序（最长命中优先）。
+/// 否则短键会抢先——「上斜俯卧撑（宽距）」先命中「俯卧撑」0.64，
+/// 而变体表里更具体的「上斜俯卧撑」0.55 才是正解。
+final _rankedRatioEntries = () {
+  final entries = kBodyweightLoadRatio.entries.toList()
+    ..sort((a, b) => b.key.length.compareTo(a.key.length));
+  return entries;
+}();
+
+/// 查某动作的自重负荷系数：先精确名，再子串匹配（最长键优先，兼容
+/// 用户沉淀的变体名如「引体向上（宽握）」）。无系数动作返回 0
+/// （容量语义不变）。
 double bodyweightLoadRatio(String name) {
   if (name.isEmpty) return 0;
   final exact = kBodyweightLoadRatio[name];
   if (exact != null) return exact;
-  for (final e in kBodyweightLoadRatio.entries) {
+  for (final e in _rankedRatioEntries) {
     if (name.contains(e.key)) return e.value;
   }
   return 0;
