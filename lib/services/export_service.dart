@@ -89,7 +89,10 @@ class ExportService {
 
   /// AI 分析包：人类可读摘要 + 预制提示词 + 精简 JSON 数据。
   /// 目标：直接整段复制给任意大模型，即可获得训练分析与总结。
-  Future<String> buildAiPack({int weeks = 8}) async {
+  /// [bodyWeightKg]：自重容量折算体重（评审拉齐口径）——不传/传 0 时
+  /// 自重动作容量记 0（旧口径）。调用点传 settings.bodyWeightKg 与
+  /// 统计页/总结页/休息页战报保持同一容量口径。
+  Future<String> buildAiPack({int weeks = 8, double bodyWeightKg = 0}) async {
     final now = DateTime.now();
     final from = fmtDate(now.subtract(Duration(days: weeks * 7)));
     final to = fmtDate(now);
@@ -121,7 +124,7 @@ class ExportService {
     for (final s in sessions) {
       final ses = await _db.sessionExercises(s.id!);
       final map = await _db.setsOfSession(s.id!);
-      final stats = sessionStatsFrom(map, ses);
+      final stats = sessionStatsFrom(map, ses, bodyWeightKg: bodyWeightKg);
       buf.writeln('### ${s.date} ${s.planDayTitle}');
       final timeNote = s.restMs > 0
           ? '（训练 ${(s.activeMs / 60000).ceil()} 分 · 休息 ${(s.restMs / 60000).ceil()} 分）'
@@ -134,8 +137,13 @@ class ExportService {
             .map((x) => '${x.weightKg}kg×${x.reps}${x.kind == SetKind.warmup ? '(热)' : x.kind == SetKind.failure ? '(失)' : ''}')
             .join(', ');
         buf.writeln('- ${se.name}: $desc${_actualRestNote(se, sets)}');
-        byNameVolume[se.name] =
-            (byNameVolume[se.name] ?? 0) + sets.fold(0.0, (a, b) => a + b.volume);
+        byNameVolume[se.name] = (byNameVolume[se.name] ?? 0) +
+            sets.fold(
+                0.0,
+                (a, b) =>
+                    a +
+                    setVolumeWithBodyweight(b,
+                        exerciseName: se.name, bodyWeightKg: bodyWeightKg));
       }
       buf.writeln();
     }

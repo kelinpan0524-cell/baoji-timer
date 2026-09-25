@@ -229,6 +229,139 @@ void main() {
     });
   });
 
+  group('JSON 三层容错（调研条目 12）', () {
+    test('第①层：直接解析纯 JSON 数组', () {
+      final list = ai.extractJsonPayload('[{"weekday":1,"title":"推"}]');
+      expect(list, isA<List>());
+      expect((list.first as Map)['weekday'], 1);
+    });
+
+    test('第②层：剥 ```json 代码围栏（带前后散文）', () {
+      final list = ai.extractJsonPayload(
+          '好的，方案如下：\n```json\n[{"weekday":2}]\n```\n以上。');
+      expect((list.first as Map)['weekday'], 2);
+    });
+
+    test('第②层变体：无 json 标记的裸代码围栏', () {
+      final list = ai.extractJsonPayload('```\n[{"weekday":3}]\n```');
+      expect((list.first as Map)['weekday'], 3);
+    });
+
+    test('第③层：括号配平扫描——围栏残缺也能截出完整数组', () {
+      // 围栏未闭合（第②层失败），前后有散文（第①层失败）
+      final list = ai.extractJsonPayload(
+          '计划如下：\n```json\n[{"weekday":1,"title":"推","exercises":[{"name":"杠铃卧推","sets":3}]}]，祝训练愉快');
+      expect((list.first as Map)['weekday'], 1);
+    });
+
+    test('第③层：字符串内的括号不干扰配平（字符串感知）', () {
+      final list = ai.extractJsonPayload(
+          '输出：[{"title":"腿（股四头）日"},{"title":"x"}] 尾部垃圾]]');
+      expect(list.length, 2);
+    });
+
+    test('三层全失败 → AiException 中文归一文案', () {
+      expect(
+        () => ai.extractJsonPayload('完全不是 JSON 的输出'),
+        throwsA(isA<AiException>()),
+      );
+      expect(
+        () => ai.extractJsonPayload('[{weekday:1}]'),
+        throwsA(isA<AiException>()),
+      );
+    });
+  });
+
+  group('动作名六级匹配级联（调研条目 12）', () {
+    test('L1 精确英文：Bench Press → 杠铃卧推（大小写/空格归一）', () {
+      final m = ai.matchExerciseNames(['Bench Press']).first;
+      expect(m.level, 1);
+      expect(m.name, '杠铃卧推');
+      expect(m.needsConfirm, isFalse);
+    });
+
+    test('L2 精确中文：词表全名直接命中', () {
+      final m = ai.matchExerciseNames(['上斜杠铃卧推']).first;
+      expect(m.level, 2);
+      expect(m.name, '上斜杠铃卧推');
+    });
+
+    test('L3 同义词表：倒蹬 → 腿举（倒蹬机）、引体 → 引体向上', () {
+      expect(ai.matchExerciseNames(['倒蹬']).first.name, '腿举（倒蹬机）');
+      expect(ai.matchExerciseNames(['倒蹬']).first.level, 3);
+      expect(ai.matchExerciseNames(['引体']).first.name, '引体向上');
+    });
+
+    test('L4 词序无关：卧推杠铃 → 杠铃卧推', () {
+      final m = ai.matchExerciseNames(['卧推杠铃']).first;
+      expect(m.level, 4);
+      expect(m.name, '杠铃卧推');
+    });
+
+    test('L5 强包含：杠铃卧推 5x5 → 杠铃卧推；泛称仍不被吸成长变体', () {
+      final hit = ai.matchExerciseNames(['杠铃卧推 5x5']).first;
+      expect(hit.level, 5);
+      expect(hit.name, '杠铃卧推');
+      // A3-2 收紧语义保留：2 字泛称不自动落成长变体
+      final miss = ai.matchExerciseNames(['卧推']).first;
+      expect(miss.name, '卧推', reason: '泛称保留原名');
+      expect(miss.needsConfirm, isTrue, reason: '泛称进人工确认');
+    });
+
+    test('L6 模糊级：score<0.15 且整批覆盖率≥0.5 才自动命中', () {
+      // 批内 1/2 确定命中 → coverage 0.5 达标；错别字 1/7 ≈ 0.14 < 0.15
+      final matches = ai.matchExerciseNames(['杠铃卧推', '哑铃颈后臂屈仲']);
+      expect(matches[0].level, 2);
+      expect(matches[1].level, 6);
+      expect(matches[1].name, '哑铃颈后臂屈伸');
+      expect(matches[1].needsConfirm, isFalse);
+    });
+
+    test('L6 门控：覆盖率 <0.5 时即使 score 达标也不自动命中', () {
+      // 单独一个近似名：coverage 0，不许模糊自动命中
+      final m = ai.matchExerciseNames(['哑铃颈后臂屈仲']).first;
+      expect(m.needsConfirm, isTrue);
+      expect(m.name, '哑铃颈后臂屈仲', reason: '保留原名等人工确认');
+      expect(m.candidates, isNotEmpty, reason: '给 top5 候选');
+    });
+
+    test('L6 门控：score ≥0.15 不自动命中，candidates 按相似度排序 top5', () {
+      final m = ai.matchExerciseNames(['杠铃卧推', '坐姿划般']).last;
+      // 坐姿划般 vs 坐姿划船：错 1/4 字 = 0.25
+      expect(m.needsConfirm, isTrue);
+      expect(m.candidates.length, lessThanOrEqualTo(5));
+      expect(m.candidates.first, '坐姿划船', reason: 'top1 是最像的坐姿划船');
+    });
+
+    test('完全对不上的名字保留原名且给候选', () {
+      final m = ai.matchExerciseNames(['杠铃卧推', '神秘星球动作']).last;
+      expect(m.name, '神秘星球动作');
+      expect(m.needsConfirm, isTrue);
+      expect(m.level, 0);
+    });
+  });
+
+  group('parseResponse 集成匹配元数据（调研条目 12 落库前确认的数据源）', () {
+    test('精确命中动作 needsConfirm=false、rawName 保留 AI 原文', () {
+      final specs = ai.parseResponse(
+          '[{"weekday":1,"title":"推","exercises":[{"name":"杠铃卧推","sets":3,"reps_min":5,"reps_max":8}]}]');
+      final ex = specs.first.exercises.first;
+      expect(ex.needsConfirm, isFalse);
+      expect(ex.rawName, '杠铃卧推');
+      expect(ex.candidates, isEmpty);
+    });
+
+    test('泛称动作 needsConfirm=true、候选非空，保存侧可用原名沉淀', () {
+      final specs = ai.parseResponse(
+          '[{"weekday":1,"title":"推","exercises":[{"name":"卧推","sets":3,"reps_min":5,"reps_max":8}]}]');
+      final ex = specs.first.exercises.first;
+      expect(ex.needsConfirm, isTrue);
+      expect(ex.name, '卧推', reason: '未确认前保留原名');
+      expect(ex.rawName, '卧推');
+      expect(ex.candidates, isNotEmpty);
+    });
+  });
+
   group('localInsights 依赖真实 doneAt 分天（A6-2 旁证）', () {
     SetEntry setOf(int doneAt, double w) => SetEntry(
           sessionExerciseId: 1,

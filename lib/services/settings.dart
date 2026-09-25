@@ -19,6 +19,10 @@ class Settings extends ChangeNotifier {
   bool vibrationOn = true;
   bool soundOn = true;
 
+  /// 体重 kg（自重容量折算用，点名条目二）：自重动作按 系数×体重 计入容量。
+  /// 默认 70kg；设为 0 时关闭折算（自重动作容量回到记 0 的旧口径）。
+  double bodyWeightKg = 70;
+
   // AI（OpenAI 兼容）
   String aiBaseUrl = '';
   String aiApiKey = '';
@@ -61,6 +65,7 @@ class Settings extends ChangeNotifier {
   void _load() {
     restCompoundSec = _prefs.getInt('${_kprefix}restCompound') ?? 180;
     restAssistanceSec = _prefs.getInt('${_kprefix}restAssist') ?? 120;
+    bodyWeightKg = _prefs.getDouble('${_kprefix}bodyWeight') ?? 70;
     vibrationOn = _prefs.getBool('${_kprefix}vibration') ?? true;
     soundOn = _prefs.getBool('${_kprefix}sound') ?? true;
     aiBaseUrl = _prefs.getString('${_kprefix}aiBaseUrl') ?? '';
@@ -99,6 +104,7 @@ class Settings extends ChangeNotifier {
   Future<void> save() async {
     await _prefs.setInt('${_kprefix}restCompound', restCompoundSec);
     await _prefs.setInt('${_kprefix}restAssist', restAssistanceSec);
+    await _prefs.setDouble('${_kprefix}bodyWeight', bodyWeightKg);
     await _prefs.setBool('${_kprefix}vibration', vibrationOn);
     await _prefs.setBool('${_kprefix}sound', soundOn);
     await _prefs.setString('${_kprefix}aiBaseUrl', aiBaseUrl);

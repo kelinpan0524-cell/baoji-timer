@@ -470,6 +470,15 @@ class AiDaySpec {
 
 class AiExerciseSpec {
   final String name;
+
+  /// AI 输出的原始动作名（调研条目 12：预览页逐动作确认的数据锚点）。
+  final String rawName;
+
+  /// 六级匹配未自动命中（模糊级 score/覆盖率不达标）→ 预览页需人工确认。
+  final bool needsConfirm;
+
+  /// 匹配候选（top5，按相似度升序失败即按编辑距离排序），预览页点选替换。
+  final List<String> candidates;
   final int sets;
   final int repsMin;
   final int repsMax;
@@ -478,6 +487,9 @@ class AiExerciseSpec {
   final String? mainMuscle; // AI 判定的主肌群（词表外动作的兜底）
   const AiExerciseSpec({
     required this.name,
+    this.rawName = '',
+    this.needsConfirm = false,
+    this.candidates = const [],
     required this.sets,
     required this.repsMin,
     required this.repsMax,
@@ -485,4 +497,18 @@ class AiExerciseSpec {
     this.kind,
     this.mainMuscle,
   });
+
+  /// 预览页确认后替换动作名（并解除待确认态）。
+  AiExerciseSpec withName(String newName) => AiExerciseSpec(
+        name: newName,
+        rawName: rawName,
+        needsConfirm: false,
+        candidates: const [],
+        sets: sets,
+        repsMin: repsMin,
+        repsMax: repsMax,
+        restSec: restSec,
+        kind: kind,
+        mainMuscle: mainMuscle,
+      );
 }

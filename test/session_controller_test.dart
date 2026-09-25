@@ -1072,4 +1072,82 @@ void main() {
     expect(c.lastPerformance('从没练过的动作'), isNull);
     await Future<void>.delayed(const Duration(milliseconds: 100));
   });
+
+  group('休息规则细化（调研条目 9）', () {
+    // completeSet → _beginRestFor 有 _loadContextForCurrent().then 的悬挂续体，
+    // 测试末尾统一排干（与既有测试同模式）。
+    Future<void> drainContinuations() =>
+        Future<void>.delayed(const Duration(milliseconds: 120));
+
+    test('热身组不触发休息计时：留在动作态、不写 rest.endAt', () async {
+      final day = await makePlanDay('日');
+      final e = await addPlanEx(day, '卧推', 0, restSec: 120);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+
+      await c.completeSet(weight: 20, reps: 10, rir: 3, kind: SetKind.warmup);
+      expect(c.phase, WorkoutPhase.lifting,
+          reason: '热身组不触发休息计时（Flexify 规则）');
+      expect(c.restEndAt, 0);
+      expect(prefs.getInt('rest.endAt'), isNull,
+          reason: '不落休息时间戳');
+      expect(c.extraSetExerciseName, isNull,
+          reason: '热身组不提供再来一组回退');
+      await drainContinuations();
+    });
+
+    test('达标正式组（末组达次数上限）给标准休息', () async {
+      final day = await makePlanDay('日');
+      final e = await addPlanEx(day, '卧推', 0, restSec: 120);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.phase, WorkoutPhase.resting);
+      // reps 8 ≥ repsMax 8 → 标准档 120 秒（不放大）
+      final totalSec = c.restTotalMs ~/ 1000;
+      expect(totalSec, 120, reason: '达标给标准休息（动作级覆盖 120）');
+      await drainContinuations();
+    });
+
+    test('未达标正式组给更长休息（×1.5 → 180 秒）', () async {
+      final day = await makePlanDay('日');
+      final e = await addPlanEx(day, '卧推', 0, restSec: 120);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+
+      await c.completeSet(weight: 60, reps: 5, rir: 1, kind: SetKind.working);
+      expect(c.phase, WorkoutPhase.resting);
+      // reps 5 < repsMax 8 → 120 × 1.5 = 180
+      final totalSec = c.restTotalMs ~/ 1000;
+      expect(totalSec, 180, reason: '未达标给更长休息（LiftLog 分档）');
+      await drainContinuations();
+    });
+
+    test('逐动作覆盖优先：计划里配置的 restSec 生效于全局偏好之上', () async {
+      final day = await makePlanDay('日');
+      // 全局偏好默认 180/120，动作覆盖 60
+      final e = await addPlanEx(day, '卧推', 0, restSec: 60);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      final totalSec = c.restTotalMs ~/ 1000;
+      expect(totalSec, 60, reason: '动作级 restSec=60 覆盖全局复合 180');
+      await drainContinuations();
+    });
+
+    test('未配置动作级休息时（restSec=0）按全局偏好 + 分档', () async {
+      final day = await makePlanDay('日');
+      final e = await addPlanEx(day, '卧推', 0, restSec: 0);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+
+      await c.completeSet(weight: 60, reps: 5, rir: 1, kind: SetKind.working);
+      // 全局复合 180，未达标 ×1.5 = 270
+      final totalSec = c.restTotalMs ~/ 1000;
+      expect(totalSec, 270);
+      await drainContinuations();
+    });
+  });
 }

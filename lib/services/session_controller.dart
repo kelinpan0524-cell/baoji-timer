@@ -450,6 +450,9 @@ class SessionController extends ChangeNotifier {
     notifyListeners();
 
     // 判断下一步：休息 or 换动作 or 结束
+    // 热身组不触发休息计时（调研条目 9，Flexify 规则）：留在动作态
+    // 直接做下一组，不给"再来一组"入口（本来就在该动作上）。
+    if (kind == SetKind.warmup) return pr;
     final plannedWorking = ex.rule.workingSets;
     if (workingSetsDone >= plannedWorking) {
       // 本动作完成 → 下一个动作（若还有）也进入休息
@@ -488,13 +491,26 @@ class SessionController extends ChangeNotifier {
   }
 
   /// 完成后未休息先看下一动作（下一组自动带入上次重量）。
-  /// 休息时长：动作级配置（计划里每个动作的 restSec）优先，全局设置兜底。
+  /// 休息时长（调研条目 9 分档规则）：
+  /// ① 逐动作覆盖优先——计划里该动作配置的 restSec（>0 生效）；
+  /// ② 全局基础值按 compound/assistance 取用户偏好；
+  /// ③ 按「刚完成那组的结果」分档：达标给标准休息，未达标/力竭组给
+  ///    ×1.5 的更长休息（engine.restSecondsAfterSet）；热身组 0（不触发）。
   void _beginRestFor(SessionExercise justFinished) {
-    final sec = justFinished.restSec > 0
+    final sets = setsByEx[justFinished.id] ?? const <SetEntry>[];
+    final last = sets.isEmpty ? null : sets.last;
+    final base = justFinished.restSec > 0
         ? justFinished.restSec
         : (justFinished.kind == 'compound'
               ? _settings.restCompoundSec
               : _settings.restAssistanceSec);
+    final sec = restSecondsAfterSet(
+      kind: last?.kind ?? SetKind.working,
+      reps: last?.reps ?? justFinished.rule.repsMax,
+      repsMax: justFinished.rule.repsMax,
+      baseSec: base, // base 已融合逐动作覆盖（restSec>0）与全局偏好
+    );
+    if (sec <= 0) return; // 双保险：热身组不触发计时
     final end = DateTime.now().millisecondsSinceEpoch + sec * 1000;
     _startRestAt(end, notifyUi: true);
     // 预载（下一）动作上下文。推荐重量只在换动作时刷新——
@@ -850,7 +866,8 @@ class SessionController extends ChangeNotifier {
     }
     final order = await _db.sessionExercises(session!.id!);
     final map = await _db.setsOfSession(session!.id!);
-    return sessionStatsFrom(map, order);
+    // 自重动作按 系数×体重 折算进容量（点名条目二；体重 0 时自动回旧口径）
+    return sessionStatsFrom(map, order, bodyWeightKg: _settings.bodyWeightKg);
   }
 
   /// 渐进判定建议（结束时展示 + AI 分析包引用）。
