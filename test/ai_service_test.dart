@@ -500,13 +500,13 @@ void main() {
       expect(roles, ['system', 'system', 'assistant', 'user']);
     });
 
-    test('401 → 归一为「API Key 无效」', () async {
+    test('401 → 归一为「API Key 无效」（附服务商原因）', () async {
       final svc = await serviceWith(
           MockClient((req) async => http.Response('{"error":"bad"}', 401)));
       await expectLater(
         svc.testConnection(),
-        throwsA(isA<AiException>()
-            .having((e) => e.message, 'message', 'API Key 无效')),
+        throwsA(isA<AiException>().having((e) => e.message, 'message',
+            allOf(contains('API Key 无效'), contains('bad')))),
       );
     });
 
@@ -571,6 +571,121 @@ void main() {
       );
       expect(reply, '连接正常');
       expect(ms >= 0, isTrue);
+    });
+
+    test('Base URL 归一：去尾斜杠与误粘的 /chat/completions 尾巴', () {
+      expect(AiService.normalizeBaseUrl('https://x.com/v1/'),
+          'https://x.com/v1');
+      expect(AiService.normalizeBaseUrl('  https://x.com/v1 '),
+          'https://x.com/v1');
+      expect(AiService.normalizeBaseUrl('https://x.com/v1/chat/completions'),
+          'https://x.com/v1');
+      expect(
+          AiService.normalizeBaseUrl(
+              'https://x.com/v1/chat/completions/'),
+          'https://x.com/v1');
+      // 正常值原样保留
+      expect(AiService.normalizeBaseUrl('http://10.0.0.5:11434/v1'),
+          'http://10.0.0.5:11434/v1');
+    });
+
+    test('404 自愈：域名无路径 404 → 自动补 /v1 重试成功（moonshot 形态）',
+        () async {
+      final paths = <String>[];
+      final svc = await serviceWith(MockClient((req) async {
+        paths.add(req.url.path);
+        if (req.url.path == '/v1/chat/completions') {
+          return jsonResponse({
+            'choices': [
+              {
+                'message': {'role': 'assistant', 'content': '连接正常'}
+              }
+            ]
+          });
+        }
+        return http.Response('{"error":{"message":"Not Found"}}', 404);
+      }));
+      final (_, reply) = await svc.testConnection();
+      expect(reply, '连接正常');
+      expect(paths, ['/chat/completions', '/v1/chat/completions'],
+          reason: '先按原样请求，404 才补 /v1，不盲发');
+    });
+
+    test('根路径可用的服务商（DeepSeek 形态）一发命中，不多发请求', () async {
+      var calls = 0;
+      final svc = await serviceWith(MockClient((req) async {
+        calls++;
+        return jsonResponse({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': 'ok'}
+            }
+          ]
+        });
+      }));
+      await svc.testConnection();
+      expect(calls, 1);
+    });
+
+    test('误粘完整端点 → 归一化后直接命中，路径不重复', () async {
+      SharedPreferences.setMockInitialValues({
+        'set.aiBaseUrl': 'http://127.0.0.1:1/v1/chat/completions',
+        'set.aiApiKey': 'sk-test',
+        'set.aiModel': 'test-model',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final svc = AiService(Settings(prefs),
+          httpClient: MockClient((req) async {
+        expect(req.url.path, '/v1/chat/completions',
+            reason: '尾巴被剪掉，不再拼出 /chat/completions/chat/completions');
+        return jsonResponse({
+          'choices': [
+            {
+              'message': {'role': 'assistant', 'content': 'ok'}
+            }
+          ]
+        });
+      }));
+      final (_, reply) = await svc.testConnection();
+      expect(reply, 'ok');
+    });
+
+    test('补 /v1 仍 404 → 报错文案带 Base URL 指引与服务商原因', () async {
+      final svc = await serviceWith(MockClient(
+          (req) async => http.Response(
+              jsonEncode({
+                'error': {'message': 'The model `kimi-k9` does not exist'}
+              }),
+              404,
+              headers: {'content-type': 'application/json'})));
+      await expectLater(
+        svc.testConnection(),
+        throwsA(isA<AiException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('404'), contains('Base URL'),
+                contains('kimi-k9'), contains('/v1')))),
+      );
+    });
+
+    test('带路径的 404（如模型名写错）→ 文案不提自动补 /v1', () async {
+      SharedPreferences.setMockInitialValues({
+        'set.aiBaseUrl': 'http://127.0.0.1:1/v1',
+        'set.aiApiKey': 'sk-test',
+        'set.aiModel': 'test-model',
+      });
+      final prefs = await SharedPreferences.getInstance();
+      final svc = AiService(Settings(prefs),
+          httpClient: MockClient(
+              (req) async => http.Response('{"message":"no such model"}', 404)));
+      await expectLater(
+        svc.testConnection(),
+        throwsA(isA<AiException>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('no such model'), contains('模型名'),
+                isNot(contains('自动补'))))),
+      );
     });
   });
 
