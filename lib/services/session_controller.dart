@@ -490,6 +490,36 @@ class SessionController extends ChangeNotifier {
     }
   }
 
+  /// 跳页（调研条目 8 页面流的"跳页走收起面板"）：把当前动作切到 [exIdx]，
+  /// 该动作剩余的第一个未完成正式组成为当前记录页。已记的组原样保留。
+  /// 只允许跳到未练满的动作（练满的加练走休息页「再来一组」，防误触打乱
+  /// 计数）；目标即当前动作时为幂等 no-op。休息中跳页会先结束本段休息
+  /// （取消精确闹钟，与跳过休息同口径）。
+  Future<bool> jumpToExercise(int exIdx) async {
+    if (session == null || exercises.isEmpty) return false;
+    if (exIdx < 0 || exIdx >= exercises.length) return false;
+    if (exIdx == curExIdx) return false;
+    final target = exercises[exIdx];
+    final done = (setsByEx[target.id] ?? const <SetEntry>[])
+        .where((e) => e.kind == SetKind.working)
+        .length;
+    if (done >= target.rule.workingSets) return false; // 已练满：不可跳入
+    if (phase == WorkoutPhase.resting) _finishRest(cancelAlarm: true);
+    curExIdx = exIdx;
+    final list = setsByEx[target.id] ?? const <SetEntry>[];
+    workingSetsDone = done;
+    curSetIdx = list.length;
+    await _loadContextForCurrent();
+    // 重量起点：该动作已有实际组就取最后一组的实际值，否则用推荐值
+    weightDraft = list.isNotEmpty
+        ? list.last.weightKg
+        : _recommendFor(target.name);
+    _setPhase(WorkoutPhase.lifting);
+    notifyCard();
+    notifyListeners();
+    return true;
+  }
+
   /// 完成后未休息先看下一动作（下一组自动带入上次重量）。
   /// 休息时长（调研条目 9 分档规则）：
   /// ① 逐动作覆盖优先——计划里该动作配置的 restSec（>0 生效）；
