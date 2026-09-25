@@ -12,8 +12,6 @@
 // testWidgets 的 FakeAsync 驱不动（直接 await 会死锁到 10 分钟超时）——
 // 所有 DB/会话操作必须包进 tester.runAsync；页内异步加载（如挑选页
 // _load）用「runAsync 真实延时让 isolate 回包送达 + pumpAndSettle 渲染」桥接。
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -159,6 +157,11 @@ void main() {
   Future<void> pumpWorkout(WidgetTester tester) async {
     await tester.pumpWidget(host(container, const WorkoutPage()));
     await tester.pump(const Duration(milliseconds: 20));
+    // 页面流（调研条目 8）：零记录的新会话先落起始页，点「开始训练」进当前记录页
+    if (find.text('开始训练').evaluate().isNotEmpty) {
+      await tester.tap(find.text('开始训练'));
+      await tester.pump(const Duration(milliseconds: 400));
+    }
   }
 
   const phone = Size(360, 800);
@@ -265,6 +268,12 @@ void main() {
           (tester) async {
         await pumpResting(tester, size);
         expectNoLayoutError(tester);
+        // 页面流顶部条 + 3px 进度条（调研条目 8）占约 35dp：横屏矮屏下
+        // 底部操作区改为"滚动可达"口径（与动作态横屏用例一致）
+        if (size == landscape) {
+          await tester.ensureVisible(find.text('跳过休息，直接开练'));
+          await tester.pump(const Duration(milliseconds: 10));
+        }
         expectOnScreen(tester, find.text('跳过休息，直接开练'), size);
         expectOnScreen(tester, find.text('+30 秒'), size);
         expectOnScreen(tester, find.text('暂停'), size);
@@ -367,69 +376,62 @@ void main() {
 
   // ---------- 总结页 ----------
 
-  group('总结页（A8-3 统计格自适应）', () {
-    // 2 动作 × 3 组 × 60kg × 8 次 = 2880kg → fmtVolume 输出 "2880kg" 长串
-    Future<void> finishAllSets(WidgetTester tester) async {
+  group('总结页（A8-3 统计格自适应 · 页面流入流版）', () {
+    // 2 动作 × 3 组 × 60kg × 8 次 = 2880kg → fmtVolume 输出 "2880kg" 长串。
+    // 前 5 组 controller 直记，最后一组走 UI「完成本组」→ 保存→写库→
+    // 状态机自动结束→页面流收尾，总结页作为流程最后一页就地展示
+    // （调研条目 8：不再走 Navigator.pushReplacement）。
+    Future<void> finishToSummary(WidgetTester tester) async {
       await startLifting(tester);
       await tester.runAsync(() async {
         final s = container.session;
-        for (var i = 0; i < 3; i++) {
+        for (var i = 0; i < 5; i++) {
           await s.completeSet(
               weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+          if (s.phase == WorkoutPhase.resting) s.skipRest();
         }
-        s.skipRest(); // 第一动作记满已自动进休息
-        for (var i = 0; i < 3; i++) {
-          await s.completeSet(
-              weight: 60, reps: 8, rir: 2, kind: SetKind.working);
-        }
-        expect(s.hasActive, isFalse, reason: '最后一组后状态机已自动结束');
+        // 排干 completeSet → _beginRestFor 的悬挂续体
         await Future<void>.delayed(const Duration(milliseconds: 150));
       });
-    }
-
-    Future<void> openSummary(WidgetTester tester) async {
-      await pumpWorkout(tester); // !hasActive → 显示"本次训练已结束"占位
-      final ctx = tester.element(find.byType(WorkoutPage));
-      // endTraining 的 DB 段要在真实异步区跑；它最后 await pushReplacement
-      //（总结页不弹栈就永不完成），所以只"发起"，用真实延时等 DB 段走完
-      //（总结页替换根路由后 canPop 恒为 false，不能拿它当信号）。
+      await pumpWorkout(tester); // 已有 5 组记录：直接落到最后一个记录页
+      expect(
+        WorkoutFlow(
+          exercises: container.session.exercises,
+          setsByEx: container.session.setsByEx,
+        ).donePlannedSets,
+        5,
+        reason: '前 5 个计划组已记（全程口径）',
+      );
+      // UI tap 触发的 completeSet 走真实 isolate DB：tap 与真实延时一起
+      // 包进 runAsync，回包与后续收尾链才有机会跑完（本文件头部已知坑）。
+      // 草稿重量/次数与 controller 直记的 5 组同口径（60kg×8 → 6 组 2880kg）。
       await tester.runAsync(() async {
-        unawaited(endTraining(ctx));
-        await Future<void>.delayed(const Duration(milliseconds: 400));
+        container.session.setWeightDraft(60);
+        // 大字号下次数 chips 可能滚出屏：先滚动可达再点选
+        await tester.ensureVisible(find.text('8'));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.text('8'));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 600));
       });
       await tester.pumpAndSettle();
       expect(find.text('训练完成 💪'), findsOneWidget,
-          reason: 'endTraining 应推入总结页');
-    }
-
-    /// 用例收尾：把总结页替换回占位页，让 endTraining 里 await 的
-    /// pushReplacement future 完成、复位防重入旗 _endTrainingInFlight，
-    /// 否则下一个总结页用例的收工入口会被静默拦截。
-    Future<void> closeSummary(WidgetTester tester) async {
-      await tester.runAsync(() async {
-        Navigator.of(tester.element(find.text('训练完成 💪')))
-            .pushReplacement(MaterialPageRoute(
-                builder: (_) => const SizedBox.shrink()));
-        await Future<void>.delayed(const Duration(milliseconds: 100));
-      });
-      await tester.pumpAndSettle();
+          reason: '最后一组保存后页面流自动进入总结页');
     }
 
     testWidgets('360×800：无异常，长容量串显示且收工按钮在屏内', (tester) async {
       setSurface(tester, phone);
-      await finishAllSets(tester);
-      await openSummary(tester);
+      await finishToSummary(tester);
       expectNoLayoutError(tester);
       expect(find.text('2880kg'), findsOneWidget,
           reason: 'A8-3：总容量长串（不可软断行的 kg 文本）');
       expectOnScreen(tester, find.text('收工'), phone);
-      await closeSummary(tester);
     });
 
     testWidgets('360×800 大字号 1.6：无异常且收工按钮在屏内', (tester) async {
       setSurface(tester, phone, textScale: 1.6);
-      await finishAllSets(tester);
-      await openSummary(tester);
+      await finishToSummary(tester);
       expectNoLayoutError(tester);
       expect(find.text('2880kg'), findsOneWidget);
       // 大字号下总结内容自然超过一屏（ListView 可滚动）：按"可达"口径验证
@@ -437,7 +439,57 @@ void main() {
       await tester.ensureVisible(done);
       await tester.pump(const Duration(milliseconds: 10));
       expectOnScreen(tester, done, phone, reason: '大字号下收工按钮滚动可达');
-      await closeSummary(tester);
+    });
+
+    testWidgets('收工按钮：popUntil 回到页面流入口之前的首个路由', (tester) async {
+      // 总结页并入 WorkoutPage 后，收工应退出训练页回到入口页
+      setSurface(tester, phone);
+      await tester.pumpWidget(AppScope(
+        container: container,
+        child: MaterialApp(
+          home: Builder(
+            builder: (ctx) => Scaffold(
+              body: Center(
+                child: TextButton(
+                  onPressed: () => Navigator.of(ctx).push(MaterialPageRoute(
+                      builder: (_) => const WorkoutPage())),
+                  child: const Text('去训练'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ));
+      await tester.runAsync(() async {
+        final day = await makeDay('推日');
+        final a = await addEx(day, '卧推', 0, restSec: 120);
+        final b = await addEx(day, '划船', 1, restSec: 120);
+        await container.session.startFromDay(day: day, planExercises: [a, b]);
+        final s = container.session;
+        for (var i = 0; i < 5; i++) {
+          await s.completeSet(
+              weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+          if (s.phase == WorkoutPhase.resting) s.skipRest();
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.tap(find.text('去训练'));
+      await tester.pumpAndSettle();
+      await tester.runAsync(() async {
+        container.session.setWeightDraft(60);
+        await tester.tap(find.text('8'));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+      });
+      await tester.pumpAndSettle();
+      expect(find.text('训练完成 💪'), findsOneWidget);
+
+      await tester.tap(find.text('收工'));
+      await tester.pumpAndSettle();
+      expect(find.text('去训练'), findsOneWidget,
+          reason: '收工 = popUntil 首个路由，回到入口页');
+      expect(find.text('训练完成 💪'), findsNothing);
     });
   });
 
