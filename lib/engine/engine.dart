@@ -1,15 +1,31 @@
 import '../models/models.dart';
+import 'volume.dart';
 
 export '../models/models.dart';
+export 'local_plan.dart';
+export 'rest_rules.dart';
+export 'volume.dart';
 
 /// 纯函数业务引擎：渐进超负荷判定、1RM、容量、肌肉分布。
 /// 不依赖 Flutter，全部可单元测试。
 
-/// Epley 公式估算 1RM。
+/// 1RM 估算分公式（调研报告点名条目，docs/open-source-research-2026-09-25.md
+/// 「1RM 分公式（LibreFit，仅参考）」的保守口径；公式本体为公开运动科学公式，
+/// 不涉及 LibreFit 的 GPL 代码）：
+/// - 1 次：直接取实际完成重量（实测即真值）；
+/// - 2-5 次：Epley，w × (1 + reps/30)；
+/// - 6 次及以上：Epley 与 Brzycki（w × 36/(37-reps)）的平均——
+///   Epley 在高次数端偏乐观、Brzycki 偏保守，取平均得到更稳的估计。
 double estimate1RM(double weight, int reps) {
   if (reps <= 0 || weight <= 0) return 0;
   if (reps == 1) return weight;
-  return weight * (1 + reps / 30.0);
+  final epley = weight * (1 + reps / 30.0);
+  if (reps <= 5) return epley;
+  final denom = 37 - reps;
+  // 37 次及以上 Brzycki 分母非正、公式失效，退回 Epley（该次数档已远离力量区间）。
+  if (denom <= 0) return epley;
+  final brzycki = weight * 36 / denom;
+  return (epley + brzycki) / 2;
 }
 
 /// 判定一次训练后某动作的渐进结果。
@@ -126,7 +142,8 @@ class SessionStats {
 }
 
 SessionStats sessionStatsFrom(
-    Map<int, List<SetEntry>> setsByExercise, List<SessionExercise> order) {
+    Map<int, List<SetEntry>> setsByExercise, List<SessionExercise> order,
+    {double bodyWeightKg = 0}) {
   var volume = 0.0, total = 0, working = 0, reps = 0;
   final names = <String>[];
   for (final se in order) {
@@ -138,7 +155,12 @@ SessionStats sessionStatsFrom(
       if (s.kind == SetKind.working) {
         working++;
         reps += s.reps;
-        volume += s.volume;
+        // bodyWeightKg > 0 时自重动作按 系数×体重 折算进容量（点名条目二）；
+        // 不传体重时维持旧口径（自重记 0），调用点不传则行为不变。
+        volume += bodyWeightKg > 0
+            ? setVolumeWithBodyweight(s,
+                exerciseName: se.name, bodyWeightKg: bodyWeightKg)
+            : s.volume;
       }
     }
   }
@@ -157,9 +179,11 @@ const kMuscleRegions = [
 
 /// 周内各肌群正式组容量占比（0-1）。
 /// 入参为 (动作名, 该动作本周正式组) 的列表。
+/// bodyWeightKg > 0 时自重动作按 系数×体重 折算（点名条目二）。
 Map<String, double> muscleLoadShare(
     List<MapEntry<String, List<SetEntry>>> weekWorkingByName,
-    Map<String, ExerciseMeta> metaByName) {
+    Map<String, ExerciseMeta> metaByName,
+    {double bodyWeightKg = 0}) {
   final load = <String, double>{};
   for (final r in kMuscleRegions) {
     load[r] = 0;
@@ -168,7 +192,11 @@ Map<String, double> muscleLoadShare(
     final meta = metaByName[entry.key];
     final main = meta?.muscles.main ?? '其他';
     for (final s in entry.value) {
-      load[main] = (load[main] ?? 0) + s.volume;
+      load[main] = (load[main] ?? 0) +
+          (bodyWeightKg > 0
+              ? setVolumeWithBodyweight(s,
+                  exerciseName: entry.key, bodyWeightKg: bodyWeightKg)
+              : s.volume);
     }
   }
   final total = load.values.fold(0.0, (a, b) => a + b);
