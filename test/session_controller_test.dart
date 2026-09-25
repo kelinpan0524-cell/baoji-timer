@@ -214,19 +214,25 @@ void main() {
       ),
     );
     const base = 1700000000000;
-    var latest = 0;
+    // 备数用单事务 batch：2001 次逐行 insertSet（每次 ffi isolate 往返）
+    // 在 CI runner 上会撞 30 秒单测超时；被超时打断的残留循环还会撞上
+    // tearDown 清库报外键错。被测对象是 historySets 的截断查询，不是
+    // 逐行插入路径，batch 备数不削弱断言。
+    final batch = rawDb.batch();
     for (var i = 0; i < 2001; i++) {
-      latest = base + i * 1000;
-      await db.insertSet(
+      batch.insert(
+        'sets',
         SetEntry(
           sessionExerciseId: se,
           weightKg: 60,
           reps: 8,
           kind: SetKind.working,
-          doneAt: latest,
-        ),
+          doneAt: base + i * 1000,
+        ).toMap(),
       );
     }
+    await batch.commit(noResult: true);
+    final latest = base + 2000 * 1000;
 
     final list = await db.historySets('卧推');
     expect(list.length, 2000, reason: '封顶 2000 行');
