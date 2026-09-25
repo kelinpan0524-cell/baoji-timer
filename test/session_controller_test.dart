@@ -485,6 +485,8 @@ void main() {
       where: "name = '临时动作'",
     );
     expect(added.length, 1, reason: '追加动作落库');
+    expect(added.first['trace'], '追加于：动作甲',
+        reason: '点名条目三：追加痕迹落库（追加在谁后面）');
 
     // 当前动作还没记组：可替换（沿用规则只换名）
     final ok = await c.replaceCurrentExercise(
@@ -492,12 +494,16 @@ void main() {
     );
     expect(ok, isTrue);
     expect(c.exercises[0].name, '替换动作');
+    expect(c.exercises[0].trace, '替换自：动作甲',
+        reason: '内存模型带替换痕迹');
     final renamed = await rawDb.query(
       'session_exercises',
       where: 'id = ?',
       whereArgs: [c.exercises[0].id],
     );
     expect(renamed.first['name'], '替换动作');
+    expect(renamed.first['trace'], '替换自：动作甲',
+        reason: '点名条目三：替换痕迹落库（原动作是什么）');
 
     // 已记组：不可替换（防把已记的组串到别的动作名下）
     await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);

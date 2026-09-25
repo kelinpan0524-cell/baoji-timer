@@ -664,6 +664,15 @@ class _ExerciseInfo extends StatelessWidget {
           ex.name,
           style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
         ),
+        // 临时调整痕迹（点名条目三）：替换/追加过的动作显示来源，可追溯
+        if (ex.trace.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Text(
+              ex.trace,
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+          ),
         const SizedBox(height: 8),
         Text(
           progressText,

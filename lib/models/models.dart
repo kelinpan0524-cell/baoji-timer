@@ -398,6 +398,12 @@ class SessionExercise {
   final int restSec; // 该动作的休息秒数（计划里配置，0=按全局设置）
   final ProgressionRule rule;
 
+  /// 临时调整痕迹（点名条目三）：'' = 计划原样；
+  /// '替换自：X' = 训练中把 X 换成当前动作（器械被占等）；'追加于：Y' =
+  /// 训练中在动作 Y 之后临时追加。只写本会话记录行，不改计划本体，
+  /// 便于历史/统计追溯这次训练与计划的偏差。
+  final String trace;
+
   const SessionExercise({
     this.id,
     required this.sessionId,
@@ -406,6 +412,7 @@ class SessionExercise {
     required this.kind,
     this.restSec = 0,
     required this.rule,
+    this.trace = '',
   });
 
   Map<String, dynamic> toMap() => {
@@ -416,6 +423,7 @@ class SessionExercise {
         'kind': kind,
         'rest_sec': restSec,
         'rule': ruleToJson(rule),
+        'trace': trace,
       };
 
   factory SessionExercise.fromMap(Map<String, dynamic> m) => SessionExercise(
@@ -426,6 +434,7 @@ class SessionExercise {
         kind: (m['kind'] as String?) ?? 'assistance',
         restSec: (m['rest_sec'] as num?)?.toInt() ?? 0,
         rule: ruleFromJson(m['rule']),
+        trace: (m['trace'] as String?) ?? '',
       );
 
   SessionExercise copyWithId(int newId) => SessionExercise(
@@ -436,6 +445,7 @@ class SessionExercise {
         kind: kind,
         restSec: restSec,
         rule: rule,
+        trace: trace,
       );
 }
 
