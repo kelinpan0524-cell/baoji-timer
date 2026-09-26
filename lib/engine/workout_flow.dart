@@ -96,12 +96,13 @@ class FlowPage {
   String toString() => 'FlowPage($key)';
 }
 
-/// 跳页面板里的一行：某动作的某个计划正式组页。
+/// 跳页面板里的一行：某动作的某个正式组页（含加练组）。
 class FlowSetRef {
   const FlowSetRef({
     required this.exerciseIndex,
     required this.setNumber,
     required this.done,
+    this.extra = false,
   });
 
   final int exerciseIndex;
@@ -111,6 +112,9 @@ class FlowSetRef {
 
   /// 该组已记录（正式组口径）→ 面板里划线标记、不可跳。
   final bool done;
+
+  /// 超出计划组数的加练组（展示用「第 N 组（加练）」，仍划线锁定）。
+  final bool extra;
 }
 
 /// 一次会话的页面流推导器。构造廉价（小列表），可随控制器状态反复重建。
@@ -182,17 +186,23 @@ class WorkoutFlow {
     );
   }
 
-  /// 跳页面板的全部计划记录页（按动作、组序）。已完成的组带 done 标记，
+  /// 跳页面板的全部记录页（按动作、组序）。已完成的组带 done 标记，
   /// UI 层划线展示且不可跳（防把已记满的动作再跳回去打乱计数）。
+  /// 加练组也列入（2026-09-26 Arono：加练了要显示出来）——
+  /// 行数 = max(计划数, 已完成数)，超出计划的部分带 extra 标记。
   List<FlowSetRef> setRefs() {
     final out = <FlowSetRef>[];
     for (var i = 0; i < exercises.length; i++) {
       final planned = exercises[i].rule.workingSets;
-      final done = _doneWorkingOf(exercises[i]).clamp(0, planned);
-      for (var k = 1; k <= planned; k++) {
-        out.add(
-          FlowSetRef(exerciseIndex: i, setNumber: k, done: k <= done),
-        );
+      final rawDone = _doneWorkingOf(exercises[i]);
+      final shown = rawDone > planned ? rawDone : planned;
+      for (var k = 1; k <= shown; k++) {
+        out.add(FlowSetRef(
+          exerciseIndex: i,
+          setNumber: k,
+          done: k <= rawDone,
+          extra: k > planned,
+        ));
       }
     }
     return out;
