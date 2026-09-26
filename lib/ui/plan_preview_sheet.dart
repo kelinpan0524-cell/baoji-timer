@@ -7,16 +7,36 @@ import '../services/plan_repository.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
-/// AI 计划预览确认弹层（计划页「AI 拆解导入」与 AI 教练「排计划模式」共用）。
+/// 预览确认结果：确认后的 specs + 保存目标（2026-09-26 Arono：
+/// AI 生成的计划可新建，也可替换某个现有计划的内容）。
+class PlanPreviewResult {
+  const PlanPreviewResult({
+    required this.name,
+    required this.specs,
+    this.replacePlanId,
+  });
+
+  /// 计划名（新建=新计划名；替换=非空则作为改名，留空保持原名）。
+  final String name;
+  final List<AiDaySpec> specs;
+
+  /// null=新建计划；非空=替换该现有计划的内容。
+  final int? replacePlanId;
+}
+
+/// AI 计划预览确认弹层（计划页「AI 拆解导入」与 AI 教练共用）。
 ///
 /// 纪律（调研条目 12）：无论哪种来源（AI 拆解 / 描述生成 / 对话式排计划 /
 /// 本地回落），都先进这里逐动作人工确认，点「保存为计划」才落库。
-/// 返回 (计划名, 确认后的 specs)；放弃返回 null。
-Future<(String, List<AiDaySpec>)?> showPlanPreviewSheet(
+/// [existingPlans] 传当前全部计划时，弹层出现「新建 / 替换现有计划」
+/// 目标选择（替换时名称留空保持原名）；不传则只有新建。
+/// 返回确认结果；放弃返回 null。
+Future<PlanPreviewResult?> showPlanPreviewSheet(
   BuildContext context,
   List<AiDaySpec> specs, {
   required bool localMode,
   String aiError = '',
+  List<Plan> existingPlans = const <Plan>[],
 }) {
   final nameCtrl = TextEditingController(
     text: localMode
@@ -25,11 +45,15 @@ Future<(String, List<AiDaySpec>)?> showPlanPreviewSheet(
         : tx('AI 生成 ${fmtDate(DateTime.now())}',
             en: 'AI generated ${fmtDate(DateTime.now())}'),
   );
+  // 保存目标：false=新建（默认）；true=替换所选现有计划
+  bool replaceMode = false;
+  Plan? targetPlan;
+  final defaultName = nameCtrl.text;
   // 可编辑副本（AiDaySpec 不可变，按 (日, 序) 定位替换动作）
   final edited = [
     for (final d in specs) List<AiExerciseSpec>.of(d.exercises),
   ];
-  return showModalBottomSheet<(String, List<AiDaySpec>)>(
+  return showModalBottomSheet<PlanPreviewResult>(
     context: context,
     isScrollControlled: true,
     isDismissible: false, // 90 秒的成果不能被随手拖没
@@ -89,9 +113,72 @@ Future<(String, List<AiDaySpec>)?> showPlanPreviewSheet(
                     const SizedBox(height: 10),
                     TextField(
                       controller: nameCtrl,
+                      enabled: !replaceMode,
                       decoration: InputDecoration(
-                          labelText: tx('计划名', en: 'Plan name')),
+                        labelText: replaceMode
+                            ? tx('新名称（留空保持原名）',
+                                en: 'New name (leave empty to keep current)')
+                            : tx('计划名', en: 'Plan name'),
+                      ),
                     ),
+                    // 保存目标（2026-09-26 Arono）：新建 或 替换某个现有计划
+                    if (existingPlans.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SegmentedButton<bool>(
+                              segments: [
+                                ButtonSegment(
+                                  value: false,
+                                  icon: const Icon(Icons.fiber_new, size: 18),
+                                  label: Text(tx('新建计划', en: 'New plan'),
+                                      style: const TextStyle(fontSize: 13)),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  icon: const Icon(Icons.swap_horiz, size: 18),
+                                  label: Text(tx('替换现有', en: 'Replace'),
+                                      style: const TextStyle(fontSize: 13)),
+                                ),
+                              ],
+                              selected: {replaceMode},
+                              onSelectionChanged: (sel) => setSheet(() {
+                                replaceMode = sel.first;
+                                // 替换模式名称留空=保持原名：清掉预填名，
+                                // 防止「AI 生成 <日期>」被静默当成新名称；
+                                // 切回新建恢复默认名
+                                nameCtrl.text = replaceMode ? '' : defaultName;
+                              }),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (replaceMode)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: DropdownButtonFormField<Plan>(
+                            initialValue: targetPlan,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: tx('要替换哪个计划？',
+                                  en: 'Which plan to replace?'),
+                            ),
+                            items: [
+                              for (final p in existingPlans)
+                                DropdownMenuItem(
+                                  value: p,
+                                  child: Text(
+                                    '${dname(p.name)}${p.isActive == 1 ? tx('（使用中）', en: ' (active)') : ''}',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                            onChanged: (p) =>
+                                setSheet(() => targetPlan = p),
+                          ),
+                        ),
+                    ],
                   ],
                 ),
               ),
@@ -152,16 +239,28 @@ Future<(String, List<AiDaySpec>)?> showPlanPreviewSheet(
                       const SizedBox(width: 12),
                       Expanded(
                         child: FilledButton(
-                          onPressed: () {
-                            final confirmed = [
-                              for (var i = 0; i < specs.length; i++)
-                                AiDaySpec(specs[i].weekday, specs[i].title,
-                                    edited[i]),
-                            ];
-                            Navigator.pop(
-                                ctx, (nameCtrl.text.trim(), confirmed));
-                          },
-                          child: Text(tx('保存为计划', en: 'Save as Plan')),
+                          onPressed: (replaceMode && targetPlan == null)
+                              ? null
+                              : () {
+                                  final confirmed = [
+                                    for (var i = 0; i < specs.length; i++)
+                                      AiDaySpec(specs[i].weekday,
+                                          specs[i].title, edited[i]),
+                                  ];
+                                  Navigator.pop(
+                                    ctx,
+                                    PlanPreviewResult(
+                                      name: nameCtrl.text.trim(),
+                                      specs: confirmed,
+                                      replacePlanId: replaceMode
+                                          ? targetPlan!.id
+                                          : null,
+                                    ),
+                                  );
+                                },
+                          child: Text(replaceMode
+                              ? tx('替换该计划', en: 'Replace Plan')
+                              : tx('保存为计划', en: 'Save as Plan')),
                         ),
                       ),
                     ],

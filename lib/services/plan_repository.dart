@@ -98,10 +98,10 @@ class PlanRepository extends ChangeNotifier {
     return newPlan.id!;
   }
 
-  /// 删除计划后若没有启用中的计划，自动启用最近的一个。
+  /// 删除计划：先整套快照进回收站（7 天内可恢复），再硬删并修复启用态。
   Future<void> deletePlanAndFixActive(int planId) async {
     final wasActive = activePlan?.id == planId;
-    await _db.deletePlan(planId);
+    await _db.snapshotAndDeletePlan(planId);
     if (wasActive) {
       final rest = await _db.allPlans();
       if (rest.isNotEmpty) {
@@ -109,6 +109,15 @@ class PlanRepository extends ChangeNotifier {
       }
     }
     activePlan = await _db.activePlan();
+  }
+
+  /// 回收站恢复：重建为新 id 的计划（不自动启用），返回新计划；无则 null。
+  Future<Plan?> restoreFromTrash(int deletedId) async {
+    final newId = await _db.restoreDeletedPlan(deletedId);
+    if (newId == null) return null;
+    await reload(includeAll: true);
+    final plans = await _db.allPlans();
+    return plans.where((p) => p.id == newId).firstOrNull;
   }
 
   /// 某计划的飞书日历同步规格（未来 14 天，逐日按排程解析出具体日期）。
@@ -239,6 +248,45 @@ class PlanRepository extends ChangeNotifier {
     required Map<String, ExerciseMeta> metaMap,
     bool activate = true,
   }) async {
+    final plan = await _db.insertPlan(Plan(
+      name: name,
+      source: 'ai',
+      createdAt: fmtDate(DateTime.now()),
+    ));
+    await _writeSpecsIntoPlan(plan.id!, specs, metaMap);
+    if (activate) {
+      await _db.setActivePlan(plan.id!);
+    }
+    await reload(includeAll: true);
+    return plan;
+  }
+
+  /// 用 AI 确认后的 specs **替换现有计划**的内容（训练日/动作全量重建，
+  /// 词表外新动作照旧沉淀动作库）；计划行（名称/排程模式/启用态）保留，
+  /// [rename] 非空时顺带改名。返回更新后的计划（不改变启用态）。
+  Future<Plan> replacePlanWithSpecs(
+    int planId,
+    List<AiDaySpec> specs,
+    Map<String, ExerciseMeta> metaMap, {
+    String? rename,
+  }) async {
+    await _db.deletePlanDaysOfPlan(planId);
+    await _writeSpecsIntoPlan(planId, specs, metaMap);
+    if (rename != null && rename.isNotEmpty) {
+      await _db.renamePlan(planId, rename);
+    }
+    await reload(includeAll: true);
+    final plans = await _db.allPlans();
+    return plans.where((p) => p.id == planId).firstOrNull ??
+        (await _db.activePlan())!;
+  }
+
+  /// specs 清洗 + 逐日逐动作落库（saveAiPlan / replacePlanWithSpecs 共用）。
+  Future<void> _writeSpecsIntoPlan(
+    int planId,
+    List<AiDaySpec> specs,
+    Map<String, ExerciseMeta> metaMap,
+  ) async {
     final clean = <AiDaySpec>[];
     final byWeekday = <int, int>{};
     for (final spec in specs) {
@@ -252,14 +300,9 @@ class PlanRepository extends ChangeNotifier {
         clean[idx] = AiDaySpec(old.weekday, old.title, [...old.exercises, ...spec.exercises]);
       }
     }
-    final plan = await _db.insertPlan(Plan(
-      name: name,
-      source: 'ai',
-      createdAt: fmtDate(DateTime.now()),
-    ));
     for (final spec in clean) {
       final dayId = await _db.insertPlanDay(PlanDay(
-        planId: plan.id!,
+        planId: planId,
         weekday: spec.weekday,
         title: spec.title,
       ));
@@ -311,11 +354,6 @@ class PlanRepository extends ChangeNotifier {
     }
     // 注意：这里不做 metaMap 全量落库——词表外新动作已在上面逐条沉淀，
     // 全量 REPLACE 会把用户在编辑器改过的肌群/器械标注静默重置回内置默认。
-    if (activate) {
-      await _db.setActivePlan(plan.id!);
-    }
-    await reload(includeAll: true);
-    return plan;
   }
 
   /// 今天的 PlanDay（无则 null）。

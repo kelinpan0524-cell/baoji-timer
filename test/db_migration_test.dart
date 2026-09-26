@@ -243,6 +243,27 @@ void main() {
     await db.close();
   });
 
+  test('v7 老库升级：deleted_plans 回收站表出现（可写入/查询）', () async {
+    final db = await databaseFactory.openDatabase(dbPath);
+    // 模拟 v6 库：先建全套 schema 再删掉 v7 才有的回收站表
+    await Db.instance.createSchema(db);
+    await db.execute('DROP TABLE deleted_plans');
+
+    // 生产路径同款迁移
+    await Db.instance.upgradeV6to7(db);
+
+    // 迁移后表可用：写入与查询正常
+    await db.insert('deleted_plans', {
+      'name': '旧计划',
+      'snapshot': '{}',
+      'deleted_at': '2026-09-26T08:00:00.000',
+    });
+    final rows = await db.query('deleted_plans');
+    expect(rows.length, 1);
+    expect(rows.first['name'], '旧计划');
+    await db.close();
+  });
+
   test('restoreAll 兼容老备份（无 target 键的 session_exercises 行）', () async {
     final db = await databaseFactory.openDatabase(dbPath);
     await Db.instance.createSchema(db);

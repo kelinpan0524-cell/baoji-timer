@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
@@ -46,7 +49,11 @@ class _AiCoachPageState extends State<AiCoachPage> {
     super.initState();
     // initState 里不能同步读 InheritedWidget，延后一帧
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _loadData();
+      if (mounted) {
+        // 恢复上次对话（2026-09-26 Arono：会话历史本地保存，退出再进不丢）
+        _loadHistory();
+        _loadData();
+      }
     });
   }
 
@@ -55,6 +62,40 @@ class _AiCoachPageState extends State<AiCoachPage> {
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  /// 恢复上次对话：消息从本地设置读回，回复里的计划重新提取
+  /// （内容就在消息文本里，重建索引即可，不用额外存计划结构）。
+  void _loadHistory() {
+    final c = app(context);
+    try {
+      final list =
+          (jsonDecode(c.settings.aiChatHistoryJson) as List? ?? const []);
+      for (final m in list.cast<Map>()) {
+        _turns.add(AiMessage(m['role'] as String, m['content'] as String));
+      }
+      for (var i = 0; i < _turns.length; i++) {
+        if (_turns[i].role != 'assistant') continue;
+        final plan = c.ai.tryExtractPlan(_turns[i].content);
+        if (plan != null) _planByIndex[i] = plan;
+      }
+    } catch (_) {
+      // 历史坏了就不恢复，别挡着新对话
+      _turns.clear();
+      _planByIndex.clear();
+    }
+    if (_turns.isNotEmpty) setState(() {});
+  }
+
+  /// 对话落盘：只留最近 40 条（约 20 轮），避免无限膨胀。
+  void _persistHistory() {
+    final recent = _turns.length > 40
+        ? _turns.sublist(_turns.length - 40)
+        : _turns;
+    final c = app(context);
+    c.settings.aiChatHistoryJson = jsonEncode(
+        [for (final m in recent) {'role': m.role, 'content': m.content}]);
+    unawaited(c.settings.save());
   }
 
   Future<void> _loadData() async {
@@ -114,6 +155,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         final plan = c.ai.tryExtractPlan(reply);
         if (plan != null) _planByIndex[replyIdx] = plan;
       });
+      _persistHistory();
       _scrollToBottom();
     } on AiException catch (e) {
       if (mounted) {
@@ -133,25 +175,37 @@ class _AiCoachPageState extends State<AiCoachPage> {
     }
   }
 
-  /// 气泡「预览并保存为计划」：仍走逐动作确认弹层，确认才落库
-  /// （与计划页 AI 导入完全同一条链路：saveAiPlan + 撤旧日程 + 写新日程）。
+  /// 气泡「预览并保存为计划」：仍走逐动作确认弹层，确认才落库。
+  /// 保存目标可选：新建（原行为）或替换某个现有计划（2026-09-26 Arono）。
   Future<void> _savePlanFromTurn(List<AiDaySpec> specs) async {
     final c = app(context);
+    final plans = await c.db.allPlans();
+    if (!mounted) return;
     final picked = await showPlanPreviewSheet(context, specs,
-        localMode: false);
+        localMode: false, existingPlans: plans);
     if (picked == null || !mounted) return;
-    final (name, confirmed) = picked;
-    final planName = name.isEmpty
-        ? tx('AI 生成 ${fmtDate(DateTime.now())}',
-            en: 'AI generated ${fmtDate(DateTime.now())}')
-        : name;
-    final plan =
-        await saveAiPlanAndSync(c, name: planName, specs: confirmed);
+    final plan = picked.replacePlanId != null
+        ? await replacePlanAndSync(
+            c,
+            planId: picked.replacePlanId!,
+            specs: picked.specs,
+            rename: picked.name.isEmpty ? null : picked.name,
+          )
+        : await saveAiPlanAndSync(
+            c,
+            name: picked.name.isEmpty
+                ? tx('AI 生成 ${fmtDate(DateTime.now())}',
+                    en: 'AI generated ${fmtDate(DateTime.now())}')
+                : picked.name,
+            specs: picked.specs,
+          );
     if (mounted) {
       toast(
           context,
-          tx('已保存并设为使用中「${plan.name}」，点任意一天可微调',
-              en: 'Saved and set as active "${plan.name}". Tap any day to fine-tune'));
+          picked.replacePlanId != null
+              ? tx('已更新「${plan.name}」的内容', en: '"${plan.name}" updated')
+              : tx('已保存并设为使用中「${plan.name}」，点任意一天可微调',
+                  en: 'Saved and set as active "${plan.name}". Tap any day to fine-tune'));
     }
   }
 
@@ -173,6 +227,10 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _turns.clear();
       _planByIndex.clear();
     });
+    // 清空对话连历史一起清（否则下次进来又恢复出来）
+    final s = app(context).settings;
+    s.aiChatHistoryJson = '[]';
+    unawaited(s.save());
   }
 
   @override
