@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -19,34 +20,125 @@ import 'widgets/common.dart';
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
+  /// 语言偏好的展示名（含"跟随系统"当前解析结果，让默认行为可见）。
+  String _langLabel(Settings s) {
+    switch (s.langPref) {
+      case LangPref.zh:
+        return '中文';
+      case LangPref.en:
+        return 'English';
+      case LangPref.system:
+        return s.resolvedLang == 'en'
+            ? tx('跟随系统（English）', en: 'Auto (English)')
+            : tx('跟随系统（中文）', en: 'Auto (Chinese)');
+    }
+  }
+
+  /// 语言选择底部弹层：三选一，当前项打勾；点选即生效并关闭。
+  Future<void> _pickLanguage(BuildContext context, Settings s) async {
+    final chosen = await showModalBottomSheet<LangPref>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Row(
+                children: [
+                  Text(tx('语言', en: 'Language'),
+                      style: const TextStyle(
+                          color: AppTheme.text,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+            _langOption(
+              sheetCtx,
+              s,
+              value: LangPref.system,
+              title: tx('跟随系统', en: 'Follow system'),
+              subtitle: s.resolvedLang == 'en'
+                  ? tx('手机系统是英文，当前显示 English', en: 'System is English — showing English now')
+                  : tx('手机系统是中文，当前显示中文', en: 'System is Chinese — showing Chinese now'),
+            ),
+            _langOption(sheetCtx, s,
+                value: LangPref.zh,
+                title: '中文',
+                subtitle: tx('界面、通知与建议全部使用中文', en: 'Interface, notifications and advice in Chinese')),
+            _langOption(sheetCtx, s,
+                value: LangPref.en,
+                title: 'English',
+                subtitle: tx('界面、通知与建议全部使用英文', en: 'Interface, notifications and advice in English')),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || chosen == s.langPref) return;
+    s.set(() => s.langPref = chosen);
+    await s.save();
+  }
+
+  Widget _langOption(
+    BuildContext sheetCtx,
+    Settings s, {
+    required LangPref value,
+    required String title,
+    required String subtitle,
+  }) {
+    final selected = s.langPref == value;
+    return ListTile(
+      title: Text(title, style: const TextStyle(color: AppTheme.text)),
+      subtitle: Text(subtitle,
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 12)),
+      trailing:
+          selected ? const Icon(Icons.check, color: AppTheme.primary) : null,
+      onTap: () => Navigator.pop(sheetCtx, value),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = app(context);
     final s = c.settings;
     return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
       children: [
         SectionCard(
-          title: tx('语言 / Language'),
-          child: SegmentedButton<LangPref>(
-            segments: [
-              ButtonSegment(
-                value: LangPref.system,
-                label: Text(tx('跟随系统', en: 'Auto')),
+          title: tx('通用', en: 'General'),
+          child: Column(
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                minVerticalPadding: 0,
+                visualDensity: VisualDensity.compact,
+                title: Text(tx('语言', en: 'Language'),
+                    style: const TextStyle(color: AppTheme.text)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(_langLabel(s),
+                        style: const TextStyle(
+                            color: AppTheme.textDim, fontSize: 14)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        color: AppTheme.textDim, size: 22),
+                  ],
+                ),
+                onTap: () => _pickLanguage(context, s),
               ),
-              ButtonSegment(value: LangPref.zh, label: const Text('中文')),
-              const ButtonSegment(value: LangPref.en, label: Text('English')),
             ],
-            selected: {s.langPref},
-            onSelectionChanged: (sel) {
-              s.set(() => s.langPref = sel.first);
-              s.save();
-            },
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _FocusCard(s: s),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         SectionCard(
           title: tx('训练偏好', en: 'Training Preferences'),
           child: Column(
@@ -72,6 +164,11 @@ class SettingsPage extends StatelessWidget {
                 s.bodyWeightKg = v;
                 s.save();
               }),
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: AppTheme.cardHi,
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(tx('完成组时震动', en: 'Vibrate when a set is done')),
@@ -97,6 +194,11 @@ class SettingsPage extends StatelessWidget {
                   s.restCueEnabled = v;
                   s.save();
                 },
+              ),
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: AppTheme.cardHi,
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
@@ -139,15 +241,15 @@ class SettingsPage extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _AiCard(s: s),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _LarkCard(s: s),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _PermissionCard(),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         _UpdateCard(s: s),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
         SectionCard(
           title: tx('数据', en: 'Stats'),
           child: Column(
@@ -229,12 +331,27 @@ class SettingsPage extends StatelessWidget {
             ],
           ),
         ),
-        const SizedBox(height: 12),
-        Center(
-          child: Text(
-            tx('薄肌训练计时器 v1.0 · 本地优先 · 无服务器',
-                en: 'Baoji Workout Timer v1.0 · Local-first · Serverless'),
-            style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+        const SizedBox(height: 16),
+        FutureBuilder<PackageInfo>(
+          future: PackageInfo.fromPlatform(),
+          builder: (context, snap) => Column(
+            children: [
+              Text(
+                snap.hasData
+                    ? '薄肌训练计时器 v${snap.data!.version}'
+                    : tx('薄肌训练计时器', en: 'Baoji Workout Timer'),
+                style: const TextStyle(
+                    color: AppTheme.textDim,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                tx('本地优先 · 无服务器 · 数据不出手机',
+                    en: 'Local-first · serverless · your data never leaves the phone'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+              ),
+            ],
           ),
         ),
       ],
@@ -1156,7 +1273,9 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
   }
 
   String _briefNotes(String notes) {
-    final lines = notes.split('\n').take(8).join('\n');
+    // GitHub 的 alert 语法（> [!NOTE]）不是标准 Markdown，剥掉标记行保留内容
+    final cleaned = notes.replaceFirst('> [!NOTE]', '**ℹ️**');
+    final lines = cleaned.split('\n').take(8).join('\n');
     return lines.length > 240 ? '${lines.substring(0, 240)}…' : lines;
   }
 
@@ -1249,11 +1368,23 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
                   if (release.notes.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        _briefNotes(release.notes),
-                        style: const TextStyle(
-                          color: AppTheme.textDim,
-                          fontSize: 12,
+                      child: MarkdownBody(
+                        data: _briefNotes(release.notes),
+                        styleSheet: MarkdownStyleSheet.fromTheme(
+                                Theme.of(context))
+                            .copyWith(
+                          p: const TextStyle(
+                              color: AppTheme.textDim, fontSize: 12),
+                          h1: const TextStyle(
+                              color: AppTheme.text, fontSize: 14),
+                          h2: const TextStyle(
+                              color: AppTheme.text, fontSize: 14),
+                          h3: const TextStyle(
+                              color: AppTheme.text, fontSize: 13),
+                          listBullet: const TextStyle(
+                              color: AppTheme.textDim, fontSize: 12),
+                          blockquote: const TextStyle(
+                              color: AppTheme.textDim, fontSize: 12),
                         ),
                       ),
                     ),
