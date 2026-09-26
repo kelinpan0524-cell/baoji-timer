@@ -22,6 +22,19 @@
 
 ---
 
+## 界面速览
+
+<p align="center">
+  <img src="docs/assets/screens/s2_lift.png" width="250" alt="训练中：大字组数与目标" />
+  <img src="docs/assets/screens/s3_rest.png" width="250" alt="组间休息：下一组动作与次数" />
+  <img src="docs/assets/screens/s4_history.png" width="250" alt="历史：每动作一张组表" />
+</p>
+<p align="center">
+  <img src="docs/assets/screens/s1_home.png" width="250" alt="今日页" />
+  <img src="docs/assets/screens/s5_rir.png" width="250" alt="余力没填写提醒" />
+  <img src="docs/assets/screens/s6_heatmap.png" width="250" alt="肌群恢复度热力图" />
+</p>
+
 ## 为什么做这个 App
 
 薄肌靠的是低体脂 + 每周三练 + 渐进超负荷，比练更难的是**坚持记录、练时不分心**。市面健身 App 弹窗广告、社交干扰太多，索性自己写一个：训练中只有当前动作、本组目标和倒计时，其余全部收起。
@@ -54,7 +67,8 @@
 - 设置里可一键「测试连接」，连通与否当场告诉你
 
 ### 📊 数据分析
-- 训练日历、周容量趋势、四大项 1RM 曲线
+- 训练日历、周容量趋势、主力动作 1RM 曲线（自动按容量选前 4）
+- 历史明细表格化：每个动作一张「组 / 重量 / 次数 / 余力」小表，一眼对齐
 - 正/背面肌群容量热力图
 - 体重 / 腰围 / 体脂记录
 - CSV / JSON 全量导出；一键生成「AI 分析包」喂给任何 AI 做训练总结
