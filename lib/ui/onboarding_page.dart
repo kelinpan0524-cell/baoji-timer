@@ -207,11 +207,18 @@ class _OnboardingPageState extends State<OnboardingPage>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // unDraw 插画（已按主题绿重染，授权见 assets/illustrations/LICENSE.md）：
-          // 比 emoji 更有"有人陪你练"的温度，unDraw 的品牌玩法就是插画随品牌色重染
-          SvgPicture.asset(
-            'assets/illustrations/personal_trainer.svg',
-            height: 230,
-            semanticsLabel: tx('两人正在做哑铃训练', en: 'Two people training with dumbbells'),
+          // 比 emoji 更有"有人陪你练"的温度，unDraw 的品牌玩法就是插画随品牌色重染。
+          // Flexible+FittedBox：小屏大字号时插画等比缩小让位给文案，不溢出
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: SvgPicture.asset(
+                'assets/illustrations/personal_trainer.svg',
+                height: 230,
+                semanticsLabel:
+                    tx('两人正在做哑铃训练', en: 'Two people training with dumbbells'),
+              ),
+            ),
           ),
           const SizedBox(height: 24),
           Text(tx('薄肌训练计时器', en: 'Baoji Workout Timer'),

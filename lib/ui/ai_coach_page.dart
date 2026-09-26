@@ -549,7 +549,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
             const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              // 紫=AI：聊天流里的等待转圈跟随 AI 身份色，不吃全局主题绿
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppTheme.violetSoft),
             ),
             const SizedBox(width: 10),
             Text(
@@ -616,15 +618,26 @@ class _AiCoachPageState extends State<AiCoachPage> {
           IconButton.filled(
             tooltip: tx('发送', en: 'Send'),
             onPressed: configured && !_sending ? _submit : null,
-            style: IconButton.styleFrom(
-              backgroundColor: AppTheme.violet,
-              foregroundColor: Colors.white,
+            // 评审必修：styleFrom 的静态色会覆盖禁用态，未配置时紫底看着能点。
+            // 按状态解析：禁用回落灰（与输入框置灰同语言），可用才上紫。
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? AppTheme.cardHi
+                    : AppTheme.violet,
+              ),
+              foregroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? AppTheme.textDim
+                    : Colors.white,
+              ),
             ),
             icon: _sending
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppTheme.violetSoft),
                   )
                 : const Icon(Icons.send),
           ),
