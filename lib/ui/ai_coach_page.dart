@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
@@ -393,34 +394,87 @@ class _AiCoachPageState extends State<AiCoachPage> {
             bottomRight: Radius.circular(isUser ? 4 : 14),
           ),
         ),
-        child: SelectionArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                m.content,
-                style: TextStyle(
-                  fontSize: 15,
-                  height: 1.5,
-                  color: pending ? AppTheme.textDim : AppTheme.text,
-                ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _bubbleContent(m, pending: pending, plan: plan),
+            // 回复里提取到了完整计划 → 挂保存入口（仍走预览确认弹层）
+            if (plan != null && !pending) ...[
+              const SizedBox(height: 8),
+              FilledButton.tonalIcon(
+                onPressed: _sending ? null : () => _savePlanFromTurn(plan),
+                icon: const Icon(Icons.save_outlined, size: 18),
+                label: const Text('预览并保存为计划'),
               ),
-              // 回复里提取到了完整计划 → 挂保存入口（仍走预览确认弹层）
-              if (plan != null && !pending) ...[
-                const SizedBox(height: 8),
-                FilledButton.tonalIcon(
-                  onPressed: _sending ? null : () => _savePlanFromTurn(plan),
-                  icon: const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('预览并保存为计划'),
-                ),
-              ],
             ],
-          ),
+          ],
         ),
       ),
     );
   }
+
+  /// 气泡正文：用户消息原样纯文本；AI 回复按 Markdown 排版
+  /// （加粗/表格/列表/代码块，GFM 默认扩展集），可长按选择复制。
+  /// 提取到计划时把 ```json 围栏从展示文本里摘掉——完整计划经
+  /// 「预览并保存」查看更清楚，气泡只留说明文字。
+  Widget _bubbleContent(
+    AiMessage m, {
+    required bool pending,
+    List<AiDaySpec>? plan,
+  }) {
+    if (m.role != 'assistant') {
+      return Text(
+        m.content,
+        style: TextStyle(
+          fontSize: 15,
+          height: 1.5,
+          color: pending ? AppTheme.textDim : AppTheme.text,
+        ),
+      );
+    }
+    final data = plan == null
+        ? m.content
+        : m.content.replaceAll(
+            RegExp(r'```(?:json)?\s*[\s\S]*?```'),
+            '📋 **计划已生成**：点下方按钮预览并保存，也可以继续对话调整');
+    return MarkdownBody(
+      data: data,
+      selectable: true,
+      styleSheet: _mdStyle(context),
+    );
+  }
+
+  /// 气泡内 Markdown 样式：对齐 App 深色主题（AI 输出的 Markdown
+  /// 源码星号/竖线不再上屏，全部渲染成排版后的富文本）。
+  MarkdownStyleSheet _mdStyle(BuildContext context) =>
+      MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: const TextStyle(fontSize: 15, height: 1.5, color: AppTheme.text),
+        h1: const TextStyle(
+            fontSize: 17, height: 1.4, color: AppTheme.text, fontWeight: FontWeight.w700),
+        h2: const TextStyle(
+            fontSize: 16, height: 1.4, color: AppTheme.text, fontWeight: FontWeight.w700),
+        h3: const TextStyle(
+            fontSize: 15, height: 1.4, color: AppTheme.primary, fontWeight: FontWeight.w700),
+        listBullet: const TextStyle(fontSize: 15, height: 1.5, color: AppTheme.textDim),
+        blockquote: const TextStyle(color: AppTheme.textDim, fontSize: 14),
+        blockquoteDecoration: BoxDecoration(
+          border: const Border(left: BorderSide(color: AppTheme.cardHi, width: 3)),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        code: const TextStyle(
+            fontFamily: 'monospace', fontSize: 13, color: AppTheme.accent),
+        codeblockDecoration: BoxDecoration(
+          color: AppTheme.bgDeep,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        tableHead: const TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700, color: AppTheme.text),
+        tableBody: const TextStyle(fontSize: 13, color: AppTheme.text),
+        tableBorder: TableBorder.all(
+            color: AppTheme.cardHi, width: 1, borderRadius: BorderRadius.circular(6)),
+        tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      );
 
   Widget _thinkingRow() => const Padding(
         padding: EdgeInsets.symmetric(vertical: 10),
