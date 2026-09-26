@@ -27,6 +27,19 @@ as his junior schoolmate, I turned the Baoji plan into an open-source app you ca
 
 Lean muscle comes down to low body fat, three sessions a week, and progressive overload. Harder than the training itself is **logging consistently and staying focused between sets**. Most fitness apps bury you in pop-up ads and social noise, so I wrote my own: during a workout you see only the current exercise, the target for this set, and the countdown — everything else stays out of the way.
 
+## Screens at a Glance
+
+<p align="center">
+  <img src="docs/assets/screens/s2_lift.png" width="250" alt="Workout: set counter and target" />
+  <img src="docs/assets/screens/s3_rest.png" width="250" alt="Rest: next set details" />
+  <img src="docs/assets/screens/s4_history.png" width="250" alt="History: per-exercise set tables" />
+</p>
+<p align="center">
+  <img src="docs/assets/screens/s1_home.png" width="250" alt="Today" />
+  <img src="docs/assets/screens/s5_rir.png" width="250" alt="Missing RIR reminder" />
+  <img src="docs/assets/screens/s6_heatmap.png" width="250" alt="Muscle recovery heatmap" />
+</p>
+
 ## ✨ Features
 
 ### 🏋️ During the Workout: Focus First
