@@ -10,7 +10,6 @@ import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
-import 'ai_coach_page.dart';
 import 'muscle_body_view.dart';
 import 'recovery_card.dart';
 import 'theme.dart';
@@ -34,13 +33,6 @@ class _StatsPageState extends State<StatsPage> {
         appBar: AppBar(
           title: Text(tx('数据', en: 'Stats')),
           actions: [
-            TextButton.icon(
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const AiCoachPage()),
-              ),
-              icon: const Icon(Icons.smart_toy_outlined, size: 18),
-              label: Text(tx('AI 教练', en: 'AI Coach')),
-            ),
             TextButton.icon(
               onPressed: () => _exportAiPack(),
               icon: const Icon(Icons.ios_share, size: 18),

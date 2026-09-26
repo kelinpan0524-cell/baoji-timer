@@ -55,15 +55,21 @@ class AiService {
       '5. 未来 2-4 周的 3-5 条具体调整建议。\n'
       '总长控制在 600 字以内。';
 
-  /// 组装教练对话消息：人设 + 数据上下文 + 历史 + 本轮用户输入。
-  /// 数据包作独立 system 段注入；chat/completions 无状态，历史每轮重发。
+  /// 组装教练对话消息：人设 + 排计划契约（合并为首个 system 段）+
+  /// 数据上下文 + 历史 + 本轮用户输入。数据包作独立 system 段注入；
+  /// chat/completions 无状态，历史每轮重发。
+  ///
+  /// 2026-09-26 Arono 需求：排计划契约并入**每一次**对话（原来是「排计划模式」
+  /// 开关才叠加）——任何轮次里 AI 给出完整计划 JSON 都能被提取成可保存的
+  /// 计划，写进 App 不再依赖用户找到并打开隐藏开关。契约本身按
+  /// 「用户想排/改计划时」条件生效，纯问答轮次行为不变。
   List<AiMessage> buildCoachMessages(
     String dataPack, {
     List<AiMessage> history = const [],
     String userText = '',
   }) {
     return [
-      const AiMessage('system', kCoachPersona),
+      AiMessage('system', '$kCoachPersona\n\n${planChatContract()}'),
       AiMessage('system',
           '以下是用户 App 导出的真实训练数据，回答必须以此为依据：\n\n$dataPack'),
       ...history,
@@ -71,14 +77,15 @@ class AiService {
     ];
   }
 
-  /// 对话式排计划的补充契约（叠加在教练人设之上，AI 教练「排计划模式」用）。
-  /// 关键设计：每次产出/修改都输出**完整最新版**计划的严格 JSON（```json 围栏），
-  /// App 端用 extractJsonPayload + parseResponse 提取清洗——与计划页
-  /// 「描述生成」完全同一套 JSON 契约与容错，不另起炉灶。
+  /// 排计划契约（叠加在教练人设之上，随 buildCoachMessages 进每次对话）。
+  /// 关键设计：用户想排/改计划时，每次输出**完整最新版**计划的严格 JSON
+  /// （```json 围栏），App 端用 extractJsonPayload + parseResponse 提取清洗
+  /// ——与计划页「描述生成」完全同一套 JSON 契约与容错，不另起炉灶。
   static String planChatContract() {
     final lib =
         kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
-    return '【排计划模式】用户正在通过对话让你安排或调整训练计划，规则：\n'
+    return '【排计划规则】当用户想让你安排或调整训练计划（排新计划、换动作、改组次、'
+        '加减训练日、调下一阶段）时，规则：\n'
         '1. 信息不足时先用 1-2 个问题问清（每周练几天、健身房还是居家、有哪些器械、目标是增肌还是力量）；'
         '描述已经足够就直接给计划，不要挤牙膏式反问。\n'
         '2. 每次给出或修改计划：先用不超过 3 句话讲设计思路，再输出完整最新版计划——'
@@ -92,23 +99,6 @@ class AiService {
         '容量安排符合渐进超负荷原则；热身组不写入；rest_sec：复合动作 150-180、辅助动作 90-120。\n'
         '5. 可以参考训练数据里用户的水平与弱项安排，但计划本身仍按上面的 JSON 输出。\n'
         '6. 动作名优先用参考词表：$lib';
-  }
-
-  /// 排计划模式的对话消息：人设 + 排计划契约合并为首个 system 段
-  /// （契约是行为指令，与人设同属"你是谁/怎么做"，拆开会被数据包隔断），
-  /// 数据包紧随其后，再接历史与用户输入。
-  List<AiMessage> buildPlanChatMessages(
-    String dataPack, {
-    List<AiMessage> history = const [],
-    String userText = '',
-  }) {
-    return [
-      AiMessage('system', '$kCoachPersona\n\n${planChatContract()}'),
-      AiMessage('system',
-          '以下是用户 App 导出的真实训练数据（参考其水平与弱项用）：\n\n$dataPack'),
-      ...history,
-      AiMessage('user', userText),
-    ];
   }
 
   /// 连接测试：发一条最小请求，返回 (耗时 ms, 模型回复)。

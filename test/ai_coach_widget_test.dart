@@ -1,13 +1,16 @@
 // AI 教练页 widget 测试：
-// ①冒烟：页面骨架渲染、排计划模式开关（基建同 widget_layout_test：ffi 真库）；
+// ①冒烟：页面骨架渲染（基建同 widget_layout_test：ffi 真库）；
 // ②端到端渲染：AppContainer.aiOverride 注入 MockClient 模拟 AI 回复，
 //   验证 Markdown 排版（加粗/表格/列表）上屏、计划 JSON 从气泡隐藏、
 //   保存按钮出现——AI 请求链路本身在 ai_service_test 另行覆盖。
+// 2026-09-26：排计划契约并入每次对话（原「排计划模式」开关已删），
+// 排计划回复在默认对话里即可触发保存按钮。
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/core/app.dart';
+import 'package:baoji_timer/l10n/lang.dart';
 import 'package:baoji_timer/services/ai_service.dart';
 import 'package:baoji_timer/services/settings.dart';
 import 'package:baoji_timer/ui/ai_coach_page.dart';
@@ -45,6 +48,9 @@ void main() {
   });
 
   Future<void> pumpPage(WidgetTester tester) async {
+    // 测试环境的系统语言是 en_US，i18n 解析会把 tx() 全部切英文；
+    // 这里固定回中文，断言继续用中文文案（与源语言逐字一致）
+    Lang.setResolved(false);
     await tester.pumpWidget(AppScope(
       container: container,
       child: const MaterialApp(home: AiCoachPage()),
@@ -57,25 +63,6 @@ void main() {
   testWidgets('未配置：显示配置引导，不崩', (tester) async {
     await pumpPage(tester);
     expect(find.textContaining('还没配置 AI 接口'), findsOneWidget);
-    expect(find.text('AI 教练'), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('排计划模式开关：标题与状态行切换，一键复盘按钮让位', (tester) async {
-    await pumpPage(tester);
-    expect(find.text('AI 教练'), findsOneWidget);
-
-    await tester.tap(find.byTooltip('排计划模式（对话安排计划）'));
-    await tester.pump();
-
-    expect(find.text('AI 教练 · 排计划'), findsOneWidget);
-    // 排计划模式下隐藏一键复盘入口（两个 AI 行为不混用）
-    expect(find.byTooltip('一键阶段复盘'), findsNothing);
-    expect(tester.takeException(), isNull);
-
-    // 再点一次退出，恢复问答模式标题
-    await tester.tap(find.byTooltip('退出排计划模式'));
-    await tester.pump();
     expect(find.text('AI 教练'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -152,8 +139,6 @@ void main() {
           '想调整随时说。');
     });
     await pumpPage(tester);
-    await tester.tap(find.byTooltip('排计划模式（对话安排计划）'));
-    await tester.pump(const Duration(milliseconds: 50));
     // 回复到达判据：提取到计划才会挂保存按钮
     await sendAndBridge(tester, '帮我安排每周三练的计划',
         () => find.text('预览并保存为计划').evaluate().isNotEmpty);
