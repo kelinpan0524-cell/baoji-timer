@@ -50,6 +50,7 @@ class SettingsPage extends StatelessWidget {
         _group(tx('连接与智能', en: 'Connections'), [
           _SettingsRow(
             icon: Icons.smart_toy_outlined,
+            iconColor: AppTheme.violetSoft, // 紫=AI（全 App 统一）
             title: tx('AI 教练', en: 'AI Coach'),
             subtitle: tx('对话排计划 · 阶段复盘 · 计划拆解',
                 en: 'Chat to plan · Phase review · Plan breakdown'),
@@ -281,6 +282,7 @@ class _SettingsRow extends StatelessWidget {
     this.subtitleWidget,
     this.value,
     this.valueColor,
+    this.iconColor,
     this.badge = false,
     this.badgeLabel,
   });
@@ -296,6 +298,9 @@ class _SettingsRow extends StatelessWidget {
   final VoidCallback onTap;
   final String? value;
   final Color? valueColor;
+
+  /// 图标与图标底色（缺省用主题绿；AI 行传紫，"紫=智能"全 App 统一）。
+  final Color? iconColor;
   final bool badge;
   final String? badgeLabel;
 
@@ -312,10 +317,10 @@ class _SettingsRow extends StatelessWidget {
               width: 34,
               height: 34,
               decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.14),
+                color: (iconColor ?? AppTheme.primary).withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(9),
               ),
-              child: Icon(icon, size: 20, color: AppTheme.primary),
+              child: Icon(icon, size: 20, color: iconColor ?? AppTheme.primary),
             ),
             const SizedBox(width: 12),
             Expanded(

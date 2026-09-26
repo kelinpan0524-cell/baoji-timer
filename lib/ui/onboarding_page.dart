@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app.dart';
@@ -205,7 +206,13 @@ class _OnboardingPageState extends State<OnboardingPage>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text('🏋️', style: TextStyle(fontSize: 72)),
+          // unDraw 插画（已按主题绿重染，授权见 assets/illustrations/LICENSE.md）：
+          // 比 emoji 更有"有人陪你练"的温度，unDraw 的品牌玩法就是插画随品牌色重染
+          SvgPicture.asset(
+            'assets/illustrations/personal_trainer.svg',
+            height: 230,
+            semanticsLabel: tx('两人正在做哑铃训练', en: 'Two people training with dumbbells'),
+          ),
           const SizedBox(height: 24),
           Text(tx('薄肌训练计时器', en: 'Baoji Workout Timer'),
               style: const TextStyle(

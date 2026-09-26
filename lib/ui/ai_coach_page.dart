@@ -292,7 +292,8 @@ class _AiCoachPageState extends State<AiCoachPage> {
           Icon(
             Icons.smart_toy_outlined,
             size: 14,
-            color: configured ? AppTheme.primary : AppTheme.warn,
+            // AI 触点统一用紫（2026-09-26 设计翻新：紫=智能、绿=训练）
+            color: configured ? AppTheme.violetSoft : AppTheme.warn,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -311,7 +312,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
       children: [
-        const Center(child: Icon(Icons.smart_toy_outlined, size: 56, color: AppTheme.textDim)),
+        const Center(
+            child: Icon(Icons.smart_toy_outlined,
+                size: 56, color: AppTheme.violetSoft)),
         const SizedBox(height: 12),
         Center(
           child: Text(tx('和你的训练数据对话', en: 'Chat with your training data'),
@@ -447,7 +450,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         ),
         decoration: BoxDecoration(
           color: isUser
-              ? AppTheme.primary.withValues(alpha: 0.16)
+              ? AppTheme.violet.withValues(alpha: 0.16)
               : AppTheme.cardHi,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(14),
@@ -613,6 +616,10 @@ class _AiCoachPageState extends State<AiCoachPage> {
           IconButton.filled(
             tooltip: tx('发送', en: 'Send'),
             onPressed: configured && !_sending ? _submit : null,
+            style: IconButton.styleFrom(
+              backgroundColor: AppTheme.violet,
+              foregroundColor: Colors.white,
+            ),
             icon: _sending
                 ? const SizedBox(
                     width: 18,
