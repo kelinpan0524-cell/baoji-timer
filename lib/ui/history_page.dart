@@ -225,7 +225,9 @@ class _HistoryPageState extends State<HistoryPage> {
       future: _detailFutures.putIfAbsent(s.id!, () => _sessionDetailWidgets(s)),
       builder: (context, snap) {
         return SectionCard(
-          title: '${s.date} · ${dname(s.planDayTitle)}',
+          // 标题只放日期（定长不折行）：日期+计划题拆两行后，
+          // 长标题不会再把「2026-09-26」从中间折断（2026-09-26 Arono）
+          title: s.date,
           trailing: Text(
             s.status == 'quit'
                 ? tx('已中断', en: 'Interrupted')
@@ -280,64 +282,142 @@ class _HistoryPageState extends State<HistoryPage> {
     final c = app(context);
     final ses = await c.db.sessionExercises(s.id!);
     final map = await c.db.setsOfSession(s.id!);
-    final widgets = <Widget>[];
-    // 训练/休息净时长（新版本记录才有；老记录 rest/active 为 0 不显示）
-    if (s.restMs > 0 || s.activeMs > 0) {
+    final widgets =
+        buildSessionDetailRows(s, ses, map, bodyWeightKg: c.settings.bodyWeightKg);
+    return widgets;
+  }
+}
+
+/// 单次训练的明细行（2026-09-26 Arono：历史卡排版改格子）。
+/// 顶层公开函数便于直接单测：传查好的数据，返回纯布局行。
+/// 结构 = 计划标题行 + 训练/休息行（新记录才有）+ 每动作一张
+/// 「组 | 重量 kg | 次数 | 余力」小表 + 备注行。
+List<Widget> buildSessionDetailRows(
+  Session s,
+  List<SessionExercise> ses,
+  Map<int, List<SetEntry>> map, {
+  required double bodyWeightKg,
+}) {
+  final widgets = <Widget>[];
+  // 计划标题（日期下方第一行，加粗）：标题位只放日期后挪到这里
+  widgets.add(
+    Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        dname(s.planDayTitle),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+      ),
+    ),
+  );
+  // 训练/休息净时长（新版本记录才有；老记录 rest/active 为 0 不显示）
+  if (s.restMs > 0 || s.activeMs > 0) {
+    widgets.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 4),
+        child: Text(
+          tx(
+            '训练 ${((s.activeMs) / 60000).ceil()} 分 · 休息 ${((s.restMs) / 60000).ceil()} 分'
+            '${s.restMs + s.activeMs > 0 ? '（休息占 ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%）' : ''}',
+            en: 'Workout ${((s.activeMs) / 60000).ceil()} min · Rest ${((s.restMs) / 60000).ceil()} min'
+                '${s.restMs + s.activeMs > 0 ? ' (rest ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%)' : ''}',
+          ),
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+        ),
+      ),
+    );
+  }
+  for (final se in ses) {
+    final sets = map[se.id!] ?? [];
+    if (sets.isEmpty) continue;
+    // 每个动作一张小表（别再一条长文字流）：列 = 组 | 重量 kg | 次数 | 余力；
+    // 余力列头写明含义，不再用 "R2" 缩写。热身=热 / 力竭=竭。
+    widgets.add(
+      Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              exname(se.name),
+              style:
+                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 4),
+            Table(
+              border: const TableBorder(
+                horizontalInside: BorderSide(color: AppTheme.cardHi, width: 1),
+              ),
+              columnWidths: const {
+                0: FixedColumnWidth(34),
+                1: FlexColumnWidth(3),
+                2: FlexColumnWidth(3),
+                3: FlexColumnWidth(3),
+              },
+              children: [
+                TableRow(
+                  children: [
+                    for (final h in [
+                      tx('组', en: 'Set'),
+                      tx('重量 kg', en: 'Weight kg'),
+                      tx('次数', en: 'Reps'),
+                      tx('余力', en: 'RIR'),
+                    ])
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          h,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              color: AppTheme.textDim, fontSize: 12),
+                        ),
+                      ),
+                  ],
+                ),
+                for (var i = 0; i < sets.length; i++)
+                  TableRow(
+                    children: [
+                      for (final cell in [
+                        '${i + 1}',
+                        fmtKg(sets[i].weightKg),
+                        '${sets[i].reps}',
+                        sets[i].kind == SetKind.warmup
+                            ? tx('热', en: 'W')
+                            : sets[i].kind == SetKind.failure
+                                ? tx('竭', en: 'F')
+                                : '${sets[i].rir}',
+                      ])
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(
+                            cell,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    // 单组备注逐条带出（记了就要看得到）
+    final noted = sets.where((x) => x.note.trim().isNotEmpty).toList();
+    if (noted.isNotEmpty) {
       widgets.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 4),
+          padding: const EdgeInsets.only(left: 14, bottom: 2),
           child: Text(
             tx(
-              '训练 ${((s.activeMs) / 60000).ceil()} 分 · 休息 ${((s.restMs) / 60000).ceil()} 分'
-              '${s.restMs + s.activeMs > 0 ? '（休息占 ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%）' : ''}',
-              en: 'Workout ${((s.activeMs) / 60000).ceil()} min · Rest ${((s.restMs) / 60000).ceil()} min'
-                  '${s.restMs + s.activeMs > 0 ? ' (rest ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%)' : ''}',
+              '备注：${noted.map((x) => '${fmtKg(x.weightKg)}kg：${x.note.trim()}').join('；')}',
+              en: 'Notes: ${noted.map((x) => '${fmtKg(x.weightKg)}kg: ${x.note.trim()}').join('; ')}',
             ),
             style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
         ),
       );
     }
-    for (final se in ses) {
-      final sets = map[se.id!] ?? [];
-      if (sets.isEmpty) continue;
-      // 组记录带余力（RIR）：60×8 R2；热身/力竭组沿用 (热)/(竭) 标记
-      final desc = sets
-          .map(
-            (x) =>
-                '${fmtKg(x.weightKg)}×${x.reps}${x.kind == SetKind.warmup
-                    ? tx('(热)', en: '(W)')
-                    : x.kind == SetKind.failure
-                    ? tx('(竭)', en: '(F)')
-                    : ' R${x.rir}'}',
-          )
-          .join('  ');
-      widgets.add(
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 3),
-          child: Text(
-            '· ${exname(se.name)}:  $desc',
-            style: const TextStyle(fontSize: 14),
-          ),
-        ),
-      );
-      // 单组备注逐条带出（记了就要看得到）
-      final noted = sets.where((x) => x.note.trim().isNotEmpty).toList();
-      if (noted.isNotEmpty) {
-        widgets.add(
-          Padding(
-            padding: const EdgeInsets.only(left: 14, bottom: 2),
-            child: Text(
-              tx(
-                '备注：${noted.map((x) => '${fmtKg(x.weightKg)}kg：${x.note.trim()}').join('；')}',
-                en: 'Notes: ${noted.map((x) => '${fmtKg(x.weightKg)}kg: ${x.note.trim()}').join('; ')}',
-              ),
-              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
-            ),
-          ),
-        );
-      }
-    }
-    return widgets;
   }
+  return widgets;
 }
