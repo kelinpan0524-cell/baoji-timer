@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../db/db.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/baoji_plan.dart';
 import 'focus_service.dart';
 import 'rest_cue.dart';
@@ -133,9 +134,11 @@ class SessionController extends ChangeNotifier {
         resting: true,
         paused: _restPaused,
         title: tx('组间休息中', en: 'Rest between sets'),
+        // 下一组带动作名（2026-09-26 Arono：休息中要知道接下来练什么）：
+        // 休息时 currentEx 已推进到下一个动作（或原动作的下一组）。
         text:
             '${_restPaused ? tx('已暂停 · ', en: 'Paused · ') : ''}'
-            '${tx('还剩 $remainText · 下一组 $wText×$reps', en: '$remainText left · next set $wText×$reps')}',
+            '${tx('还剩 $remainText · 下一组 ${exname(currentEx?.name ?? '')} $wText×$reps', en: '$remainText left · next ${exname(currentEx?.name ?? '')} $wText×$reps')}',
         remaining: restTotalMs > 0 ? remainSec : -1,
         total: (restTotalMs / 1000).round(),
         chronoStartMs: s.startedAt,

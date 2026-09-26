@@ -1569,6 +1569,7 @@ class _ActionPanelState extends State<_ActionPanel> {
   String _kind = SetKind.working;
   int? _reps;
   int? _rir;
+  bool _rirPrompt = false; // 余力没填写提醒：第一按只提示不落库
   String _note = '';
   bool _noteOpen = false;
   bool _saving = false; // 防抖：力竭手抖双击不能记两组
@@ -1581,6 +1582,7 @@ class _ActionPanelState extends State<_ActionPanel> {
     if (old.ex.id != widget.ex.id) {
       _reps = null;
       _kind = SetKind.working;
+      _rirPrompt = false;
     }
   }
 
@@ -1822,48 +1824,89 @@ class _ActionPanelState extends State<_ActionPanel> {
           ),
           const SizedBox(height: 8),
           // RIR（余力）：默认用计划目标值，可点选覆盖。
-          // Wrap 而非 Row：系统大字号（1.6x）下窄屏一行放不下时自动换行
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Tooltip(
-                message: tx('余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
-                    en: 'RIR = reps left in the tank; keep the plan default if unsure'),
-                child: Text(
-                  tx('余力 ', en: 'RIR '),
-                  style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
-                ),
-              ),
-              for (var r = 0; r <= 4; r++)
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _rir = (_rir == r) ? null : r);
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _rir == r ? AppTheme.accent : AppTheme.cardHi,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$r',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _rir == r
-                            ? const Color(0xFF06220F)
-                            : AppTheme.textDim,
+          // Wrap 而非 Row：系统大字号（1.6x）下窄屏一行放不下时自动换行。
+          // _rirPrompt：忘了填余力时整行高亮 + 行下提示（第一按不落库）。
+          Container(
+            padding: _rirPrompt
+                ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+                : null,
+            decoration: _rirPrompt
+                ? BoxDecoration(
+                    border: Border.all(color: AppTheme.warn, width: 1.5),
+                    borderRadius: BorderRadius.circular(12),
+                  )
+                : null,
+            child: Column(
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Tooltip(
+                      message: tx('余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
+                          en: 'RIR = reps left in the tank; keep the plan default if unsure'),
+                      child: Text(
+                        _rirPrompt
+                            ? tx('余力没填写 ', en: 'RIR missing ')
+                            : tx('余力 ', en: 'RIR '),
+                        style: TextStyle(
+                          color: _rirPrompt
+                              ? AppTheme.warn
+                              : AppTheme.textDim,
+                          fontSize: 14,
+                          fontWeight: _rirPrompt
+                              ? FontWeight.w800
+                              : FontWeight.w400,
+                        ),
                       ),
                     ),
-                  ),
+                    for (var r = 0; r <= 4; r++)
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            _rir = (_rir == r) ? null : r;
+                            if (_rir != null) _rirPrompt = false;
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _rir == r ? AppTheme.accent : AppTheme.cardHi,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$r',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _rir == r
+                                  ? const Color(0xFF06220F)
+                                  : (_rirPrompt
+                                      ? AppTheme.text
+                                      : AppTheme.textDim),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-            ],
+                if (_rirPrompt) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    tx('点一个数字；不确定就再按一次「完成本组」，按计划默认记',
+                        en: 'Pick a number, or tap Done again to log the plan default'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: AppTheme.warn, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -1977,6 +2020,16 @@ class _ActionPanelState extends State<_ActionPanel> {
             onPressed: _saving
                 ? null
                 : () async {
+                    // 余力没填写提醒（2026-09-26 Arono）：正式组第一按不落库，
+                    // 高亮余力行提示补填；再按一次按计划默认记（不拦人）。
+                    // 热身/力竭组不提醒（力竭本身就是 RIR 0）。
+                    if (_kind == SetKind.working &&
+                        _rir == null &&
+                        !_rirPrompt) {
+                      HapticFeedback.selectionClick();
+                      setState(() => _rirPrompt = true);
+                      return;
+                    }
                     _saving = true;
                     HapticFeedback.mediumImpact();
                     final reps = _reps ?? ex.rule.repsMin;
@@ -1989,6 +2042,7 @@ class _ActionPanelState extends State<_ActionPanel> {
                       note: _note,
                     );
                     _saving = false;
+                    _rirPrompt = false;
                     _noteCtrl.clear();
                     _note = '';
                     if (_noteOpen) setState(() => _noteOpen = false);
@@ -2066,9 +2120,10 @@ class _RestViewState extends State<_RestView> {
               ? tx('准备结束训练', en: 'Ready to Finish')
               : tx('下一个动作：${exname(s.exercises[s.curExIdx + 1].name)}',
                   en: 'Next exercise: ${exname(s.exercises[s.curExIdx + 1].name)}'))
-        // 下一组带组号（2026-09-26 Arono：休息中也能看到接下来是第几组）
-        : tx('下一组 第 ${s.workingSetsDone + 1}/$plannedWorking 组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
-            en: 'Next: set ${s.workingSetsDone + 1}/$plannedWorking · ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
+        // 下一组带动作名 + 组号（2026-09-26 Arono：休息中要知道接下来
+        // 练什么动作、第几组、做多少次）
+        : tx('下一组 · ${exname(ex?.name ?? '')} 第 ${s.workingSetsDone + 1}/$plannedWorking 组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
+            en: 'Next · ${exname(ex?.name ?? '')} set ${s.workingSetsDone + 1}/$plannedWorking · ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
 
     // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，

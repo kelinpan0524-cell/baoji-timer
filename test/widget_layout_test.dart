@@ -412,6 +412,11 @@ void main() {
         // 大字号下次数 chips 可能滚出屏：先滚动可达再点选
         await tester.ensureVisible(find.text('8'));
         await tester.pump(const Duration(milliseconds: 50));
+        // 余力没填写提醒上线后：落库前先选余力 2（RIR 行在次数行上方）
+        await tester.ensureVisible(find.text('2'));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.text('2'));
+        await tester.pump(const Duration(milliseconds: 50));
         await tester.tap(find.text('8'));
         await tester.pump(const Duration(milliseconds: 50));
         await tester.tap(find.byKey(const Key('workoutCompleteSet')));
@@ -479,6 +484,11 @@ void main() {
       await tester.pumpAndSettle();
       await tester.runAsync(() async {
         container.session.setWeightDraft(60);
+        // 余力没填写提醒上线后：落库前先选余力 2
+        await tester.ensureVisible(find.text('2'));
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.tap(find.text('2'));
+        await tester.pump(const Duration(milliseconds: 50));
         await tester.tap(find.text('8'));
         await tester.pump(const Duration(milliseconds: 50));
         await tester.tap(find.byKey(const Key('workoutCompleteSet')));
