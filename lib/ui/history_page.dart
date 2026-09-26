@@ -1,8 +1,21 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
+
+/// 日历表头星期缩写（仅展示用；中文单字为键）。
+const _weekdayEn = {
+  '一': 'Mon',
+  '二': 'Tue',
+  '三': 'Wed',
+  '四': 'Thu',
+  '五': 'Fri',
+  '六': 'Sat',
+  '日': 'Sun',
+};
 
 /// 历史页：月历 + 当日训练明细。
 class HistoryPage extends StatefulWidget {
@@ -70,7 +83,8 @@ class _HistoryPageState extends State<HistoryPage> {
             ),
             const SizedBox(width: 8),
             Text(
-              '${_month.year} 年 ${_month.month} 月',
+              tx('${_month.year} 年 ${_month.month} 月',
+                  en: '${_month.year}-${_month.month}'),
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
             ),
             const SizedBox(width: 8),
@@ -99,7 +113,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       Expanded(
                         child: Center(
                           child: Text(
-                            '周$w',
+                            tx('周$w', en: _weekdayEn[w]),
                             style: const TextStyle(
                               color: AppTheme.textDim,
                               fontSize: 12,
@@ -113,7 +127,8 @@ class _HistoryPageState extends State<HistoryPage> {
                 ..._calendarRows(daysInMonth, firstWeekday, today),
                 const SizedBox(height: 6),
                 Text(
-                  '点日期看当天明细 · 长按下方训练卡可删除误记的记录',
+                  tx('点日期看当天明细 · 长按下方训练卡可删除误记的记录',
+                      en: 'Tap a date for details · Long-press a workout card below to delete it'),
                   style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
                 ),
               ],
@@ -193,10 +208,11 @@ class _HistoryPageState extends State<HistoryPage> {
     }
     if (out.isEmpty) {
       out.add(
-        const Padding(
-          padding: EdgeInsets.all(24),
+        Padding(
+          padding: const EdgeInsets.all(24),
           child: Center(
-            child: Text('本月还没有训练记录', style: TextStyle(color: AppTheme.textDim)),
+            child: Text(tx('本月还没有训练记录', en: 'No workouts logged this month yet'),
+                style: const TextStyle(color: AppTheme.textDim)),
           ),
         ),
       );
@@ -209,16 +225,20 @@ class _HistoryPageState extends State<HistoryPage> {
       future: _detailFutures.putIfAbsent(s.id!, () => _sessionDetailWidgets(s)),
       builder: (context, snap) {
         return SectionCard(
-          title: '${s.date} · ${s.planDayTitle}',
+          title: '${s.date} · ${dname(s.planDayTitle)}',
           trailing: Text(
-            s.status == 'quit' ? '已中断' : '${s.durationMin} 分钟',
+            s.status == 'quit'
+                ? tx('已中断', en: 'Interrupted')
+                : tx('${s.durationMin} 分钟', en: '${s.durationMin} min'),
             style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           // 长按删除误开的训练（配合训练页"放弃本次"，P1-12）；
           // 读屏语义：标签完整朗读 + "双击并按住"提示作为长按的替代路径
-          semanticsLabel:
-              '${s.date} ${s.planDayTitle} 的训练记录${s.status == 'quit' ? '，已中断' : ''}',
-          longPressHint: '双击并按住，删除这条训练记录',
+          semanticsLabel: tx(
+              '${s.date} ${dname(s.planDayTitle)} 的训练记录${s.status == 'quit' ? '，已中断' : ''}',
+              en: 'Workout record: ${s.date} ${dname(s.planDayTitle)}${s.status == 'quit' ? ' (interrupted)' : ''}'),
+          longPressHint: tx('双击并按住，删除这条训练记录',
+              en: 'Double-tap and hold to delete this workout record'),
           onLongPress: () => _deleteSession(s),
           child: snap.hasData
               ? Column(
@@ -242,16 +262,18 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<void> _deleteSession(Session s) async {
     final ok = await confirmDialog(
       context,
-      '删除这次训练？',
-      '${s.date} · ${s.planDayTitle} 的全部记录将被删除，用于清理误开的训练。此操作无法撤销。',
-      okLabel: '删除',
+      tx('删除这次训练？', en: 'Delete This Workout?'),
+      tx(
+          '${s.date} · ${dname(s.planDayTitle)} 的全部记录将被删除，用于清理误开的训练。此操作无法撤销。',
+          en: 'All records of ${s.date} · ${dname(s.planDayTitle)} will be deleted, to clean up a workout started by mistake. This cannot be undone.'),
+      okLabel: tx('删除', en: 'Delete'),
     );
     if (!ok || !mounted) return;
     final c = app(context);
     await c.db.deleteSession(s.id!);
     _detailFutures.remove(s.id!);
     await _load();
-    if (mounted) toast(context, '已删除');
+    if (mounted) toast(context, tx('已删除', en: 'Deleted'));
   }
 
   Future<List<Widget>> _sessionDetailWidgets(Session s) async {
@@ -265,8 +287,12 @@ class _HistoryPageState extends State<HistoryPage> {
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(
-            '训练 ${((s.activeMs) / 60000).ceil()} 分 · 休息 ${((s.restMs) / 60000).ceil()} 分'
-            '${s.restMs + s.activeMs > 0 ? '（休息占 ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%）' : ''}',
+            tx(
+              '训练 ${((s.activeMs) / 60000).ceil()} 分 · 休息 ${((s.restMs) / 60000).ceil()} 分'
+              '${s.restMs + s.activeMs > 0 ? '（休息占 ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%）' : ''}',
+              en: 'Workout ${((s.activeMs) / 60000).ceil()} min · Rest ${((s.restMs) / 60000).ceil()} min'
+                  '${s.restMs + s.activeMs > 0 ? ' (rest ${(s.restMs * 100 / (s.restMs + s.activeMs)).round()}%)' : ''}',
+            ),
             style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
         ),
@@ -280,9 +306,9 @@ class _HistoryPageState extends State<HistoryPage> {
           .map(
             (x) =>
                 '${fmtKg(x.weightKg)}×${x.reps}${x.kind == SetKind.warmup
-                    ? '(热)'
+                    ? tx('(热)', en: '(W)')
                     : x.kind == SetKind.failure
-                    ? '(竭)'
+                    ? tx('(竭)', en: '(F)')
                     : ' R${x.rir}'}',
           )
           .join('  ');
@@ -290,7 +316,7 @@ class _HistoryPageState extends State<HistoryPage> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 3),
           child: Text(
-            '· ${se.name}:  $desc',
+            '· ${exname(se.name)}:  $desc',
             style: const TextStyle(fontSize: 14),
           ),
         ),
@@ -302,7 +328,10 @@ class _HistoryPageState extends State<HistoryPage> {
           Padding(
             padding: const EdgeInsets.only(left: 14, bottom: 2),
             child: Text(
-              '备注：${noted.map((x) => '${fmtKg(x.weightKg)}kg：${x.note.trim()}').join('；')}',
+              tx(
+                '备注：${noted.map((x) => '${fmtKg(x.weightKg)}kg：${x.note.trim()}').join('；')}',
+                en: 'Notes: ${noted.map((x) => '${fmtKg(x.weightKg)}kg: ${x.note.trim()}').join('; ')}',
+              ),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
             ),
           ),

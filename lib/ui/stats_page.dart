@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
 import 'ai_coach_page.dart';
@@ -30,26 +32,30 @@ class _StatsPageState extends State<StatsPage> {
       child: Scaffold(
         backgroundColor: AppTheme.bg,
         appBar: AppBar(
-          title: const Text('数据'),
+          title: Text(tx('数据', en: 'Stats')),
           actions: [
             TextButton.icon(
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const AiCoachPage()),
               ),
               icon: const Icon(Icons.smart_toy_outlined, size: 18),
-              label: const Text('AI 教练'),
+              label: Text(tx('AI 教练', en: 'AI Coach')),
             ),
             TextButton.icon(
               onPressed: () => _exportAiPack(),
               icon: const Icon(Icons.ios_share, size: 18),
-              label: const Text('分析包'),
+              label: Text(tx('分析包', en: 'Analysis Pack')),
             ),
           ],
-          bottom: const TabBar(
+          bottom: TabBar(
             indicatorColor: AppTheme.primary,
             labelColor: AppTheme.text,
             unselectedLabelColor: AppTheme.textDim,
-            tabs: [Tab(text: '概览'), Tab(text: '肌肉'), Tab(text: '身体')],
+            tabs: [
+              Tab(text: tx('概览', en: 'Overview')),
+              Tab(text: tx('肌肉', en: 'Muscles')),
+              Tab(text: tx('身体', en: 'Body')),
+            ],
           ),
         ),
         body: const TabBarView(
@@ -62,10 +68,17 @@ class _StatsPageState extends State<StatsPage> {
   Future<void> _exportAiPack() async {
     final c = app(context);
     final pack = await c.export.buildAiPack(bodyWeightKg: c.settings.bodyWeightKg);
-    await c.export.shareText('薄肌训练 · AI 分析包', pack, filename: 'ai_analysis_pack.md');
+    await c.export.shareText(
+        tx('薄肌训练 · AI 分析包', en: 'Baoji · AI Analysis Pack'),
+        pack,
+        filename: 'ai_analysis_pack.md');
     // 同时尝试复制到剪贴板
     await Clipboard.setData(ClipboardData(text: pack));
-    if (mounted) toast(context, '分析包已生成并复制到剪贴板');
+    if (mounted) {
+      toast(context,
+          tx('分析包已生成并复制到剪贴板',
+              en: 'Analysis pack generated and copied to clipboard'));
+    }
   }
 }
 
@@ -111,11 +124,12 @@ class _OverviewTabState extends State<_OverviewTab> {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.insights, size: 48, color: AppTheme.textDim),
-                SizedBox(height: 12),
-                Text('完成第一次训练后，这里会显示进步曲线',
-                    style: TextStyle(color: AppTheme.textDim)),
+              children: [
+                const Icon(Icons.insights, size: 48, color: AppTheme.textDim),
+                const SizedBox(height: 12),
+                Text(tx('完成第一次训练后，这里会显示进步曲线',
+                    en: 'Progress curves appear after your first workout'),
+                    style: const TextStyle(color: AppTheme.textDim)),
               ],
             ),
           );
@@ -131,12 +145,14 @@ class _OverviewTabState extends State<_OverviewTab> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             SectionCard(
-              title: '每周训练容量（kg）',
+              title: tx('每周训练容量（kg）', en: 'Weekly Volume (kg)'),
               child: SizedBox(
                 height: 200,
                 child: d.weeklyVolume.length < 2
                     ? Center(
-                        child: Text('数据还少，再练几次就能看到趋势',
+                        child: Text(
+                            tx('数据还少，再练几次就能看到趋势',
+                                en: 'Not enough data yet — a few more workouts will show the trend'),
                             style: TextStyle(color: AppTheme.textDim)))
                     : LineChart(
                         LineChartData(
@@ -167,7 +183,8 @@ class _OverviewTabState extends State<_OverviewTab> {
             ),
             const SizedBox(height: 12),
             SectionCard(
-              title: '主力动作 1RM 进阶（按训练容量自动选前 4）',
+              title: tx('主力动作 1RM 进阶（按训练容量自动选前 4）',
+                  en: 'Top Lifts 1RM Progress (Top 4 by Volume)'),
               child: Column(
                 children: [
                   Wrap(
@@ -175,7 +192,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                     children: [
                       for (final lift in d.topLifts)
                         ChoiceChip(
-                          label: Text(lift),
+                          label: Text(exname(lift)),
                           selected: _selectedLift == lift,
                           onSelected: (_) =>
                               setState(() => _selectedLift = lift),
@@ -194,7 +211,9 @@ class _OverviewTabState extends State<_OverviewTab> {
                     height: 200,
                     child: (d.big4[_selectedLift] ?? []).length < 2
                         ? Center(
-                            child: Text('$_selectedLift 数据不足（至少 2 次）',
+                            child: Text(
+                                tx('${exname(_selectedLift ?? 'null')} 数据不足（至少 2 次）',
+                                    en: '${exname(_selectedLift ?? 'null')}: not enough data (at least 2 sessions)'),
                                 style:
                                     TextStyle(color: AppTheme.textDim)))
                         : LineChart(
@@ -219,13 +238,16 @@ class _OverviewTabState extends State<_OverviewTab> {
             ),
             const SizedBox(height: 12),
             SectionCard(
-              title: '组间休息趋势（分钟 / 次）',
+              title: tx('组间休息趋势（分钟 / 次）',
+                  en: 'Rest Between Sets Trend (min / session)'),
               child: SizedBox(
                 height: 180,
                 child: d.restMinutes.length < 2
-                    ? const Center(
-                        child: Text('完成几次训练后，这里显示每次训练的休息总时长趋势',
-                            style: TextStyle(color: AppTheme.textDim)))
+                    ? Center(
+                        child: Text(
+                            tx('完成几次训练后，这里显示每次训练的休息总时长趋势',
+                                en: 'Rest time per workout appears here after a few workouts'),
+                            style: const TextStyle(color: AppTheme.textDim)))
                     : LineChart(
                         LineChartData(
                           gridData: const FlGridData(show: false),
@@ -256,7 +278,7 @@ class _OverviewTabState extends State<_OverviewTab> {
             if (insights.isNotEmpty) ...[
               const SizedBox(height: 12),
               SectionCard(
-                title: '智能提醒',
+                title: tx('智能提醒', en: 'Smart Tips'),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -468,13 +490,15 @@ class _MuscleTabState extends State<_MuscleTab> {
             // （2026-09-25 从计划页挪到数据页，计划页只管"练什么"）
             const MuscleRecoveryCard(),
             SectionCard(
-              title: '本周肌群容量占比',
+              title: tx('本周肌群容量占比', en: "This Week's Muscle Volume Share"),
               child: Column(
                 children: [
                   SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(value: true, label: Text('正面')),
-                      ButtonSegment(value: false, label: Text('背面')),
+                    segments: [
+                      ButtonSegment(
+                          value: true, label: Text(tx('正面', en: 'Front'))),
+                      ButtonSegment(
+                          value: false, label: Text(tx('背面', en: 'Back'))),
                     ],
                     selected: {_front},
                     onSelectionChanged: (sel) =>
@@ -526,7 +550,7 @@ class _MuscleTabState extends State<_MuscleTab> {
                             width: 44,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
-                              child: Text(r,
+                              child: Text(mname(r),
                                   maxLines: 1,
                                   style: const TextStyle(fontSize: 14)),
                             ),
@@ -563,9 +587,11 @@ class _MuscleTabState extends State<_MuscleTab> {
                   }),
                   const SizedBox(height: 8),
                   if ((share['肩'] ?? 0) < 0.15 || (share['背'] ?? 0) < 0.15)
-                    const Text(
-                        '提示：肩、背容量偏低——薄肌计划的目标是肩背偏重，注意补齐。',
-                        style: TextStyle(color: AppTheme.warn, fontSize: 13)),
+                    Text(
+                        tx('提示：肩、背容量偏低——薄肌计划的目标是肩背偏重，注意补齐。',
+                            en: 'Tip: Shoulder and back volume are low — the Baoji plan emphasizes shoulders and back, so catch up on them.'),
+                        style:
+                            const TextStyle(color: AppTheme.warn, fontSize: 13)),
                 ],
               ),
             ),
@@ -662,13 +688,14 @@ class _BodyTabState extends State<_BodyTab>
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             SectionCard(
-              title: '体重趋势',
+              title: tx('体重趋势', en: 'Body Weight Trend'),
               child: SizedBox(
                 height: 180,
                 child: weights.length < 2
-                    ? const Center(
-                        child: Text('每周固定时间记一次体重',
-                            style: TextStyle(color: AppTheme.textDim)))
+                    ? Center(
+                        child: Text(tx('每周固定时间记一次体重',
+                            en: 'Weigh in at the same time each week'),
+                            style: const TextStyle(color: AppTheme.textDim)))
                     : LineChart(
                         LineChartData(
                           gridData: const FlGridData(show: false),
@@ -688,28 +715,31 @@ class _BodyTabState extends State<_BodyTab>
             ),
             const SizedBox(height: 12),
             SectionCard(
-              title: '记录今天',
+              title: tx('记录今天', en: 'Log Today'),
               child: Column(
                 children: [
                   TextField(
                     controller: _weightCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: '体重 (kg)'),
+                    decoration: InputDecoration(
+                        labelText:
+                            tx('体重 (kg)', en: 'Body Weight (kg)')),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _waistCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: '腰围 (cm，可选)'),
+                    decoration: InputDecoration(
+                        labelText:
+                            tx('腰围 (cm，可选)', en: 'Waist (cm, optional)')),
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _fatCtrl,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: '体脂率 (%，可选)'),
+                    decoration: InputDecoration(
+                        labelText:
+                            tx('体脂率 (%，可选)', en: 'Body Fat (%, optional)')),
                   ),
                   const SizedBox(height: 12),
                   FilledButton(
@@ -718,7 +748,8 @@ class _BodyTabState extends State<_BodyTab>
                       final waist = double.tryParse(_waistCtrl.text);
                       final fat = double.tryParse(_fatCtrl.text);
                       if (w == null && waist == null && fat == null) {
-                        toast(this.context, '至少填一项');
+                        toast(this.context,
+                            tx('至少填一项', en: 'Fill in at least one field'));
                         return;
                       }
                       await c.db.upsertBodyMetric(BodyMetric(
@@ -731,13 +762,13 @@ class _BodyTabState extends State<_BodyTab>
                       _waistCtrl.clear();
                       _fatCtrl.clear();
                       if (mounted) {
-                        toast(this.context, '已记录');
+                        toast(this.context, tx('已记录', en: 'Saved'));
                         setState(() {
                           _future = app(this.context).db.bodyMetrics();
                         });
                       }
                     },
-                    child: const Text('保存'),
+                    child: Text(tx('保存', en: 'Save')),
                   ),
                 ],
               ),

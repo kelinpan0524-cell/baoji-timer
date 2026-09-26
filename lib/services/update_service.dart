@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../l10n/lang.dart';
 import '../models/app_release.dart';
 import 'settings.dart';
 
@@ -59,21 +60,25 @@ class UpdateService {
           )
           .timeout(_timeout);
     } on TimeoutException {
-      throw const UpdateException('检查更新超时，稍后再试');
+      throw UpdateException(
+          tx('检查更新超时，稍后再试', en: 'Update check timed out, try again later'));
     } on SocketException {
-      throw const UpdateException('网络不可用');
+      throw UpdateException(tx('网络不可用', en: 'Network unavailable'));
     } on http.ClientException catch (e) {
-      throw UpdateException('网络请求失败：${e.message}');
+      throw UpdateException(tx('网络请求失败：${e.message}',
+          en: 'Network request failed: ${e.message}'));
     }
     switch (resp.statusCode) {
       case 200:
         break;
       case 401:
-        throw const UpdateException('令牌无效或已过期，请在 GitHub 重新生成');
+        throw UpdateException(tx('令牌无效或已过期，请在 GitHub 重新生成',
+            en: 'Token invalid or expired, regenerate it on GitHub'));
       case 404:
-        throw const UpdateException('还没有任何发布版本');
+        throw UpdateException(tx('还没有任何发布版本', en: 'No releases yet'));
       default:
-        throw UpdateException('检查更新失败（HTTP ${resp.statusCode}）');
+        throw UpdateException(tx('检查更新失败（HTTP ${resp.statusCode}）',
+            en: 'Update check failed (HTTP ${resp.statusCode})'));
     }
     final Map<String, dynamic> json;
     final AppRelease release;
@@ -81,9 +86,11 @@ class UpdateService {
       json = jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
       release = AppRelease.fromGithub(json);
     } on FormatException {
-      throw const UpdateException('发布版本信息异常（可能 CI 出包失败）');
+      throw UpdateException(tx('发布版本信息异常（可能 CI 出包失败）',
+          en: 'Invalid release info (CI build may have failed)'));
     } on TypeError {
-      throw const UpdateException('发布版本信息异常（可能 CI 出包失败）');
+      throw UpdateException(tx('发布版本信息异常（可能 CI 出包失败）',
+          en: 'Invalid release info (CI build may have failed)'));
     }
     if (release.buildNumber <= await installedBuildNumber()) return null;
     return release;
@@ -106,7 +113,8 @@ class UpdateService {
       await redirected.stream.drain<void>();
       url = redirected.headers['location'] ?? '';
     } else if (status != 200) {
-      throw UpdateException('下载失败（HTTP $status）');
+      throw UpdateException(
+          tx('下载失败（HTTP $status）', en: 'Download failed (HTTP $status)'));
     }
     final urlError = downloadUrlError(url);
     if (urlError != null) throw UpdateException(urlError);
@@ -116,7 +124,8 @@ class UpdateService {
         .send(http.Request('GET', Uri.parse(url)))
         .timeout(_timeout);
     if (stream.statusCode != 200) {
-      throw UpdateException('下载失败（HTTP ${stream.statusCode}）');
+      throw UpdateException(tx('下载失败（HTTP ${stream.statusCode}）',
+          en: 'Download failed (HTTP ${stream.statusCode})'));
     }
     final total = stream.contentLength ?? release.apkSize;
     final dir = await getTemporaryDirectory();
@@ -139,7 +148,8 @@ class UpdateService {
       } on FileSystemException {
         // 缓存文件，残留无碍
       }
-      throw const UpdateException('下载不完整，请重试');
+      throw UpdateException(
+          tx('下载不完整，请重试', en: 'Download incomplete, please try again'));
     }
     return file.path;
   }
@@ -170,7 +180,8 @@ class UpdateService {
   static String? downloadUrlError(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null || !uri.isScheme('https')) {
-      return '下载地址不安全（仅允许 https）';
+      return tx('下载地址不安全（仅允许 https）',
+          en: 'Unsafe download URL (https only)');
     }
     final host = uri.host;
     final allowed = host == 'api.github.com' ||
@@ -178,7 +189,8 @@ class UpdateService {
         host.endsWith('.github.com') ||
         host.endsWith('.githubusercontent.com');
     if (!allowed) {
-      return '下载地址不在 GitHub 域名白名单内';
+      return tx('下载地址不在 GitHub 域名白名单内',
+          en: 'Download URL not on the GitHub domain allowlist');
     }
     return null;
   }

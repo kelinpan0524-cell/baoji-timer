@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/db.dart';
+import '../l10n/lang.dart';
 import '../services/ai_service.dart';
 import '../services/export_service.dart';
 import '../services/focus_service.dart';
@@ -45,7 +46,10 @@ class AppContainer {
     // 空闲提醒：人在屏上走 App 内横幅，离开前台才发系统通知
     session.onIdleNudge = (minutes) async {
       if (_inForeground) {
-        session.showFocusBanner('你已运动 $minutes 分钟了，回来继续！');
+        session.showFocusBanner(
+          tx('你已运动 $minutes 分钟了，回来继续！',
+              en: "You've worked out for $minutes minutes — come back!"),
+        );
       } else {
         await notify.showIdleNudge(minutes);
       }

@@ -1,3 +1,4 @@
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import 'volume.dart';
 
@@ -53,7 +54,8 @@ ProgressionVerdict evaluateProgression({
       .toList(growable: false);
   if (ws.isEmpty) {
     return ProgressionVerdict(
-        ProgressionAction.hold, 0, '本次无正式组记录，重量保持不变');
+        ProgressionAction.hold, 0, tx('本次无正式组记录，重量保持不变',
+        en: 'No working sets logged this time — weight stays the same'));
   }
   // 只统计当前重量附近的正式组（重量波动 >5% 视为另一档）。
   // 负重量（辅助配重）下 5% 容差同样取绝对值，否则阈值变负、
@@ -64,7 +66,8 @@ ProgressionVerdict evaluateProgression({
       .toList(growable: false);
   if (near.isEmpty) {
     return ProgressionVerdict(
-        ProgressionAction.hold, 0, '本次重量与历史档位不同，重量保持不变');
+        ProgressionAction.hold, 0, tx('本次重量与历史档位不同，重量保持不变',
+        en: 'Weight differs from your usual tier — weight stays the same'));
   }
 
   final allReachedMax = near.every((s) => s.reps >= rule.repsMax);
@@ -76,7 +79,10 @@ ProgressionVerdict evaluateProgression({
     return ProgressionVerdict(
         ProgressionAction.increase,
         rule.incrementKg,
+        tx(
         '${near.length} 组全部达到 ${rule.repsMax} 次，末组余力 ${lastSet.rir} 次 → 下次加重 ${rule.incrementKg}kg',
+        en:
+            'All ${near.length} sets hit ${rule.repsMax} reps, last set RIR ${lastSet.rir} → add ${rule.incrementKg}kg next time'),
     );
   }
   if (anyBelowMin) {
@@ -85,11 +91,13 @@ ProgressionVerdict evaluateProgression({
     return ProgressionVerdict(
       ProgressionAction.decrease,
       cut,
-      '有组未达到下限 ${rule.repsMin} 次 → 建议减重约 5%（${cut}kg），先稳动作',
+      tx('有组未达到下限 ${rule.repsMin} 次 → 建议减重约 5%（${cut}kg），先稳动作',
+        en: 'Some sets missed the ${rule.repsMin}-rep floor → reduce ~5% (${cut}kg) and re-groove the form'),
     );
   }
   return ProgressionVerdict(
-      ProgressionAction.hold, 0, '完成情况在区间内 → 重量保持，继续冲次数');
+      ProgressionAction.hold, 0, tx('完成情况在区间内 → 重量保持，继续冲次数',
+        en: 'Reps landed in range — hold weight and chase more reps'));
 }
 
 /// 0.5kg 步进取整（引擎与状态机共用）。

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../services/session_controller.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
@@ -69,20 +71,21 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     final hit = await c.focus.recentDistractingApp();
     if (hit == null || !mounted) return;
     final (pkg, sec) = hit;
-    s.showFocusBanner('刚切去${_friendlyName(pkg)}玩了 $sec 秒，回来继续！');
+    s.showFocusBanner(tx('刚切去${_friendlyName(pkg)}玩了 $sec 秒，回来继续！',
+        en: 'Spent $sec s in ${_friendlyName(pkg)} — back to it!'));
   }
 
   String _friendlyName(String pkg) {
-    const known = {
-      'com.smile.gifmaker': '抖音',
-      'com.ss.android.ugc.aweme': '抖音',
-      'com.kuaishou.app': '快手',
-      'com.xingin.xhs': '小红书',
-      'com.sina.weibo': '微博',
-      'tv.danmaku.bili': 'B站',
-      'com.tencent.weishi': '微视',
+    final known = {
+      'com.smile.gifmaker': tx('抖音', en: 'Douyin (TikTok)'),
+      'com.ss.android.ugc.aweme': tx('抖音', en: 'Douyin (TikTok)'),
+      'com.kuaishou.app': tx('快手', en: 'Kuaishou'),
+      'com.xingin.xhs': tx('小红书', en: 'Xiaohongshu (RED)'),
+      'com.sina.weibo': tx('微博', en: 'Weibo'),
+      'tv.danmaku.bili': tx('B站', en: 'Bilibili'),
+      'com.tencent.weishi': tx('微视', en: 'Weishi'),
     };
-    return known[pkg] ?? '分心 App';
+    return known[pkg] ?? tx('分心 App', en: 'Distracting app');
   }
 
   @override
@@ -221,11 +224,12 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
           shrinkWrap: true,
           padding: const EdgeInsets.symmetric(vertical: 8),
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Text(
-                '全程页面 · 点未完成组的行直接跳过去',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+                tx('全程页面 · 点未完成组的行直接跳过去',
+                    en: 'All pages · Tap an unfinished set to jump'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
               ),
             ),
             for (var i = 0; i < s.exercises.length; i++) ...[
@@ -235,7 +239,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                   children: [
                     Expanded(
                       child: Text(
-                        '${i + 1}. ${s.exercises[i].name}',
+                        '${i + 1}. ${exname(s.exercises[i].name)}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -243,9 +247,10 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                       ),
                     ),
                     Text(
-                      '已完成 '
-                      '${refs.where((r) => r.exerciseIndex == i && r.done).length}'
-                      '/${s.exercises[i].rule.workingSets}',
+                      tx(
+                        '已完成 ${refs.where((r) => r.exerciseIndex == i && r.done).length}/${s.exercises[i].rule.workingSets}',
+                        en: '${refs.where((r) => r.exerciseIndex == i && r.done).length}/${s.exercises[i].rule.workingSets} done',
+                      ),
                       style: const TextStyle(
                         color: AppTheme.textDim,
                         fontSize: 12,
@@ -284,7 +289,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                             ),
                           ),
                     title: Text(
-                      '第 ${ref.setNumber} 组',
+                      tx('第 ${ref.setNumber} 组', en: 'Set ${ref.setNumber}'),
                       style: TextStyle(
                         fontSize: 14,
                         color: ref.done ? AppTheme.textDim : AppTheme.text,
@@ -293,9 +298,9 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                       ),
                     ),
                     trailing: _isCurrentPage(cur, ref)
-                        ? const Text(
-                            '当前',
-                            style: TextStyle(
+                        ? Text(
+                            tx('当前', en: 'Current'),
+                            style: const TextStyle(
                               color: AppTheme.accent,
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
@@ -327,9 +332,9 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       builder: (context, _) {
         _syncPhaseSideEffects(s.phase);
         if (!s.hasActive && _summary == null && !_finishing) {
-          return const Scaffold(
+          return Scaffold(
             backgroundColor: AppTheme.bg,
-            body: Center(child: Text('本次训练已结束')),
+            body: Center(child: Text(tx('本次训练已结束', en: 'Workout finished'))),
           );
         }
         final flow = WorkoutFlow(exercises: s.exercises, setsByEx: s.setsByEx);
@@ -508,9 +513,10 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                     size: 40,
                   ),
                   const SizedBox(height: 8),
-                  const Text(
-                    '已记录',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                  Text(
+                    tx('已记录', en: 'Logged'),
+                    style: const TextStyle(
+                        fontSize: 22, fontWeight: FontWeight.w800),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -537,7 +543,8 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   Widget _buildProgressBar(WorkoutFlow flow, FlowPage? page) {
     final value = page?.kind == FlowPageKind.summary ? 1.0 : flow.ratioCompleted;
     return Semantics(
-      label: '全程完成 ${(value * 100).round()}%',
+      label: tx('全程完成 ${(value * 100).round()}%',
+          en: '${(value * 100).round()}% complete'),
       child: LinearProgressIndicator(
         key: const Key('workoutFlowProgress'),
         minHeight: 3,
@@ -567,7 +574,7 @@ class _FlowHeader extends StatelessWidget {
         children: [
           Expanded(
             child: Text(
-              s.session?.planDayTitle ?? '',
+              dname(s.session?.planDayTitle ?? ''),
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
             ),
@@ -577,7 +584,7 @@ class _FlowHeader extends StatelessWidget {
               onTap: onJumpSheet,
               child: Semantics(
                 button: true,
-                label: '打开全程页面面板',
+                label: tx('打开全程页面面板', en: 'Open all-pages panel'),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 10,
@@ -636,13 +643,16 @@ class _StartPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            s.session?.planDayTitle ?? '今日训练',
+            s.session == null
+                ? tx('今日训练', en: 'Today\'s Workout')
+                : dname(s.session!.planDayTitle),
             textAlign: TextAlign.center,
             style: const TextStyle(fontSize: 30, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 6),
           Text(
-            '共 ${s.exercises.length} 个动作 · ${flow.totalPlannedSets} 个正式组',
+            tx('共 ${s.exercises.length} 个动作 · ${flow.totalPlannedSets} 个正式组',
+                en: '${s.exercises.length} exercises · ${flow.totalPlannedSets} working sets'),
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
           ),
@@ -673,7 +683,7 @@ class _StartPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          s.exercises[i].name,
+                          exname(s.exercises[i].name),
                           style: const TextStyle(
                             fontSize: 17,
                             fontWeight: FontWeight.w700,
@@ -681,9 +691,10 @@ class _StartPage extends StatelessWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${s.exercises[i].rule.workingSets} 组 × '
-                          '${s.exercises[i].rule.repsMin}-${s.exercises[i].rule.repsMax} 次'
-                          ' · RIR ${s.exercises[i].rule.rirTarget}',
+                          tx(
+                            '${s.exercises[i].rule.workingSets} 组 × ${s.exercises[i].rule.repsMin}-${s.exercises[i].rule.repsMax} 次 · RIR ${s.exercises[i].rule.rirTarget}',
+                            en: '${s.exercises[i].rule.workingSets} sets × ${s.exercises[i].rule.repsMin}-${s.exercises[i].rule.repsMax} reps · RIR ${s.exercises[i].rule.rirTarget}',
+                          ),
                           style: const TextStyle(
                             color: AppTheme.textDim,
                             fontSize: 13,
@@ -697,7 +708,10 @@ class _StartPage extends StatelessWidget {
             ),
           const SizedBox(height: 16),
           // 冻结基线：主操作按钮高度 ≥88dp，拇指可达区
-          BigButton(label: '开始训练', height: 88, onPressed: onStart),
+          BigButton(
+              label: tx('开始训练', en: 'Start Workout'),
+              height: 88,
+              onPressed: onStart),
         ],
       ),
     );
@@ -841,21 +855,23 @@ class _TopBarState extends State<_TopBar> {
           children: [
             ListTile(
               leading: const Icon(Icons.play_arrow, color: AppTheme.primary),
-              title: const Text('继续训练'),
+              title: Text(tx('继续训练', en: 'Resume Workout')),
               onTap: () => Navigator.pop(ctx, 'continue'),
             ),
             ListTile(
               leading: const Icon(Icons.delete_outline, color: AppTheme.danger),
-              title: const Text('放弃本次（不留记录）'),
-              subtitle: const Text(
-                '误开的训练用这个，历史不会多一次',
-                style: TextStyle(fontSize: 12),
+              title: Text(
+                  tx('放弃本次（不留记录）', en: 'Discard (no record saved)')),
+              subtitle: Text(
+                tx('误开的训练用这个，历史不会多一次',
+                    en: 'For accidental starts; nothing is added to history'),
+                style: const TextStyle(fontSize: 12),
               ),
               onTap: () => Navigator.pop(ctx, 'quit'),
             ),
             ListTile(
               leading: const Icon(Icons.check_circle, color: AppTheme.primary),
-              title: const Text('结束并保存'),
+              title: Text(tx('结束并保存', en: 'Finish & Save')),
               onTap: () => Navigator.pop(ctx, 'finish'),
             ),
           ],
@@ -906,7 +922,7 @@ class _TopBarState extends State<_TopBar> {
                 child: TextButton(
                   onPressed: () => _showExerciseAdjustSheet(context),
                   child: Text(
-                    '换/加动作',
+                    tx('换/加动作', en: 'Swap / Add Exercise'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -923,7 +939,9 @@ class _TopBarState extends State<_TopBar> {
                     widget.s.skipExercise();
                   },
                   child: Text(
-                    isLastEx ? '已是最后一个' : '跳过动作',
+                    isLastEx
+                        ? tx('已是最后一个', en: 'Last exercise')
+                        : tx('跳过动作', en: 'Skip Exercise'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.right,
@@ -952,7 +970,8 @@ class _TopBarState extends State<_TopBar> {
                     child: Align(
                       alignment: Alignment.centerRight,
                       child: Text(
-                        '按住「结束训练」不放，转满一圈才生效',
+                        tx('按住「结束训练」不放，转满一圈才生效',
+                            en: 'Keep holding Finish until the ring completes'),
                         style: const TextStyle(
                           color: AppTheme.warn,
                           fontSize: 12,
@@ -984,20 +1003,28 @@ class _TopBarState extends State<_TopBar> {
           children: [
             ListTile(
               leading: const Icon(Icons.playlist_add, color: AppTheme.primary),
-              title: const Text('添加动作到队尾'),
-              subtitle: const Text(
-                '从动作库挑选，只进本次训练',
-                style: TextStyle(fontSize: 12),
+              title: Text(tx('添加动作到队尾', en: 'Add Exercise to End')),
+              subtitle: Text(
+                tx('从动作库挑选，只进本次训练',
+                    en: 'Pick from the library; this workout only'),
+                style: const TextStyle(fontSize: 12),
               ),
               onTap: () => Navigator.pop(ctx, 'append'),
             ),
             ListTile(
               leading: const Icon(Icons.swap_horiz, color: AppTheme.accent),
               title: Text(
-                canReplace ? '替换当前动作（${s.currentEx?.name ?? ''}）' : '替换当前动作',
+                canReplace
+                    ? tx('替换当前动作（${exname(s.currentEx?.name ?? '')}）',
+                        en: 'Replace Current (${exname(s.currentEx?.name ?? '')})')
+                    : tx('替换当前动作', en: 'Replace Current'),
               ),
               subtitle: Text(
-                canReplace ? '沿用原组次规则，只换动作名' : '当前动作已记组，不能替换；可改用"跳过动作"',
+                canReplace
+                    ? tx('沿用原组次规则，只换动作名',
+                        en: 'Keeps the set/reps rule; only the name changes')
+                    : tx('当前动作已记组，不能替换；可改用"跳过动作"',
+                        en: 'Sets already logged; use "Skip Exercise" instead'),
                 style: const TextStyle(fontSize: 12),
               ),
               onTap: canReplace ? () => Navigator.pop(ctx, 'replace') : null,
@@ -1018,15 +1045,18 @@ class _TopBarState extends State<_TopBar> {
     if (picked == null || picked.isEmpty || !mounted) return;
     if (choice == 'append') {
       await s.appendExercises(picked);
-      s.showFocusBanner('已加 ${picked.length} 个动作到队尾');
+      s.showFocusBanner(tx('已加 ${picked.length} 个动作到队尾',
+          en: 'Added ${picked.length} exercise(s) to the end'));
     } else {
       final ok = await s.replaceCurrentExercise(picked.first);
       if (ok) {
-        s.showFocusBanner('已换成 ${picked.first.name}');
+        s.showFocusBanner(tx('已换成 ${exname(picked.first.name)}',
+            en: 'Switched to ${exname(picked.first.name)}'));
       } else {
         messenger.showSnackBar(
           SnackBar(
-            content: const Text('替换失败：该动作已在本次训练里'),
+            content: Text(tx('替换失败：该动作已在本次训练里',
+                en: 'Replace failed: already in this workout')),
             backgroundColor: AppTheme.cardHi,
             behavior: SnackBarBehavior.floating,
           ),
@@ -1121,9 +1151,9 @@ class _HoldToEndButtonState extends State<HoldToEndButton> {
       // 读屏替代路径：TalkBack 双击即开三选（P1-12 出口不受影响）
       child = TextButton(
         onPressed: widget.onConfirmed,
-        child: const Text(
-          '结束训练',
-          style: TextStyle(color: AppTheme.textDim, fontSize: 14),
+        child: Text(
+          tx('结束训练', en: 'Finish'),
+          style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
         ),
       );
     } else {
@@ -1150,7 +1180,9 @@ class _HoldToEndButtonState extends State<HoldToEndButton> {
               ),
               const SizedBox(width: 4),
               Text(
-                _progress > 0 ? '继续按住…' : '结束训练',
+                _progress > 0
+                    ? tx('继续按住…', en: 'Keep holding…')
+                    : tx('结束训练', en: 'Finish'),
                 style: TextStyle(
                   color: _progress > 0 ? AppTheme.danger : AppTheme.textDim,
                   fontSize: 14,
@@ -1164,8 +1196,10 @@ class _HoldToEndButtonState extends State<HoldToEndButton> {
     }
     return Semantics(
       button: true,
-      label: '结束训练',
-      hint: accessible ? '点按两下打开结束选项' : '长按两秒打开结束选项',
+      label: tx('结束训练', en: 'Finish'),
+      hint: accessible
+          ? tx('点按两下打开结束选项', en: 'Double-tap for finish options')
+          : tx('长按两秒打开结束选项', en: 'Long-press 2s for finish options'),
       child: child,
     );
   }
@@ -1181,13 +1215,16 @@ class _ExerciseInfo extends StatelessWidget {
   Widget build(BuildContext context) {
     final last = s.lastWorkout[ex.name] ?? const <SetEntry>[];
     final lastText = last.isEmpty
-        ? '首次训练这个动作'
-        : '上次：${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}';
+        ? tx('首次训练这个动作', en: 'First time on this exercise')
+        : tx('上次：${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}',
+            en: 'Last time: ${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}');
     // 计划组练满后（加练态）进度行换成加练计数，不再显示"第 5 / 4 组"
     final extraNo = s.workingSetsDone - ex.rule.workingSets + 1;
     final progressText = s.workingSetsDone >= ex.rule.workingSets
-        ? '已练满 ${ex.rule.workingSets} 组 · 加练第 $extraNo 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次'
-        : '第 ${s.workingSetsDone + 1} / ${ex.rule.workingSets} 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次 · RIR ${ex.rule.rirTarget}';
+        ? tx('已练满 ${ex.rule.workingSets} 组 · 加练第 $extraNo 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次',
+            en: '${ex.rule.workingSets} sets done · Extra set $extraNo · Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps')
+        : tx('第 ${s.workingSetsDone + 1} / ${ex.rule.workingSets} 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次 · RIR ${ex.rule.rirTarget}',
+            en: 'Set ${s.workingSetsDone + 1} / ${ex.rule.workingSets} · Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps · RIR ${ex.rule.rirTarget}');
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1198,7 +1235,7 @@ class _ExerciseInfo extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         Text(
-          ex.name,
+          exname(ex.name),
           style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
         ),
         // 临时调整痕迹（点名条目三）：替换/追加过的动作显示来源，可追溯
@@ -1225,9 +1262,9 @@ class _ExerciseInfo extends StatelessWidget {
             padding: const EdgeInsets.only(top: 6),
             child: GestureDetector(
               onTap: () => s.undoLastSet(),
-              child: const Text(
-                '↩ 撤销上一组',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+              child: Text(
+                tx('↩ 撤销上一组', en: '↩ Undo last set'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
               ),
             ),
           ),
@@ -1270,14 +1307,16 @@ Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text(
-                  '输入重量（kg）',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                Text(
+                  tx('输入重量（kg）', en: 'Enter Weight (kg)'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 4),
-                const Text(
-                  '正数 = 负重；0 = 自重；负数 = 辅助器械配重（如 -30）',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+                Text(
+                  tx('正数 = 负重；0 = 自重；负数 = 辅助器械配重（如 -30）',
+                      en: 'Positive = loaded; 0 = bodyweight; negative = machine assist (e.g. -30)'),
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
                 TextField(
@@ -1296,17 +1335,23 @@ Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
                   onSubmitted: (_) => submit(),
                   style: AppTheme.bigNum(30),
                   decoration: InputDecoration(
-                    hintText: '如 62.5',
-                    errorText: invalid ? '请输入数字，如 62.5 或 -30' : null,
+                    hintText: tx('如 62.5', en: 'e.g. 62.5'),
+                    errorText: invalid
+                        ? tx('请输入数字，如 62.5 或 -30',
+                            en: 'Enter a number, e.g. 62.5 or -30')
+                        : null,
                   ),
                 ),
                 const SizedBox(height: 16),
-                BigButton(label: '确认', height: 64, onPressed: submit),
+                BigButton(
+                    label: tx('确认', en: 'Confirm'),
+                    height: 64,
+                    onPressed: submit),
                 TextButton(
                   onPressed: () => Navigator.pop(sheetCtx),
-                  child: const Text(
-                    '取消',
-                    style: TextStyle(color: AppTheme.textDim),
+                  child: Text(
+                    tx('取消', en: 'Cancel'),
+                    style: const TextStyle(color: AppTheme.textDim),
                   ),
                 ),
               ],
@@ -1382,9 +1427,10 @@ class _ActionPanelState extends State<_ActionPanel> {
         },
         child: Semantics(
           button: true,
-          label:
-              '带入上次成绩：${fmtKg(last.weightKg)}公斤'
-              '${last.reps}次${last.rir >= 0 ? '余力${last.rir}' : ''}',
+          label: tx(
+            '带入上次成绩：${fmtKg(last.weightKg)}公斤${last.reps}次${last.rir >= 0 ? '余力${last.rir}' : ''}',
+            en: 'Apply last set: ${fmtKg(last.weightKg)}kg × ${last.reps} reps${last.rir >= 0 ? ', RIR ${last.rir}' : ''}',
+          ),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
@@ -1393,7 +1439,8 @@ class _ActionPanelState extends State<_ActionPanel> {
                 const Icon(Icons.history, size: 15, color: AppTheme.accent),
                 const SizedBox(width: 5),
                 Text(
-                  '上次：${fmtKg(last.weightKg)}kg×${last.reps}$rirText（点按整套带入）',
+                  tx('上次：${fmtKg(last.weightKg)}kg×${last.reps}$rirText（点按整套带入）',
+                      en: 'Last time: ${fmtKg(last.weightKg)}kg×${last.reps}$rirText (tap to apply)'),
                   style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
                 ),
               ],
@@ -1470,9 +1517,10 @@ class _ActionPanelState extends State<_ActionPanel> {
               Padding(
                 padding: const EdgeInsets.only(left: 12, bottom: 12),
                 child: Tooltip(
-                  message:
-                      '自重/辅助动作点这里：在自重和上次重量间切换；'
-                      '点大数字可直接键入重量（负值 = 辅助器械配重，如 -30）',
+                  message: tx(
+                    '自重/辅助动作点这里：在自重和上次重量间切换；点大数字可直接键入重量（负值 = 辅助器械配重，如 -30）',
+                    en: 'For bodyweight/assisted moves: switch between bodyweight and last weight; tap the big number to type a weight (negative = machine assist, e.g. -30)',
+                  ),
                   child: GestureDetector(
                     onTap: () {
                       HapticFeedback.selectionClick();
@@ -1490,7 +1538,9 @@ class _ActionPanelState extends State<_ActionPanel> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        s.weightDraft == 0 ? '自重' : '自重?',
+                        s.weightDraft == 0
+                            ? tx('自重', en: 'Bodyweight')
+                            : tx('自重?', en: 'Bodyweight?'),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -1536,9 +1586,9 @@ class _ActionPanelState extends State<_ActionPanel> {
             alignment: WrapAlignment.center,
             spacing: 8,
             children: [
-              _kindChip('热身', SetKind.warmup),
-              _kindChip('正式', SetKind.working),
-              _kindChip('力竭', SetKind.failure),
+              _kindChip(tx('热身', en: 'Warm-up'), SetKind.warmup),
+              _kindChip(tx('正式', en: 'Working'), SetKind.working),
+              _kindChip(tx('力竭', en: 'Failure'), SetKind.failure),
             ],
           ),
           const SizedBox(height: 8),
@@ -1549,10 +1599,11 @@ class _ActionPanelState extends State<_ActionPanel> {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Tooltip(
-                message: '余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
-                child: const Text(
-                  '余力 ',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 14),
+                message: tx('余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
+                    en: 'RIR = reps left in the tank; keep the plan default if unsure'),
+                child: Text(
+                  tx('余力 ', en: 'RIR '),
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
                 ),
               ),
               for (var r = 0; r <= 4; r++)
@@ -1622,8 +1673,9 @@ class _ActionPanelState extends State<_ActionPanel> {
               onTap: () => setState(() => _noteOpen = !_noteOpen),
               child: Text(
                 _note.isEmpty && !_noteOpen
-                    ? '+ 备注（可选）'
-                    : '备注：${_note.isEmpty ? "编辑" : _note}',
+                    ? tx('+ 备注（可选）', en: '+ Note (optional)')
+                    : tx('备注：${_note.isEmpty ? "编辑" : _note}',
+                        en: 'Note: ${_note.isEmpty ? "edit" : _note}'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -1639,8 +1691,9 @@ class _ActionPanelState extends State<_ActionPanel> {
                   autofocus: false,
                   maxLines: 1,
                   onChanged: (v) => _note = v,
-                  decoration: const InputDecoration(
-                    hintText: '这组的感受/状态（可选）',
+                  decoration: InputDecoration(
+                    hintText: tx('这组的感受/状态（可选）',
+                        en: 'How this set felt (optional)'),
                     isDense: true,
                   ),
                 ),
@@ -1651,7 +1704,9 @@ class _ActionPanelState extends State<_ActionPanel> {
           // 计划组练满后按钮变成"加练一组"（加练组按正式组记录），不再是死灰按钮。
           BigButton(
             key: const Key('workoutCompleteSet'),
-            label: doneAll ? '加练一组（正式组）' : '完成本组',
+            label: doneAll
+                ? tx('加练一组（正式组）', en: 'Extra Set (Working)')
+                : tx('完成本组', en: 'Done'),
             color: _kind == SetKind.failure ? AppTheme.warn : AppTheme.primary,
             onPressed: _saving
                 ? null
@@ -1683,7 +1738,10 @@ class _ActionPanelState extends State<_ActionPanel> {
                     widget.onRecorded?.call(
                       '${fmtLoad(weight)}${weight != 0 ? 'kg' : ''} × $reps',
                     );
-                    if (pr) s.showFocusBanner('🏆 ${ex.name} 重量新高 PR！');
+                    if (pr) {
+                      s.showFocusBanner(tx('🏆 ${exname(ex.name)} 重量新高 PR！',
+                          en: '🏆 ${exname(ex.name)} New PR!'));
+                    }
                   },
           ),
         ],
@@ -1738,8 +1796,12 @@ class _RestViewState extends State<_RestView> {
     final isLastEx = s.curExIdx >= s.exercises.length - 1;
     final plannedWorking = ex?.rule.workingSets ?? 0;
     final nextText = s.workingSetsDone >= plannedWorking
-        ? (isLastEx ? '准备结束训练' : '下一个动作：${s.exercises[s.curExIdx + 1].name}')
-        : '下一组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）';
+        ? (isLastEx
+              ? tx('准备结束训练', en: 'Ready to Finish')
+              : tx('下一个动作：${exname(s.exercises[s.curExIdx + 1].name)}',
+                  en: 'Next exercise: ${exname(s.exercises[s.curExIdx + 1].name)}'))
+        : tx('下一组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
+            en: 'Next set: ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
 
     // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，
@@ -1760,9 +1822,10 @@ class _RestViewState extends State<_RestView> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Text(
-                        '组间休息',
-                        style: TextStyle(color: AppTheme.textDim, fontSize: 18),
+                      Text(
+                        tx('组间休息', en: 'Rest'),
+                        style: const TextStyle(
+                            color: AppTheme.textDim, fontSize: 18),
                       ),
                       const SizedBox(height: 8),
                       ValueListenableBuilder<int>(
@@ -1830,9 +1893,9 @@ class _RestViewState extends State<_RestView> {
                           style: OutlinedButton.styleFrom(
                             minimumSize: const Size.fromHeight(48),
                           ),
-                          child: const Text(
-                            '直接输入重量',
-                            style: TextStyle(
+                          child: Text(
+                            tx('直接输入重量', en: 'Enter Weight'),
+                            style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
                             ),
@@ -1865,10 +1928,11 @@ class _RestViewState extends State<_RestView> {
                           onPressed: () => s.toggleBodyweightDraft(),
                           child: Text(
                             s.weightDraft == 0
-                                ? '当前：自重'
+                                ? tx('当前：自重', en: 'Current: bodyweight')
                                 : (s.weightDraft < 0
-                                      ? '当前：辅 ${fmtKg(-s.weightDraft)}（点切自重）'
-                                      : '改为自重'),
+                                      ? tx('当前：辅 ${fmtKg(-s.weightDraft)}（点切自重）',
+                                          en: 'Current: assist ${fmtKg(-s.weightDraft)} (tap for bodyweight)')
+                                      : tx('改为自重', en: 'Switch to bodyweight')),
                             style: const TextStyle(
                               color: AppTheme.textDim,
                               fontSize: 13,
@@ -1908,7 +1972,8 @@ class _RestViewState extends State<_RestView> {
                                 color: AppTheme.primary,
                               ),
                               label: Text(
-                                '再来一组 · ${s.extraSetExerciseName}（继承上次重量）',
+                                tx('再来一组 · ${exname(s.extraSetExerciseName ?? '')}（继承上次重量）',
+                                    en: 'One More Set · ${exname(s.extraSetExerciseName ?? '')} (last weight)'),
                                 style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
@@ -1934,9 +1999,9 @@ class _RestViewState extends State<_RestView> {
                                   backgroundColor: AppTheme.cardHi,
                                   side: BorderSide.none,
                                 ),
-                                child: const Text(
-                                  '-30 秒',
-                                  style: TextStyle(
+                                child: Text(
+                                  tx('-30 秒', en: '-30s'),
+                                  style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -1957,9 +2022,9 @@ class _RestViewState extends State<_RestView> {
                                   backgroundColor: AppTheme.cardHi,
                                   side: BorderSide.none,
                                 ),
-                                child: const Text(
-                                  '+30 秒',
-                                  style: TextStyle(
+                                child: Text(
+                                  tx('+30 秒', en: '+30s'),
+                                  style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
                                   ),
@@ -1986,7 +2051,9 @@ class _RestViewState extends State<_RestView> {
                                       : AppTheme.text,
                                 ),
                                 child: Text(
-                                  s.isRestPaused ? '继续' : '暂停',
+                                  s.isRestPaused
+                                      ? tx('继续', en: 'Resume')
+                                      : tx('暂停', en: 'Pause'),
                                   style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700,
@@ -2009,9 +2076,9 @@ class _RestViewState extends State<_RestView> {
                                   side: BorderSide.none,
                                   foregroundColor: AppTheme.textDim,
                                 ),
-                                child: const Text(
-                                  '撤销',
-                                  style: TextStyle(
+                                child: Text(
+                                  tx('撤销', en: 'Undo'),
+                                  style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
                                   ),
@@ -2023,7 +2090,7 @@ class _RestViewState extends State<_RestView> {
                       ),
                       const SizedBox(height: 12),
                       BigButton(
-                        label: '跳过休息，直接开练',
+                        label: tx('跳过休息，直接开练', en: 'Skip Rest, Start Lifting'),
                         height: 80,
                         onPressed: () {
                           HapticFeedback.mediumImpact();
@@ -2093,7 +2160,8 @@ class _RestBriefState extends State<_RestBrief> {
                     size: 16, color: AppTheme.textDim),
                 const SizedBox(width: 6),
                 Text(
-                  '本次战报 · ${stats.workingSets} 组',
+                  tx('本次战报 · ${stats.workingSets} 组',
+                      en: 'Session Report · ${stats.workingSets} sets'),
                   style: const TextStyle(
                       color: AppTheme.textDim, fontSize: 13),
                 ),
@@ -2109,14 +2177,16 @@ class _RestBriefState extends State<_RestBrief> {
             if (_open) ...[
               const SizedBox(height: 6),
               Text(
-                '已完成 ${stats.workingSets} 个正式组'
-                '${stats.totalSets > stats.workingSets ? '（含热身 ${stats.totalSets - stats.workingSets} 组）' : ''}'
-                ' · ${stats.exercises.length}/${s.exercises.length} 个动作',
+                tx(
+                  '已完成 ${stats.workingSets} 个正式组${stats.totalSets > stats.workingSets ? '（含热身 ${stats.totalSets - stats.workingSets} 组）' : ''} · ${stats.exercises.length}/${s.exercises.length} 个动作',
+                  en: '${stats.workingSets} working sets done${stats.totalSets > stats.workingSets ? ' (incl. ${stats.totalSets - stats.workingSets} warm-up)' : ''} · ${stats.exercises.length}/${s.exercises.length} exercises',
+                ),
                 style: const TextStyle(color: AppTheme.text, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
               Text(
-                '本日容量 ${fmtVolume(stats.volume)} · 已练 $minutes 分钟',
+                tx('本日容量 ${fmtVolume(stats.volume)} · 已练 $minutes 分钟',
+                    en: 'Today\'s volume ${fmtVolume(stats.volume)} · $minutes min trained'),
                 style: const TextStyle(color: AppTheme.text, fontSize: 13),
                 textAlign: TextAlign.center,
               ),
@@ -2184,32 +2254,38 @@ class _SummaryPage extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 24),
-              const Text(
-                '训练完成 💪',
+              Text(
+                tx('训练完成 💪', en: 'Workout Complete 💪'),
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800),
+                style: const TextStyle(
+                    fontSize: 32, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
-                title,
+                dname(title),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppTheme.textDim, fontSize: 16),
               ),
               const SizedBox(height: 24),
               Row(
                 children: [
-                  _statCell('总容量', fmtVolume(stats.volume)),
-                  _statCell('正式组', '${stats.workingSets}'),
-                  _statCell('动作数', '${stats.exercises.length}'),
+                  _statCell(
+                      tx('总容量', en: 'Total Volume'), fmtVolume(stats.volume)),
+                  _statCell(tx('正式组', en: 'Working Sets'),
+                      '${stats.workingSets}'),
+                  _statCell(tx('动作数', en: 'Exercises'),
+                      '${stats.exercises.length}'),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
                 durationMin > 0
                     ? (activeMin > 0 || restMin > 0
-                          ? '总时长 $durationMin 分钟 · 训练 $activeMin 分 · 休息 $restMin 分'
-                          : '训练时长 $durationMin 分钟')
-                    : '训练完成',
+                          ? tx('总时长 $durationMin 分钟 · 训练 $activeMin 分 · 休息 $restMin 分',
+                              en: 'Total $durationMin min · Active $activeMin min · Rest $restMin min')
+                          : tx('训练时长 $durationMin 分钟',
+                              en: 'Duration $durationMin min'))
+                    : tx('训练完成', en: 'Workout complete'),
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppTheme.textDim),
               ),
@@ -2222,7 +2298,8 @@ class _SummaryPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    '🏆 PR 突破：${prNames.join('、')}',
+                    tx('🏆 PR 突破：${prNames.map(exname).join('、')}',
+                        en: '🏆 New PR: ${prNames.map(exname).join(', ')}'),
                     style: const TextStyle(
                       color: AppTheme.warn,
                       fontSize: 16,
@@ -2233,7 +2310,7 @@ class _SummaryPage extends StatelessWidget {
                 const SizedBox(height: 16),
               ],
               SectionCard(
-                title: '渐进建议（下次训练）',
+                title: tx('渐进建议（下次训练）', en: 'Progression (Next Workout)'),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2250,7 +2327,7 @@ class _SummaryPage extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               BigButton(
-                label: '收工',
+                label: tx('收工', en: 'Finish'),
                 height: 72,
                 onPressed: () =>
                     Navigator.of(context).popUntil((r) => r.isFirst),

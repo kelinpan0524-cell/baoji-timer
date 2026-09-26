@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../db/db.dart';
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
 import '../presets/baoji_plan.dart';
 import 'focus_service.dart';
 import 'rest_cue.dart';
@@ -108,25 +109,29 @@ class SessionController extends ChangeNotifier {
     if (s == null || s.status != 'active') return const TrainingCard.inactive();
     final rule = currentEx?.rule;
     final reps = (rule == null || rule.repsMin == rule.repsMax)
-        ? '${rule?.repsMin ?? 0} 次'
-        : '${rule.repsMin}-${rule.repsMax} 次';
+        ? tx('${rule?.repsMin ?? 0} 次', en: '${rule?.repsMin ?? 0} reps')
+        : tx('${rule.repsMin}-${rule.repsMax} 次',
+            en: '${rule.repsMin}-${rule.repsMax} reps');
     final w = weightDraft;
     final wText = w < 0
-        ? '辅 ${_fmtKg(-w)}kg'
-        : (w == 0 ? '自重' : '${_fmtKg(w)}kg');
+        ? tx('辅 ${_fmtKg(-w)}kg', en: 'assist ${_fmtKg(-w)}kg')
+        : (w == 0 ? tx('自重', en: 'bodyweight') : '${_fmtKg(w)}kg');
     if (phase == WorkoutPhase.resting) {
       final remainSec = restRemainingMs.value <= 0
           ? 0
           : (restRemainingMs.value / 1000).ceil();
       final remainText = remainSec >= 60
-          ? '${remainSec ~/ 60}分${remainSec % 60}秒'
-          : '$remainSec 秒';
+          ? tx('${remainSec ~/ 60}分${remainSec % 60}秒',
+              en: '${remainSec ~/ 60}m${remainSec % 60}s')
+          : tx('$remainSec 秒', en: '${remainSec}s');
       return TrainingCard(
         active: true,
         resting: true,
         paused: _restPaused,
-        title: '组间休息中',
-        text: '${_restPaused ? '已暂停 · ' : ''}还剩 $remainText · 下一组 $wText×$reps',
+        title: tx('组间休息中', en: 'Rest between sets'),
+        text:
+            '${_restPaused ? tx('已暂停 · ', en: 'Paused · ') : ''}'
+            '${tx('还剩 $remainText · 下一组 $wText×$reps', en: '$remainText left · next set $wText×$reps')}',
         remaining: restTotalMs > 0 ? remainSec : -1,
         total: (restTotalMs / 1000).round(),
         chronoStartMs: s.startedAt,
@@ -136,13 +141,18 @@ class SessionController extends ChangeNotifier {
       active: true,
       resting: false,
       paused: false,
-      title: currentEx?.name ?? '训练中',
+      title: currentEx?.name ?? tx('训练中', en: 'Workout in progress'),
       // 组数封顶在本动作组数上：最后一个动作完成后、finish 落库前的瞬时
       // 推卡不出现「第 4/3 组」越界文案。
-      text:
-          '本组 $wText×$reps · 第 '
-          '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
-          '/${rule?.workingSets ?? 0} 组',
+      text: tx(
+        '本组 $wText×$reps · 第 '
+        '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
+        '/${rule?.workingSets ?? 0} 组',
+        en:
+            'This set $wText×$reps · set '
+            '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
+            '/${rule?.workingSets ?? 0}',
+      ),
       remaining: -1,
       total: 0,
       chronoStartMs: s.startedAt,
@@ -821,7 +831,9 @@ class SessionController extends ChangeNotifier {
         kind: m.isCompound ? 'compound' : 'assistance',
         restSec: 0,
         rule: ProgressionRule.fallback,
-        trace: prevName.isEmpty ? '追加于：会话开头' : '追加于：$prevName',
+        trace: prevName.isEmpty
+            ? tx('追加于：会话开头', en: 'Added at start of session')
+            : tx('追加于：$prevName', en: 'Added after $prevName'),
       );
       final id = await _db.insertSessionExercise(draft);
       exercises.add(draft.copyWithId(id));
@@ -853,7 +865,7 @@ class SessionController extends ChangeNotifier {
       targetSets: ex.targetSets,
       targetRepsMin: ex.targetRepsMin,
       targetRepsMax: ex.targetRepsMax,
-      trace: '替换自：${ex.name}',
+      trace: tx('替换自：${ex.name}', en: 'Replaced from ${ex.name}'),
     );
     await _db.updateSessionExercise(updated);
     exercises[curExIdx] = updated;
@@ -931,7 +943,10 @@ class SessionController extends ChangeNotifier {
       final tSets = ex.targetSets > 0 ? ex.targetSets : ex.rule.workingSets;
       final tMin = ex.targetRepsMin > 0 ? ex.targetRepsMin : ex.rule.repsMin;
       final tMax = ex.targetRepsMax > 0 ? ex.targetRepsMax : ex.rule.repsMax;
-      out.add('${ex.name}（计划目标 $tSets×$tMin-$tMax 次）：${v.reason}');
+      out.add(tx(
+        '${ex.name}（计划目标 $tSets×$tMin-$tMax 次）：${v.reason}',
+        en: '${ex.name} (target $tSets×$tMin-$tMax reps): ${v.reason}',
+      ));
     }
     return out;
   }

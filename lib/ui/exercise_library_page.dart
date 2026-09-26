@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/exercise_library.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -55,7 +57,7 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(title: const Text('动作库')),
+      appBar: AppBar(title: Text(tx('动作库', en: 'Exercise Library'))),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -70,7 +72,14 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                         Padding(
                           padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
-                            label: Text(f,
+                            label: Text(
+                                f == '全部'
+                                    ? tx('全部', en: 'All')
+                                    : f == '健身房'
+                                        ? tx('健身房', en: 'Gym')
+                                        : f == '居家'
+                                            ? tx('居家', en: 'Home')
+                                            : mname(f), // 肌群名是数据，显示层翻译
                                 style: const TextStyle(fontSize: 12)),
                             selected: _filter == f,
                             onSelected: (_) => setState(() => _filter = f),
@@ -108,15 +117,20 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(m.name,
+                                      Text(exname(m.name),
                                           style: const TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w600)),
                                       const SizedBox(height: 2),
                                       Text(
-                                        '主练 ${m.muscles.main}'
-                                        '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.join('/')}'}'
-                                        ' · ${m.isCompound ? '复合' : '单关节'}',
+                                        tx(
+                                          '主练 ${mname(m.muscles.main)}'
+                                          '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.map(mname).join('/')}'}'
+                                          ' · ${m.isCompound ? '复合' : '单关节'}',
+                                          en: 'Main ${mname(m.muscles.main)}'
+                                              '${m.muscles.secondary.isEmpty ? '' : ' · Secondary ${m.muscles.secondary.map(mname).join('/')}'}'
+                                              ' · ${m.isCompound ? 'Compound' : 'Isolation'}',
+                                        ),
                                         style: const TextStyle(
                                             color: AppTheme.textDim,
                                             fontSize: 12),
@@ -150,7 +164,7 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
         color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(6),
       ),
-      child: Text(m.equipmentLabel,
+      child: Text(eqname(m.equipmentLabel),
           style: TextStyle(fontSize: 11, color: color)),
     );
   }
@@ -188,7 +202,8 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
       final rm = estimate1RM(w, reps);
       if (rm > bestRm) {
         bestRm = rm;
-        bestRmDesc = '${fmtKg(w)}kg × $reps 次';
+        bestRmDesc =
+            tx('${fmtKg(w)}kg × $reps 次', en: '${fmtKg(w)}kg × $reps reps');
       }
       if (w > bestW) bestW = w;
     }
@@ -204,43 +219,54 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            Text(m.name,
+            Text(exname(m.name),
                 style: const TextStyle(
                     fontSize: 19, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(
-              '主练 ${m.muscles.main}'
-              '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.join('/')}'}'
-              ' · ${m.isCompound ? '复合动作' : '单关节动作'} · ${m.equipmentLabel}',
+              tx(
+                '主练 ${mname(m.muscles.main)}'
+                '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.map(mname).join('/')}'}'
+                ' · ${m.isCompound ? '复合动作' : '单关节动作'} · ${eqname(m.equipmentLabel)}',
+                en: 'Main ${mname(m.muscles.main)}'
+                    '${m.muscles.secondary.isEmpty ? '' : ' · Secondary ${m.muscles.secondary.map(mname).join('/')}'}'
+                    ' · ${m.isCompound ? 'Compound' : 'Isolation'} · ${eqname(m.equipmentLabel)}',
+              ),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
             ),
             const SizedBox(height: 14),
             if (dates.isEmpty)
-              const Text('还没练过这个动作——加进计划后，这里会显示历史最好成绩。',
-                  style: TextStyle(color: AppTheme.textDim))
+              Text(
+                  tx('还没练过这个动作——加进计划后，这里会显示历史最好成绩。',
+                      en: 'Never trained this exercise yet — add it to a plan and your bests will show up here.'),
+                  style: const TextStyle(color: AppTheme.textDim))
             else ...[
               Row(children: [
-                _bestCell('估算 1RM', '${fmtKg(bestRm)}kg'),
-                _bestCell('最佳一组', bestRmDesc),
-                _bestCell('最大重量', '${fmtKg(bestW)}kg'),
+                _bestCell(tx('估算 1RM', en: 'Est. 1RM'), '${fmtKg(bestRm)}kg'),
+                _bestCell(tx('最佳一组', en: 'Best set'), bestRmDesc),
+                _bestCell(tx('最大重量', en: 'Max weight'), '${fmtKg(bestW)}kg'),
               ]),
               const SizedBox(height: 14),
-              const Text('最近训练',
-                  style: TextStyle(
+              Text(tx('最近训练', en: 'Recent Workouts'),
+                  style: const TextStyle(
                       fontSize: 15, fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               for (final d in dates.take(3))
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 3),
                   child: Text(
-                    '$d：${byDate[d]!.map((x) => '${fmtKg(x.weightKg)}×${x.reps}').join('  ')}',
+                    tx(
+                        '$d：${byDate[d]!.map((x) => '${fmtKg(x.weightKg)}×${x.reps}').join('  ')}',
+                        en: '$d: ${byDate[d]!.map((x) => '${fmtKg(x.weightKg)}×${x.reps}').join('  ')}'),
                     style: const TextStyle(fontSize: 14),
                   ),
                 ),
               if (dates.length > 3)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
-                  child: Text('共 ${dates.length} 次练过，更多见历史页',
+                  child: Text(
+                      tx('共 ${dates.length} 次练过，更多见历史页',
+                          en: 'Trained ${dates.length} times in total — see History for more'),
                       style: const TextStyle(
                           color: AppTheme.textDim, fontSize: 12)),
                 ),

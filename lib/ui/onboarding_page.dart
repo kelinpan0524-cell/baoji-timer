@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/baoji_plan.dart';
 import '../presets/exercise_library.dart';
 import 'shell.dart';
@@ -71,21 +73,23 @@ class _OnboardingPageState extends State<OnboardingPage>
           AppContainer c) =>
       [
         (
-          kBaojiPlanName,
-          '每周三练：推 / 拉 / 腿，四大项自带渐进超负荷，为本 App 量身设计',
+          dname(kBaojiPlanName),
+          tx('每周三练：推 / 拉 / 腿，四大项自带渐进超负荷，为本 App 量身设计',
+              en: 'Three sessions a week: push / pull / legs, with built-in progressive overload on the big four. Designed for this app.'),
           () => c.planRepo.installBaojiPlan(),
         ),
         for (final t in kPlanTemplates)
           (
-            t.name,
-            t.intro,
+            dname(t.name),
+            dname(t.intro),
             () async {
               await c.planRepo.installTemplate(t);
             },
           ),
         (
-          '先不选',
-          '直接进入，随时可在「计划」页安装模板或让 AI 导入自己的计划',
+          tx('先不选', en: 'Skip for now'),
+          tx('直接进入，随时可在「计划」页安装模板或让 AI 导入自己的计划',
+              en: 'Jump right in. Install templates from the Plan page later, or have AI import your own plan.'),
           null,
         ),
       ];
@@ -136,8 +140,10 @@ class _OnboardingPageState extends State<OnboardingPage>
                   const SizedBox(height: 16),
                   BigButton(
                     label: _page < 2
-                        ? '下一步'
-                        : (_installing ? '正在准备计划…' : '开始使用'),
+                        ? tx('下一步', en: 'Next')
+                        : (_installing
+                            ? tx('正在准备计划…', en: 'Preparing plan…')
+                            : tx('开始使用', en: 'Get Started')),
                     height: 64,
                     onPressed: _installing
                         ? null
@@ -176,8 +182,9 @@ class _OnboardingPageState extends State<OnboardingPage>
     } catch (e) {
       if (!mounted) return;
       setState(() => _installing = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('计划安装失败，可稍后在「计划」页重试，或先选「先不选」进入'),
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(tx('计划安装失败，可稍后在「计划」页重试，或先选「先不选」进入',
+              en: 'Plan install failed. Retry later from the Plan page, or pick "Skip for now" to continue.')),
           backgroundColor: AppTheme.cardHi,
           behavior: SnackBarBehavior.floating));
     }
@@ -193,21 +200,29 @@ class _OnboardingPageState extends State<OnboardingPage>
   // ---------- 第 1 屏：欢迎 ----------
 
   Widget _welcome() {
-    return const Padding(
-      padding: EdgeInsets.all(32),
+    return Padding(
+      padding: const EdgeInsets.all(32),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text('🏋️', style: TextStyle(fontSize: 72)),
-          SizedBox(height: 24),
-          Text('薄肌训练计时器',
-              style: TextStyle(fontSize: 30, fontWeight: FontWeight.w800)),
-          SizedBox(height: 12),
+          const Text('🏋️', style: TextStyle(fontSize: 72)),
+          const SizedBox(height: 24),
+          Text(tx('薄肌训练计时器', en: 'Baoji Workout Timer'),
+              style: const TextStyle(
+                  fontSize: 30, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 12),
           Text(
-            '一键记录一组 · 组间自动倒计时 · 训练时自动勿扰\n'
-            '数据全部存在手机本地，可选同步到飞书日历',
+            tx(
+              '一键记录一组 · 组间自动倒计时 · 训练时自动勿扰\n'
+              '数据全部存在手机本地，可选同步到飞书日历',
+              en: 'Log a set in one tap · auto rest countdown · auto Do Not '
+                  'Disturb during workouts\n'
+                  'All data stays on your phone, with optional Feishu '
+                  'Calendar sync',
+            ),
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppTheme.textDim, fontSize: 15, height: 1.6),
+            style: const TextStyle(
+                color: AppTheme.textDim, fontSize: 15, height: 1.6),
           ),
         ],
       ),
@@ -222,19 +237,23 @@ class _OnboardingPageState extends State<OnboardingPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('需要几个权限',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+          Text(tx('需要几个权限', en: 'A Few Permissions Needed'),
+              style: const TextStyle(
+                  fontSize: 26, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          const Text('点一下就能授权，也可以全部跳过',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+          Text(tx('点一下就能授权，也可以全部跳过',
+                  en: 'Tap to grant, or skip them all'),
+              style:
+                  const TextStyle(color: AppTheme.textDim, fontSize: 13)),
           const SizedBox(height: 12),
           Expanded(
             child: SingleChildScrollView(
               child: Column(
                 children: [
                   _permRow(
-                    '通知',
-                    '锁屏后也能看到组间倒计时和结束提醒（建议开启）',
+                    tx('通知', en: 'Notifications'),
+                    tx('锁屏后也能看到组间倒计时和结束提醒（建议开启）',
+                        en: 'See the rest countdown and end alert even on the lock screen (recommended)'),
                     granted: _notifGranted,
                     onTap: () async {
                       final s = await Permission.notification.request();
@@ -243,8 +262,9 @@ class _OnboardingPageState extends State<OnboardingPage>
                     },
                   ),
                   _permRow(
-                    '勿扰访问',
-                    '训练时自动静音消息，结束自动恢复（建议开启）',
+                    tx('勿扰访问', en: 'Do Not Disturb Access'),
+                    tx('训练时自动静音消息，结束自动恢复（建议开启）',
+                        en: 'Silences messages during workouts and restores them after (recommended)'),
                     granted: _dndGranted,
                     onTap: () async {
                       await c.focus.openDndAccessSettings();
@@ -252,8 +272,9 @@ class _OnboardingPageState extends State<OnboardingPage>
                     },
                   ),
                   _permRow(
-                    '使用情况访问',
-                    '切去刷视频时回来提醒你（可选，训练防分心用）',
+                    tx('使用情况访问', en: 'Usage Access'),
+                    tx('切去刷视频时回来提醒你（可选，训练防分心用）',
+                        en: 'Reminds you when you come back from watching videos (optional, for staying focused)'),
                     granted: _usageGranted,
                     onTap: () async {
                       await c.focus.openUsageAccessSettings();
@@ -264,10 +285,13 @@ class _OnboardingPageState extends State<OnboardingPage>
               ),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text('每个权限都可以以后在 设置→权限 里单独开启或跳过。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+                tx('每个权限都可以以后在 设置→权限 里单独开启或跳过。',
+                    en: 'Every permission can be enabled or skipped later in Settings → Permissions.'),
+                style:
+                    const TextStyle(color: AppTheme.textDim, fontSize: 13)),
           ),
         ],
       ),
@@ -294,7 +318,7 @@ class _OnboardingPageState extends State<OnboardingPage>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('$title${granted ? ' · 已开启' : ''}',
+                  Text('$title${granted ? tx(' · 已开启', en: ' · On') : ''}',
                       style: const TextStyle(
                           fontSize: 17, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 2),
@@ -320,13 +344,17 @@ class _OnboardingPageState extends State<OnboardingPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('选择你的起始计划',
+          Text(tx('选择你的起始计划', en: 'Choose Your Starting Plan'),
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
+              style:
+                  const TextStyle(fontSize: 24, fontWeight: FontWeight.w800)),
           const SizedBox(height: 4),
-          const Text('装进去的是骨架，每个动作都能在计划编辑器里改',
+          Text(
+              tx('装进去的是骨架，每个动作都能在计划编辑器里改',
+                  en: 'You install a skeleton; every exercise can be edited in the plan editor'),
               textAlign: TextAlign.center,
-              style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+              style:
+                  const TextStyle(color: AppTheme.textDim, fontSize: 13)),
           const SizedBox(height: 8),
           Expanded(
             child: ListView(
@@ -335,7 +363,7 @@ class _OnboardingPageState extends State<OnboardingPage>
                   0,
                   choices[0].$1,
                   choices[0].$2,
-                  tag: '推荐',
+                  tag: tx('推荐', en: 'Recommended'),
                 ),
                 for (var i = 1; i < choices.length; i++)
                   _planRow(i, choices[i].$1, choices[i].$2),

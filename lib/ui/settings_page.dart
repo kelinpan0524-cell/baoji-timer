@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app.dart';
+import '../l10n/lang.dart';
 import '../services/ai_service.dart';
 import '../services/focus_service.dart';
 import '../services/settings.dart';
@@ -25,29 +26,55 @@ class SettingsPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
       children: [
+        SectionCard(
+          title: tx('语言 / Language'),
+          child: SegmentedButton<LangPref>(
+            segments: [
+              ButtonSegment(
+                value: LangPref.system,
+                label: Text(tx('跟随系统', en: 'Auto')),
+              ),
+              ButtonSegment(value: LangPref.zh, label: const Text('中文')),
+              const ButtonSegment(value: LangPref.en, label: Text('English')),
+            ],
+            selected: {s.langPref},
+            onSelectionChanged: (sel) {
+              s.set(() => s.langPref = sel.first);
+              s.save();
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
         _FocusCard(s: s),
         const SizedBox(height: 12),
         SectionCard(
-          title: '训练偏好',
+          title: tx('训练偏好', en: 'Training Preferences'),
           child: Column(
             children: [
-              _numRow('复合动作休息（秒）', s.restCompoundSec, (v) {
+              _numRow(
+                  tx('复合动作休息（秒）', en: 'Rest for compound exercises (sec)'),
+                  s.restCompoundSec, (v) {
                 s.restCompoundSec = v;
                 s.save();
               }),
-              _numRow('辅助动作休息（秒）', s.restAssistanceSec, (v) {
+              _numRow(
+                  tx('辅助动作休息（秒）', en: 'Rest for assistance exercises (sec)'),
+                  s.restAssistanceSec, (v) {
                 s.restAssistanceSec = v;
                 s.save();
               }),
               // 体重（自重容量折算用，点名条目二）：引体/俯卧撑类动作
               // 按 系数×体重 计入容量趋势；设 0 关闭折算。
-              _weightRow('体重（自重容量折算用）', s.bodyWeightKg, (v) {
+              _weightRow(
+                  tx('体重（自重容量折算用）',
+                      en: 'Body weight (for bodyweight volume)'),
+                  s.bodyWeightKg, (v) {
                 s.bodyWeightKg = v;
                 s.save();
               }),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('完成组时震动'),
+                title: Text(tx('完成组时震动', en: 'Vibrate when a set is done')),
                 value: s.vibrationOn,
                 activeThumbColor: AppTheme.primary,
                 onChanged: (v) {
@@ -57,10 +84,12 @@ class SettingsPage extends StatelessWidget {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('休息提示音'),
-                subtitle: const Text(
-                  '组间休息的开始/半程/最后3秒提示音',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                title: Text(tx('休息提示音', en: 'Rest sound cues')),
+                subtitle: Text(
+                  tx('组间休息的开始/半程/最后3秒提示音',
+                      en: 'Cue sounds at rest start, halfway, and the last 3 seconds'),
+                  style:
+                      const TextStyle(color: AppTheme.textDim, fontSize: 12),
                 ),
                 value: s.restCueEnabled,
                 activeThumbColor: AppTheme.primary,
@@ -71,10 +100,12 @@ class SettingsPage extends StatelessWidget {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('锁屏时保持显示'),
-                subtitle: const Text(
-                  '锁屏后训练计时仍显示在锁屏上，下次开始训练生效',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                title: Text(tx('锁屏时保持显示', en: 'Keep on lock screen')),
+                subtitle: Text(
+                  tx('锁屏后训练计时仍显示在锁屏上，下次开始训练生效',
+                      en: 'The workout timer stays visible on the lock screen; takes effect from the next workout'),
+                  style:
+                      const TextStyle(color: AppTheme.textDim, fontSize: 12),
                 ),
                 value: s.lockScreenKeepOn,
                 activeThumbColor: AppTheme.primary,
@@ -85,10 +116,12 @@ class SettingsPage extends StatelessWidget {
               ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('空闲提醒'),
-                subtitle: const Text(
-                  '训练中放下手机太久，发通知拉你回来',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+                title: Text(tx('空闲提醒', en: 'Idle Reminder')),
+                subtitle: Text(
+                  tx('训练中放下手机太久，发通知拉你回来',
+                      en: 'If you put the phone down too long mid-workout, a notification brings you back'),
+                  style:
+                      const TextStyle(color: AppTheme.textDim, fontSize: 12),
                 ),
                 value: s.idleNudgeEnabled,
                 activeThumbColor: AppTheme.primary,
@@ -98,7 +131,8 @@ class SettingsPage extends StatelessWidget {
                 },
               ),
               if (s.idleNudgeEnabled)
-                _nudgeRow('放下手机多久后提醒', s.idleNudgeMinutes, (v) {
+                _nudgeRow(tx('放下手机多久后提醒', en: 'Idle time before nudge'),
+                    s.idleNudgeMinutes, (v) {
                   s.idleNudgeMinutes = v;
                   s.save();
                 }),
@@ -115,42 +149,44 @@ class SettingsPage extends StatelessWidget {
         _UpdateCard(s: s),
         const SizedBox(height: 12),
         SectionCard(
-          title: '数据',
+          title: tx('数据', en: 'Stats'),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                '手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；换手机或误清数据时可用 JSON 存档一键恢复。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+              Text(
+                tx('手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；换手机或误清数据时可用 JSON 存档一键恢复。',
+                    en: 'Phone-local storage is the only data source. Export an archive weekly. It includes workout records, plans, body data, and exercise notes; if you switch phones or lose data, a JSON archive restores everything in one tap.'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
               ),
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: () async {
                   final csv = await c.export.buildCsv();
                   await c.export.shareText(
-                    '训练记录 CSV',
+                    tx('训练记录 CSV', en: 'Workout Records CSV'),
                     csv,
                     filename: 'training_export.csv',
                   );
                 },
-                child: const Text('导出 CSV（备份/表格）'),
+                child: Text(tx('导出 CSV（备份/表格）',
+                    en: 'Export CSV (backup / spreadsheet)')),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () async {
                   final json = await c.export.buildJson();
                   await c.export.shareText(
-                    '训练记录 JSON',
+                    tx('训练记录 JSON', en: 'Workout Records JSON'),
                     json,
                     filename: 'training_export.json',
                   );
                 },
-                child: const Text('导出 JSON（存档）'),
+                child: Text(tx('导出 JSON（存档）', en: 'Export JSON (archive)')),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () => _restoreFromJson(context, c),
-                child: const Text('从 JSON 存档恢复'),
+                child: Text(tx('从 JSON 存档恢复', en: 'Restore from JSON archive')),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -158,12 +194,13 @@ class SettingsPage extends StatelessWidget {
                   final pack = await c.export
                       .buildAiPack(bodyWeightKg: c.settings.bodyWeightKg);
                   await c.export.shareText(
-                    'AI 分析包',
+                    tx('AI 分析包', en: 'AI Analysis Pack'),
                     pack,
                     filename: 'ai_analysis_pack.md',
                   );
                 },
-                child: const Text('生成 AI 分析包（给 AI 做总结）'),
+                child: Text(tx('生成 AI 分析包（给 AI 做总结）',
+                    en: 'Generate AI analysis pack (for AI summary)')),
               ),
               const SizedBox(height: 8),
               OutlinedButton(
@@ -173,27 +210,31 @@ class SettingsPage extends StatelessWidget {
                 onPressed: () async {
                   final ok = await confirmDialog(
                     context,
-                    '清空全部数据？',
-                    '所有训练记录、计划和身体数据将被删除且无法恢复。强烈建议先导出备份。',
-                    okLabel: '全部删除',
+                    tx('清空全部数据？', en: 'Delete All Data?'),
+                    tx('所有训练记录、计划和身体数据将被删除且无法恢复。强烈建议先导出备份。',
+                        en: 'All workout records, plans, and body data will be permanently deleted. Export a backup first — strongly recommended.'),
+                    okLabel: tx('全部删除', en: 'Delete All'),
                   );
                   if (ok) {
                     if (c.session.hasActive) await c.session.quit();
                     await c.db.wipeAll();
                     await c.planRepo.reload();
-                    if (context.mounted) toast(context, '已清空');
+                    if (context.mounted) {
+                      toast(context, tx('已清空', en: 'Cleared'));
+                    }
                   }
                 },
-                child: const Text('清空全部数据'),
+                child: Text(tx('清空全部数据', en: 'Delete All Data')),
               ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        const Center(
+        Center(
           child: Text(
-            '薄肌训练计时器 v1.0 · 本地优先 · 无服务器',
-            style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+            tx('薄肌训练计时器 v1.0 · 本地优先 · 无服务器',
+                en: 'Baoji Workout Timer v1.0 · Local-first · Serverless'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
           ),
         ),
       ],
@@ -225,7 +266,7 @@ class SettingsPage extends StatelessWidget {
           onPressed: () => onChanged((value - 1).clamp(0, 200)),
           icon: const Icon(Icons.remove_circle_outline),
         ),
-        Text(value <= 0 ? '关' : '${_fmtWeight(value)} kg',
+        Text(value <= 0 ? tx('关', en: 'Off') : '${_fmtWeight(value)} kg',
             style: const TextStyle(fontSize: 17)),
         IconButton(
           onPressed: () => onChanged((value + 1).clamp(0, 200)),
@@ -250,7 +291,8 @@ class SettingsPage extends StatelessWidget {
           onPressed: i > 0 ? () => onChanged(choices[i - 1]) : null,
           icon: const Icon(Icons.remove_circle_outline),
         ),
-        Text('${choices[i]} 分钟', style: const TextStyle(fontSize: 17)),
+        Text(tx('${choices[i]} 分钟', en: '${choices[i]} min'),
+            style: const TextStyle(fontSize: 17)),
         IconButton(
           onPressed: i < choices.length - 1
               ? () => onChanged(choices[i + 1])
@@ -266,28 +308,38 @@ class SettingsPage extends StatelessWidget {
   Future<void> _restoreFromJson(BuildContext context, AppContainer c) async {
     final ok = await confirmDialog(
       context,
-      '从 JSON 存档恢复？',
-      '手机上的现有数据会先清空，再导入备份内容。\n\n'
-          '步骤：先打开之前导出的 JSON 存档文件，全选复制全部内容到剪贴板，再回来点「恢复」。此操作无法撤销。',
-      okLabel: '恢复',
+      tx('从 JSON 存档恢复？', en: 'Restore from JSON archive?'),
+      tx(
+        '手机上的现有数据会先清空，再导入备份内容。\n\n'
+        '步骤：先打开之前导出的 JSON 存档文件，全选复制全部内容到剪贴板，再回来点「恢复」。此操作无法撤销。',
+        en: 'Existing data on this phone will be erased first, then the backup will be imported.\n\n'
+            'Steps: open the previously exported JSON archive file, select all and copy its contents to the clipboard, then come back and tap "Restore". This cannot be undone.',
+      ),
+      okLabel: tx('恢复', en: 'Restore'),
     );
     if (!ok || !context.mounted) return;
     final clip = await Clipboard.getData('text/plain');
     final text = (clip?.text ?? '').trim();
     if (!context.mounted) return;
     if (text.isEmpty) {
-      toast(context, '剪贴板是空的：请先复制 JSON 存档的全部内容');
+      toast(context,
+          tx('剪贴板是空的：请先复制 JSON 存档的全部内容',
+              en: 'Clipboard is empty: copy the entire JSON archive first'));
       return;
     }
     dynamic data;
     try {
       data = jsonDecode(text);
     } catch (_) {
-      toast(context, '恢复失败：剪贴板内容不是有效的 JSON');
+      toast(context,
+          tx('恢复失败：剪贴板内容不是有效的 JSON',
+              en: 'Restore failed: clipboard content is not valid JSON'));
       return;
     }
     if (data is! Map<String, dynamic>) {
-      toast(context, '恢复失败：内容不是本应用导出的备份格式');
+      toast(context,
+          tx('恢复失败：内容不是本应用导出的备份格式',
+              en: 'Restore failed: this is not a backup exported by this app'));
       return;
     }
     try {
@@ -295,11 +347,21 @@ class SettingsPage extends StatelessWidget {
       if (c.session.hasActive) await c.session.quit();
       final n = await c.export.restoreFromJson(data);
       await c.planRepo.reload();
-      if (context.mounted) toast(context, '已恢复 $n 次训练记录 ✓');
+      if (context.mounted) {
+        toast(context,
+            tx('已恢复 $n 次训练记录 ✓', en: 'Restored $n workout records ✓'));
+      }
     } on FormatException catch (e) {
-      if (context.mounted) toast(context, '恢复失败：${e.message}');
+      if (context.mounted) {
+        toast(context,
+            tx('恢复失败：${e.message}', en: 'Restore failed: ${e.message}'));
+      }
     } catch (_) {
-      if (context.mounted) toast(context, '恢复失败：存档可能不完整，数据未改动');
+      if (context.mounted) {
+        toast(context,
+            tx('恢复失败：存档可能不完整，数据未改动',
+                en: 'Restore failed: the archive may be incomplete; no data was changed'));
+      }
     }
   }
 }
@@ -369,21 +431,22 @@ class _FocusCardState extends State<_FocusCard> {
         )
         .toList();
     return SectionCard(
-      title: '专注模式',
+      title: tx('专注模式', en: 'Focus Mode'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            '勾选训练中不想刷的 App，切过去再回来会提醒你。',
-            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          Text(
+            tx('勾选训练中不想刷的 App，切过去再回来会提醒你。',
+                en: 'Check the apps you do not want to open mid-workout; switching over and back will remind you.'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _searchCtrl,
             onChanged: (v) => setState(() => _query = v),
-            decoration: const InputDecoration(
-              prefixIcon: Icon(Icons.search, size: 20),
-              hintText: '搜索应用名…',
+            decoration: InputDecoration(
+              prefixIcon: const Icon(Icons.search, size: 20),
+              hintText: tx('搜索应用名…', en: 'Search apps…'),
               isDense: true,
             ),
           ),
@@ -400,11 +463,11 @@ class _FocusCardState extends State<_FocusCard> {
               ),
             )
           else if (filtered.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(8),
+            Padding(
+              padding: const EdgeInsets.all(8),
               child: Text(
-                '没有匹配的应用',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+                tx('没有匹配的应用', en: 'No matching apps'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
               ),
             )
           else
@@ -417,8 +480,10 @@ class _FocusCardState extends State<_FocusCard> {
               Padding(
                 padding: const EdgeInsets.only(top: 4, left: 4),
                 child: Text(
-                  '还有 ${filtered.length - 12} 个，输入名称搜索',
-                  style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                  tx('还有 ${filtered.length - 12} 个，输入名称搜索',
+                      en: '${filtered.length - 12} more — type a name to search'),
+                  style:
+                      const TextStyle(color: AppTheme.textDim, fontSize: 12),
                 ),
               ),
           ],
@@ -540,14 +605,15 @@ class _AiCardState extends State<_AiCard> {
       if (mounted) {
         setState(() {
           _testing = false;
-          _testResult = '连接失败：${e.message}';
+          _testResult =
+            tx('连接失败：${e.message}', en: 'Connection failed: ${e.message}');
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _testing = false;
-          _testResult = '连接失败：$e';
+          _testResult = tx('连接失败：$e', en: 'Connection failed: $e');
         });
       }
     }
@@ -561,25 +627,31 @@ class _AiCardState extends State<_AiCard> {
     final s = widget.s;
     final configured = s.aiConfigured;
     return SectionCard(
-      title: 'AI 配置（计划拆解 · AI 教练）',
+      title: tx('AI 配置（计划拆解 · AI 教练）',
+          en: 'AI Settings (Plan Breakdown · AI Coach)'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             configured
-                ? '状态：已配置 ✓（AI 教练与计划拆解可用）'
-                : '状态：未配置（计划拆解与 AI 教练不可用）',
+                ? tx('状态：已配置 ✓（AI 教练与计划拆解可用）',
+                    en: 'Status: configured ✓ (AI Coach and Plan Breakdown available)')
+                : tx('状态：未配置（计划拆解与 AI 教练不可用）',
+                    en: 'Status: not configured (Plan Breakdown and AI Coach unavailable)'),
             style: TextStyle(
               color: configured ? AppTheme.primary : AppTheme.warn,
               fontSize: 13,
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            '兼容 OpenAI 接口。Base URL 填到版本路径为止，结尾不带 /chat/completions：'
-            'Moonshot 填 https://api.moonshot.cn/v1 · DeepSeek 填 https://api.deepseek.com · '
-            '智谱填 https://open.bigmodel.cn/api/paas/v4。模型名如 kimi-k2。Key 只存手机本地。',
-            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          Text(
+            tx('兼容 OpenAI 接口。Base URL 填到版本路径为止，结尾不带 /chat/completions：'
+                    'Moonshot 填 https://api.moonshot.cn/v1 · DeepSeek 填 https://api.deepseek.com · '
+                    '智谱填 https://open.bigmodel.cn/api/paas/v4。模型名如 kimi-k2。Key 只存手机本地。',
+                en: 'Works with any OpenAI-compatible API. The Base URL goes up to the version path, without /chat/completions at the end: '
+                    'Moonshot: https://api.moonshot.cn/v1 · DeepSeek: https://api.deepseek.com · '
+                    'Zhipu: https://open.bigmodel.cn/api/paas/v4. Model name e.g. kimi-k2. The key is stored on this phone only.'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -595,7 +667,8 @@ class _AiCardState extends State<_AiCard> {
           const SizedBox(height: 8),
           TextField(
             controller: _ctrlModel,
-            decoration: const InputDecoration(labelText: '模型名'),
+            decoration:
+                InputDecoration(labelText: tx('模型名', en: 'Model Name')),
           ),
           const SizedBox(height: 12),
           Row(
@@ -607,16 +680,18 @@ class _AiCardState extends State<_AiCard> {
                     s.aiApiKey = _ctrlKey.text.trim();
                     s.aiModel = _ctrlModel.text.trim();
                     s.save();
-                    toast(context, 'AI 配置已保存');
+                    toast(context, tx('AI 配置已保存', en: 'AI settings saved'));
                   },
-                  child: const Text('保存 AI 配置'),
+                  child: Text(tx('保存 AI 配置', en: 'Save AI Settings')),
                 ),
               ),
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
                   onPressed: _testing ? null : _testConnection,
-                  child: Text(_testing ? '测试中…' : '测试连接'),
+                  child: Text(_testing
+                      ? tx('测试中…', en: 'Testing…')
+                      : tx('测试连接', en: 'Test Connection')),
                 ),
               ),
             ],
@@ -644,7 +719,8 @@ class _AiCardState extends State<_AiCard> {
                       )
                   : null,
               icon: const Icon(Icons.smart_toy_outlined, size: 18),
-              label: const Text('打开 AI 教练（对话与一键分析）'),
+              label: Text(tx('打开 AI 教练（对话与一键分析）',
+                  en: 'Open AI Coach (chat & one-tap analysis)')),
             ),
           ),
         ],
@@ -682,13 +758,14 @@ class _LarkCardState extends State<_LarkCard> {
     final c = app(context);
     final s = widget.s;
     return SectionCard(
-      title: '飞书日历联动',
+      title: tx('飞书日历联动', en: 'Feishu Calendar Sync'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
-            title: const Text('启用（训练日写入飞书日历）'),
+            title: Text(tx('启用（训练日写入飞书日历）',
+                en: 'Enable (write workouts to Feishu Calendar)')),
             value: s.larkEnabled,
             activeThumbColor: AppTheme.primary,
             onChanged: (v) {
@@ -696,9 +773,10 @@ class _LarkCardState extends State<_LarkCard> {
               s.save();
             },
           ),
-          const Text(
-            '首次配置：在飞书开放平台创建自建应用（开日历权限），用电脑 lark-cli 授权拿到 refresh_token，粘贴到这里。详见 README。',
-            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          Text(
+            tx('首次配置：在飞书开放平台创建自建应用（开日历权限），用电脑 lark-cli 授权拿到 refresh_token，粘贴到这里。详见 README。',
+                en: 'First-time setup: create a custom app on the Feishu Open Platform (with Calendar permission), authorize with lark-cli on a computer to get the refresh_token, then paste it here. See README for details.'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           const SizedBox(height: 10),
           TextField(
@@ -715,7 +793,9 @@ class _LarkCardState extends State<_LarkCard> {
           TextField(
             controller: _ctrlRefresh,
             obscureText: true,
-            decoration: const InputDecoration(labelText: 'Refresh Token（授权码）'),
+            decoration: InputDecoration(
+              labelText: tx('Refresh Token（授权码）', en: 'Refresh Token (auth code)'),
+            ),
           ),
           const SizedBox(height: 12),
           Row(
@@ -727,9 +807,9 @@ class _LarkCardState extends State<_LarkCard> {
                     s.larkAppSecret = _ctrlSecret.text.trim();
                     s.larkRefreshToken = _ctrlRefresh.text.trim();
                     s.save();
-                    toast(context, '飞书配置已保存');
+                    toast(context, tx('飞书配置已保存', en: 'Feishu settings saved'));
                   },
-                  child: const Text('保存'),
+                  child: Text(tx('保存', en: 'Save')),
                 ),
               ),
               const SizedBox(width: 8),
@@ -742,8 +822,8 @@ class _LarkCardState extends State<_LarkCard> {
                     s.larkRefreshToken = _ctrlRefresh.text.trim();
                     await s.save();
                     messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('测试中…'),
+                      SnackBar(
+                        content: Text(tx('测试中…', en: 'Testing…')),
                         backgroundColor: AppTheme.cardHi,
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -753,8 +833,9 @@ class _LarkCardState extends State<_LarkCard> {
                       s.larkCalendarId = cid;
                       await s.save();
                       messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('连接成功 ✓ 日历已绑定'),
+                        SnackBar(
+                          content: Text(tx('连接成功 ✓ 日历已绑定',
+                              en: 'Connected ✓ Calendar linked')),
                           backgroundColor: AppTheme.cardHi,
                           behavior: SnackBarBehavior.floating,
                         ),
@@ -764,20 +845,22 @@ class _LarkCardState extends State<_LarkCard> {
                       final friendly =
                           msg.contains('TimeoutException') ||
                               msg.contains('ClientException')
-                          ? '网络不可用或超时，请检查网络'
+                          ? tx('网络不可用或超时，请检查网络',
+                              en: 'Network unavailable or timed out. Check your connection.')
                           : (msg.length > 80
                                 ? '${msg.substring(0, 80)}…'
                                 : msg);
                       messenger.showSnackBar(
                         SnackBar(
-                          content: Text('连接失败：$friendly'),
+                          content: Text(tx('连接失败：$friendly',
+                              en: 'Connection failed: $friendly')),
                           backgroundColor: AppTheme.cardHi,
                           behavior: SnackBarBehavior.floating,
                         ),
                       );
                     }
                   },
-                  child: const Text('测试连接'),
+                  child: Text(tx('测试连接', en: 'Test Connection')),
                 ),
               ),
             ],
@@ -823,12 +906,14 @@ class _PermissionCardState extends State<_PermissionCard>
     final c = app(context);
     final focus = c.focus;
     return SectionCard(
-      title: '权限（逐项说明，可跳过）',
+      title: tx('权限（逐项说明，可跳过）',
+          en: 'Permissions (each explained; all optional)'),
       child: Column(
         children: [
           _permRow(
-            title: '通知',
-            desc: '锁屏/切后台时显示组间休息倒计时和结束提醒。不给则训练时需留在 App 内看计时。',
+            title: tx('通知', en: 'Notifications'),
+            desc: tx('锁屏/切后台时显示组间休息倒计时和结束提醒。不给则训练时需留在 App 内看计时。',
+                en: 'Shows the rest countdown and end-of-workout alert on the lock screen or in background. Without it, keep the app in the foreground to see the timer.'),
             check: () async => await Permission.notification.isGranted,
             request: () async {
               await Permission.notification.request();
@@ -836,8 +921,9 @@ class _PermissionCardState extends State<_PermissionCard>
             },
           ),
           _permRow(
-            title: '勿扰模式访问',
-            desc: '训练开始自动开勿扰（屏蔽消息），结束自动恢复。不给则需手动开勿扰。',
+            title: tx('勿扰模式访问', en: 'Do Not Disturb Access'),
+            desc: tx('训练开始自动开勿扰（屏蔽消息），结束自动恢复。不给则需手动开勿扰。',
+                en: 'Turns on Do Not Disturb (mutes messages) when a workout starts and restores it when it ends. Without it, enable DND manually.'),
             check: () => focus.isDndAccessGranted(),
             request: () async {
               await focus.openDndAccessSettings();
@@ -845,8 +931,9 @@ class _PermissionCardState extends State<_PermissionCard>
             },
           ),
           _permRow(
-            title: '使用情况访问',
-            desc: '训练中切到抖音等分心 App 后回来自动提醒。不给则没有分心提醒，其他功能不受影响。',
+            title: tx('使用情况访问', en: 'Usage Access'),
+            desc: tx('训练中切到抖音等分心 App 后回来自动提醒。不给则没有分心提醒，其他功能不受影响。',
+                en: 'Reminds you when you return from distracting apps like TikTok mid-workout. Without it, no distraction reminders; everything else works.'),
             check: () => focus.isUsageAccessGranted(),
             request: () async {
               await focus.openUsageAccessSettings();
@@ -854,8 +941,9 @@ class _PermissionCardState extends State<_PermissionCard>
             },
           ),
           _permRow(
-            title: '精确闹钟',
-            desc: '让休息结束的提醒准时响。不给则提醒可能晚几秒到几十秒。',
+            title: tx('精确闹钟', en: 'Exact Alarm'),
+            desc: tx('让休息结束的提醒准时响。不给则提醒可能晚几秒到几十秒。',
+                en: 'Makes the rest-end alert ring on time. Without it, alerts may be a few seconds to tens of seconds late.'),
             check: () => focus.canExactAlarm(),
             request: () async {
               await focus.openExactAlarmSettings();
@@ -863,8 +951,9 @@ class _PermissionCardState extends State<_PermissionCard>
             },
           ),
           _permRow(
-            title: '电池优化白名单',
-            desc: '防止系统在后台杀掉计时。不给则锁屏久了计时仍准确（墙钟），但提醒可能延迟。',
+            title: tx('电池优化白名单', en: 'Battery Optimization Exemption'),
+            desc: tx('防止系统在后台杀掉计时。不给则锁屏久了计时仍准确（墙钟），但提醒可能延迟。',
+                en: 'Keeps the system from killing the timer in the background. Without it, timing stays accurate over long lock-screen sessions (wall clock), but alerts may be delayed.'),
             check: () => focus.isIgnoringBatteryOptimizations(),
             request: () async {
               await focus.requestIgnoreBattery();
@@ -912,7 +1001,9 @@ class _PermissionCardState extends State<_PermissionCard>
                         ),
                         const SizedBox(width: 6),
                         Text(
-                          granted ? '已授权' : '未授权',
+                          granted
+                              ? tx('已授权', en: 'Granted')
+                              : tx('未授权', en: 'Not granted'),
                           style: TextStyle(
                             fontSize: 12,
                             color: granted
@@ -937,7 +1028,7 @@ class _PermissionCardState extends State<_PermissionCard>
                   onPressed: () async {
                     await request();
                   },
-                  child: const Text('去开启'),
+                  child: Text(tx('去开启', en: 'Enable')),
                 ),
             ],
           ),
@@ -1009,7 +1100,7 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
     } on UpdateException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } on Exception catch (e) {
-      if (mounted) setState(() => _error = '检查失败：$e');
+      if (mounted) setState(() => _error = tx('检查失败：$e', en: 'Check failed: $e'));
     } finally {
       if (mounted) setState(() => _checking = false);
     }
@@ -1042,7 +1133,7 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
     } on UpdateException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } on Exception catch (e) {
-      if (mounted) setState(() => _error = '下载失败：$e');
+      if (mounted) setState(() => _error = tx('下载失败：$e', en: 'Download failed: $e'));
     }
   }
 
@@ -1057,7 +1148,10 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
         setState(() => _needInstallPerm = true);
       }
     } on Exception catch (e) {
-      if (mounted) setState(() => _error = '无法启动安装：$e');
+      if (mounted) {
+        setState(() => _error =
+            tx('无法启动安装：$e', en: 'Could not start installation: $e'));
+      }
     }
   }
 
@@ -1070,7 +1164,7 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final s = widget.s;
     return SectionCard(
-      title: '应用更新',
+      title: tx('应用更新', en: 'App Update'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1078,24 +1172,29 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
             future: PackageInfo.fromPlatform(),
             builder: (context, snap) => Text(
               snap.hasData
-                  ? '当前版本 v${snap.data!.version}（构建 ${snap.data!.buildNumber}）'
-                  : '当前版本 …',
+                  ? tx('当前版本 v${snap.data!.version}（构建 ${snap.data!.buildNumber}）',
+                      en: 'Current version v${snap.data!.version} (build ${snap.data!.buildNumber})')
+                  : tx('当前版本 …', en: 'Current version …'),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
-            '更新包发布在 GitHub Releases：开源公开仓库免令牌，直接检查更新即可。'
-            '仅当你把仓库 fork 成私有仓库自用时，才需要粘贴只读令牌'
-            '（Fine-grained tokens，只勾选该仓库，权限 Contents: Read-only）。令牌只存手机本地。',
-            style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+          Text(
+            tx('更新包发布在 GitHub Releases：开源公开仓库免令牌，直接检查更新即可。'
+                    '仅当你把仓库 fork 成私有仓库自用时，才需要粘贴只读令牌'
+                    '（Fine-grained tokens，只勾选该仓库，权限 Contents: Read-only）。令牌只存手机本地。',
+                en: 'Updates are published on GitHub Releases: public open-source repos need no token, just check for updates. '
+                    'You only need a read-only token if you forked the repo into a private one for personal use '
+                    '(Fine-grained token, select only this repo, permission Contents: Read-only). The token is stored on this phone only.'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
           ),
           const SizedBox(height: 10),
           TextField(
             controller: _ctrlToken,
             obscureText: true,
-            decoration: const InputDecoration(
-              labelText: 'GitHub 只读令牌（公开仓库可留空）',
+            decoration: InputDecoration(
+              labelText: tx('GitHub 只读令牌（公开仓库可留空）',
+                  en: 'GitHub read-only token (leave empty for public repos)'),
             ),
           ),
           const SizedBox(height: 12),
@@ -1104,7 +1203,9 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
               Expanded(
                 child: OutlinedButton(
                   onPressed: _checking ? null : _check,
-                  child: Text(_checking ? '正在检查…' : '检查更新'),
+                  child: Text(_checking
+                      ? tx('正在检查…', en: 'Checking…')
+                      : tx('检查更新', en: 'Check for Updates')),
                 ),
               ),
             ],
@@ -1118,11 +1219,11 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
               ),
             ),
           if (_upToDate && s.pendingUpdate == null)
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
               child: Text(
-                '已是最新版本 ✓',
-                style: TextStyle(color: AppTheme.primary, fontSize: 13),
+                tx('已是最新版本 ✓', en: 'Already up to date ✓'),
+                style: const TextStyle(color: AppTheme.primary, fontSize: 13),
               ),
             ),
           ListenableBuilder(
@@ -1138,7 +1239,8 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
                 children: [
                   const Divider(height: 24),
                   Text(
-                    '发现新版 ${release.title.isEmpty ? '构建 ${release.buildNumber}' : release.title}',
+                    tx('发现新版 ${release.title.isEmpty ? '构建 ${release.buildNumber}' : release.title}',
+                        en: 'New version available: ${release.title.isEmpty ? 'build ${release.buildNumber}' : release.title}'),
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
                       fontSize: 15,
@@ -1166,8 +1268,10 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      '下载中 ${(received / 1048576).toStringAsFixed(1)}MB'
-                      '${(total != null && total > 0) ? ' / ${(total / 1048576).toStringAsFixed(1)}MB' : ''}',
+                      tx('下载中 ${(received / 1048576).toStringAsFixed(1)}MB'
+                          '${(total != null && total > 0) ? ' / ${(total / 1048576).toStringAsFixed(1)}MB' : ''}',
+                          en: 'Downloading ${(received / 1048576).toStringAsFixed(1)}MB'
+                              '${(total != null && total > 0) ? ' / ${(total / 1048576).toStringAsFixed(1)}MB' : ''}'),
                       style: const TextStyle(
                         color: AppTheme.textDim,
                         fontSize: 12,
@@ -1177,19 +1281,21 @@ class _UpdateCardState extends State<_UpdateCard> with WidgetsBindingObserver {
                     const SizedBox(height: 10),
                     FilledButton(
                       onPressed: _downloadAndInstall,
-                      child: const Text('下载并安装'),
+                      child: Text(tx('下载并安装', en: 'Download & Install')),
                     ),
                   ],
                   if (_needInstallPerm && _apkPath != null) ...[
                     const SizedBox(height: 8),
-                    const Text(
-                      '系统要求先允许本应用"安装未知应用"（只需授权一次）',
-                      style: TextStyle(color: AppTheme.warn, fontSize: 12),
+                    Text(
+                      tx('系统要求先允许本应用"安装未知应用"（只需授权一次）',
+                          en: 'The system requires allowing "Install unknown apps" for this app first (one-time only)'),
+                      style:
+                          const TextStyle(color: AppTheme.warn, fontSize: 12),
                     ),
                     TextButton(
                       onPressed: () =>
                           UpdateService(s).openInstallPermissionSettings(),
-                      child: const Text('去系统授权'),
+                      child: Text(tx('去系统授权', en: 'Open System Settings')),
                     ),
                   ],
                 ],

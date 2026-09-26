@@ -3,6 +3,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
+import '../l10n/lang.dart';
 import 'rest_cue.dart';
 import 'session_controller.dart' show TrainingCard;
 
@@ -35,19 +36,26 @@ class NotifyService {
   /// 通知栏按钮动作回调（App 容器接到 SessionController）
   void Function(String action)? onNotifAction;
 
-  static const _restChannel = AndroidNotificationChannel(
+  static final _restChannel = AndroidNotificationChannel(
     'rest_timer',
-    '组间休息提醒',
-    description: '组间休息结束的提醒（声音+震动，勿扰下穿透）',
+    tx('组间休息提醒', en: 'Rest timer'),
+    description: tx(
+      '组间休息结束的提醒（声音+震动，勿扰下穿透）',
+      en: 'Alerts when rest is over (sound + vibration, bypasses Do Not Disturb)',
+    ),
     importance: Importance.high,
     playSound: true,
     enableVibration: true,
   );
 
-  static const _idleChannel = AndroidNotificationChannel(
+  static final _idleChannel = AndroidNotificationChannel(
     'idle_reminder',
-    '空闲提醒',
-    description: '训练中放下手机太久时的一次性拉回提醒',
+    tx('空闲提醒', en: 'Idle reminder'),
+    description: tx(
+      '训练中放下手机太久时的一次性拉回提醒',
+      en:
+          'One-time nudge after putting the phone down too long during a workout',
+    ),
     importance: Importance.defaultImportance,
     playSound: true,
     enableVibration: true,
@@ -134,8 +142,8 @@ class NotifyService {
     if (!_ready) return;
     await _plugin.zonedSchedule(
       2,
-      '休息结束',
-      '下一组，开干！',
+      tx('休息结束', en: 'Rest over'),
+      tx('下一组，开干！', en: "Next set, let's go!"),
       tz.TZDateTime.from(
         DateTime.fromMillisecondsSinceEpoch(endAtMs),
         tz.local,
@@ -177,8 +185,11 @@ class NotifyService {
     if (!_ready) return;
     await _plugin.show(
       20,
-      '该回来练了',
-      '你已运动 $minutes 分钟，下一组等你很久了',
+      tx('该回来练了', en: 'Time to train'),
+      tx(
+        '你已运动 $minutes 分钟，下一组等你很久了',
+        en: "You've worked out for $minutes minutes — the next set is waiting",
+      ),
       NotificationDetails(
         android: AndroidNotificationDetails(
           _idleChannel.id,
