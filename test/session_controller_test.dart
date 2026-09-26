@@ -1198,7 +1198,8 @@ void main() {
       await c.completeSet(weight: 60, reps: 5, rir: 1, kind: SetKind.working);
       // 全局复合 180，未达标 ×1.5 = 270
       final totalSec = c.restTotalMs ~/ 1000;
-      expect(totalSec, 270);
+      // 墙钟差按毫秒整除：极偶然差 1 秒（CI 实发 269），给容差
+      expect(totalSec, inInclusiveRange(269, 270));
       await drainContinuations();
     });
   });
