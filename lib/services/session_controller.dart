@@ -8,6 +8,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import '../db/db.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/baoji_plan.dart';
 import 'focus_service.dart';
 import 'rest_cue.dart';
@@ -133,29 +134,32 @@ class SessionController extends ChangeNotifier {
         resting: true,
         paused: _restPaused,
         title: tx('组间休息中', en: 'Rest between sets'),
+        // 下一组带动作名（2026-09-26 Arono：休息中要知道接下来练什么）：
+        // 休息时 currentEx 已推进到下一个动作（或原动作的下一组）。
         text:
             '${_restPaused ? tx('已暂停 · ', en: 'Paused · ') : ''}'
-            '${tx('还剩 $remainText · 下一组 $wText×$reps', en: '$remainText left · next set $wText×$reps')}',
+            '${tx('还剩 $remainText · 下一组 ${exname(currentEx?.name ?? '')} $wText×$reps', en: '$remainText left · next ${exname(currentEx?.name ?? '')} $wText×$reps')}',
         remaining: restTotalMs > 0 ? remainSec : -1,
         total: (restTotalMs / 1000).round(),
         chronoStartMs: s.startedAt,
       );
     }
+    // 组号语义与页面流同口径（workout_flow.currentPage）：计划内第 N/M 组，
+    // 加练组不封顶——「加练 第 X 组」，不再出现夹回「第 3/3 组」的旧 bug。
+    final planned = rule?.workingSets ?? 1;
+    final doneRaw = workingSetsDone;
+    final setPart = doneRaw >= planned
+        ? tx('加练 第 ${doneRaw - planned + 1} 组',
+            en: 'Extra set ${doneRaw - planned + 1}')
+        : tx('第 ${doneRaw + 1}/$planned 组', en: 'Set ${doneRaw + 1}/$planned');
     return TrainingCard(
       active: true,
       resting: false,
       paused: false,
       title: currentEx?.name ?? tx('训练中', en: 'Workout in progress'),
-      // 组数封顶在本动作组数上：最后一个动作完成后、finish 落库前的瞬时
-      // 推卡不出现「第 4/3 组」越界文案。
       text: tx(
-        '本组 $wText×$reps · 第 '
-        '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
-        '/${rule?.workingSets ?? 0} 组',
-        en:
-            'This set $wText×$reps · set '
-            '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
-            '/${rule?.workingSets ?? 0}',
+        '本组 $wText×$reps · $setPart',
+        en: 'This set $wText×$reps · $setPart',
       ),
       remaining: -1,
       total: 0,

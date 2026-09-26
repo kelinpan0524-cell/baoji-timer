@@ -128,6 +128,13 @@ void main() {
       tester.widget<LinearProgressIndicator>(
           find.byKey(const Key('workoutFlowProgress')));
 
+  /// 选余力 2（余力没填写提醒上线后，落库路径需先填余力；
+  /// RIR chip 的 '2' 与次数格 3-10、页面指示 '1 / 2' 均不冲突）
+  Future<void> pickRir2(WidgetTester tester) async {
+    await tester.tap(find.text('2').first);
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+
   group('起始页（计划文案 + 大按钮进流程）', () {
     testWidgets('零记录新会话先见起始页：日标题/动作清单/开始训练；进度条 3px 起点为 0',
         (tester) async {
@@ -180,6 +187,7 @@ void main() {
       expect(progressBar(tester).value, 0);
 
       await tester.runAsync(() async {
+        await pickRir2(tester);
         await tester.tap(find.byKey(const Key('workoutCompleteSet')));
         // DB 写组 + 控制器进休息的链路在真实 isolate：给回包时间
         await Future<void>.delayed(const Duration(milliseconds: 400));
@@ -319,6 +327,7 @@ void main() {
 
       await tester.runAsync(() async {
         container.session.setWeightDraft(60);
+        await pickRir2(tester);
         await tester.tap(find.text('8'));
         await tester.pump(const Duration(milliseconds: 50));
         await tester.tap(find.byKey(const Key('workoutCompleteSet')));
@@ -349,6 +358,7 @@ void main() {
       expect(find.text('15'), findsNothing);
       expect(find.text('自定义'), findsOneWidget);
 
+      await pickRir2(tester);
       await tester.tap(find.text('自定义'));
       await tester.pump(); // 先起帧再推进动画，单次 pump(300) 弹层停在屏外
       await tester.pump(const Duration(milliseconds: 300));
@@ -391,6 +401,117 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('12'), findsOneWidget, reason: '改对后正常生效');
+    });
+  });
+
+  group('组数+目标显示（2026-09-26 Arono：帮人数组防忘目标）', () {
+    testWidgets('动作面板第一行显示「第 1/3 组 · 目标 5-8 次」', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      // 面板大字条（计划 5-8 次）
+      expect(find.textContaining('目标 5-8 次'), findsWidgets);
+      // 面板条 + 顶部 chip 两处都显示当前组号
+      expect(find.textContaining('第 1/3 组'), findsNWidgets(2));
+    });
+
+    testWidgets('休息页「下一组」chip 带组号与目标次数', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      await tester.runAsync(() async {
+        await pickRir2(tester);
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      // 划线 900ms 定时器在真实时区：runAsync 等它走完再 pump 翻页
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 1000)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('下一组 · 卧推 第 2/3 组'), findsOneWidget,
+          reason: '休息页能看到接下来的动作、组号、次数');
+      expect(find.textContaining('× 5-8 次'), findsOneWidget,
+          reason: '休息页同时显示下一组的目标次数，防忘');
+    });
+
+    testWidgets('加练态面板显示「加练 第 1 组」且组号不封顶', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      // 单动作 1 组：练满即加练态
+      await tester.runAsync(() async {
+        final day = await makeDay('加练日');
+        final a = await addEx(day, '卧推', 0, workingSets: 1);
+        await container.session.startFromDay(day: day, planExercises: [a]);
+      });
+      await tester.pumpWidget(host(container, const WorkoutPage()));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.tap(find.text('开始训练'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.runAsync(() async {
+        await pickRir2(tester);
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        container.session.startExtraSet();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('加练 第 1 组'), findsWidgets,
+          reason: '加练的这一组要显性显示出来（旧 bug：永远显示 1/1）');
+      expect(find.textContaining('第 1/1 组'), findsNothing,
+          reason: '不再被夹回计划组数');
+    });
+  });
+
+  group('余力没填写提醒（2026-09-26 Arono：忘了填要提示，不悄悄按默认记）', () {
+    testWidgets('第一按只提示不落库；选了余力再按正常记录', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+
+      // 第一按：出现提醒、组不落库
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.textContaining('余力没填写'), findsWidgets,
+          reason: '余力行高亮提示');
+      expect(find.textContaining('按计划默认记'), findsOneWidget,
+          reason: '提示里给「再按一次用默认」的出路');
+      expect(container.session.setsByEx.values
+          .fold<int>(0, (n, l) => n + l.length), 0,
+          reason: '第一按不落库');
+
+      // 选余力 1：提醒消失
+      await tester.tap(find.text('1').last);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.textContaining('余力没填写'), findsNothing);
+
+      // 第二按：带所选余力正常记录
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      final sets = container.session.setsByEx.values.expand((l) => l).toList();
+      expect(sets, isNotEmpty, reason: '第二按落库');
+      expect(sets.last.rir, 1, reason: '余力取所选值');
+    });
+
+    testWidgets('不选余力连按两次：第二按按计划默认落库（不拦人）', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      final sets = container.session.setsByEx.values.expand((l) => l).toList();
+      expect(sets, isNotEmpty, reason: '第二按放行');
+      expect(sets.last.rir, 2, reason: '未填时按计划默认 RIR 2 记');
     });
   });
 }

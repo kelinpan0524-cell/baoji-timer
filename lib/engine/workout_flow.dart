@@ -69,11 +69,12 @@ class FlowPage {
   };
 
   /// 顶部『第 N/M 组』文案（起始/总结页为空串）。
+  /// 加练组不显示「/计划数」（第 4/3 组读不通），显示『第 4 组 · 加练』。
   String setLabel() {
     if (kind == FlowPageKind.record || kind == FlowPageKind.rest) {
       return extra
-          ? tx('第 $setNumber/$plannedSets 组 · 加练',
-          en: 'Set $setNumber/$plannedSets · extra')
+          ? tx('第 $setNumber 组 · 加练',
+              en: 'Set $setNumber · extra')
           : tx('第 $setNumber/$plannedSets 组', en: 'Set $setNumber/$plannedSets');
     }
     return '';
@@ -157,12 +158,19 @@ class WorkoutFlow {
     final i = curExIdx.clamp(0, exercises.length - 1);
     final ex = exercises[i];
     final planned = ex.rule.workingSets;
-    final done = _doneWorkingOf(ex).clamp(0, planned);
-    final setNo = done >= planned ? planned : done + 1;
+    // 加练组计数不封顶（2026-09-26 Arono：加练没显示加的这一组的 bug 根因
+    // 就是这里把已完成数 clamp 到计划数，加练第 2、3 组永远显示 3/3）。
+    // 记录页组号 = 已完成 + 1，加练时继续涨（第 4、5…组）；
+    // 休息页组号语义是"计划内下一组"，练满后维持计划数封顶。
+    final rawDone = _doneWorkingOf(ex);
+    final done = rawDone.clamp(0, planned);
+    final setNo =
+        (!resting && rawDone >= planned) ? rawDone + 1 : done + 1;
+    final extra = !resting && rawDone >= planned;
     if (resting) {
       return FlowPage.rest(
         exerciseIndex: i,
-        setNumber: setNo,
+        setNumber: setNo.clamp(1, planned),
         plannedSets: planned,
       );
     }
@@ -170,7 +178,7 @@ class WorkoutFlow {
       exerciseIndex: i,
       setNumber: setNo,
       plannedSets: planned,
-      extra: done >= planned,
+      extra: extra,
     );
   }
 

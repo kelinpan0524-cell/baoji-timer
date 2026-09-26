@@ -1203,6 +1203,29 @@ void main() {
     });
   });
 
+  group('组数显示（2026-09-26 Arono：第几组帮人记好，加练组不封顶）', () {
+    test('加练态训练卡显示「加练 第 N 组」，不再夹回计划组数', () async {
+      final day = await makePlanDay('日');
+      final a = await addPlanEx(day, '动作甲', 0, sets: 1, workingSets: 1);
+      final b = await addPlanEx(day, '动作乙', 1, sets: 1, workingSets: 1);
+
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [a, b]);
+      // 计划内第 1 组
+      expect(c.buildCard().text, contains('第 1/1 组'));
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await c.startExtraSet(); // 回到动作甲加练
+      final card = c.buildCard();
+      expect(card.text, contains('加练 第 1 组'), reason: '加练组显性计数');
+      expect(card.text, isNot(contains('第 2/1 组')), reason: '不出现越界组号');
+
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await c.startExtraSet();
+      expect(c.buildCard().text, contains('加练 第 2 组'),
+          reason: '第二次加练组号继续涨');
+    });
+  });
+
   group('忘停表守护截断', () {
     // completeSet 的悬挂续体排干（与休息规则组同模式）
     Future<void> drainContinuations() =>
