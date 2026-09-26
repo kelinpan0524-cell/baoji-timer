@@ -223,6 +223,74 @@ bool isPrWeight(double weight, List<SetEntry> historyBefore) {
   return weight > best + 0.01;
 }
 
+/// 平台期提醒数据（2026-09-26 Arono：薄肌渐进超负荷要主动提示，
+/// 同一动作在同一重量停留过久时，训练中途提醒"可以加重了"）。
+class PlateauInfo {
+  /// 停滞中的重量（各次训练的最大正式组重量）。
+  final double weightKg;
+
+  /// 连续停留在这个重量上的训练次数。
+  final int sessions;
+
+  /// 从第一次用这个重量到最近一次的天数跨度。
+  final int days;
+
+  /// 最近一次训练在该重量的组里是否已把次数做到目标上限
+  /// （是 → 可直接加重；否 → 次数冲到顶就该加重）。
+  /// 只统计"顶格重量"的组：轻重量退让组做到再多也不算到顶。
+  final bool hitTop;
+
+  const PlateauInfo(
+      this.weightKg, this.sessions, this.days, this.hitTop);
+}
+
+/// 平台期判定：同一动作按训练（sessionExerciseId 分组）取各次的
+/// 最大正式组重量，从最近往回数连续停留在同一重量的次数与天数。
+/// 阈值（薄肌渐进的"两周或几次"口径）：连续 ≥3 次，或 ≥2 次且跨度
+/// ≥12 天。不满足返回 null。传入的 history 应为该动作全部历史
+/// **正式组**（working，时间升序，即 SessionController.historyBefore）。
+PlateauInfo? plateauOf(List<SetEntry> history, {required int repsMax}) {
+  if (history.isEmpty) return null;
+  // 按训练分组（history 升序、同训练的行相邻）；
+  // topReps = 该次训练在"顶格重量"上的最好次数（轻于顶格的组不计入）
+  final ids = <int>[];
+  final tops = <double>[];
+  final topReps = <int>[];
+  final firstAt = <int>[];
+  final lastAt = <int>[];
+  for (final s in history) {
+    if (ids.isNotEmpty && ids.last == s.sessionExerciseId) {
+      final i = ids.length - 1;
+      if (s.weightKg > tops[i] + 0.01) {
+        tops[i] = s.weightKg;
+        topReps[i] = s.reps;
+      } else if ((s.weightKg - tops[i]).abs() <= 0.01 &&
+          s.reps > topReps[i]) {
+        topReps[i] = s.reps;
+      }
+      lastAt[i] = s.doneAt;
+    } else {
+      ids.add(s.sessionExerciseId);
+      tops.add(s.weightKg);
+      topReps.add(s.reps);
+      firstAt.add(s.doneAt);
+      lastAt.add(s.doneAt);
+    }
+  }
+  // 从最近往回数同一重量的连续训练次数（±0.01kg 容差）
+  final w = tops.last;
+  var streak = 0;
+  var streakFirstAt = firstAt.last;
+  for (var i = ids.length - 1; i >= 0; i--) {
+    if ((tops[i] - w).abs() > 0.01) break;
+    streak++;
+    streakFirstAt = firstAt[i];
+  }
+  final days = ((lastAt.last - streakFirstAt) / 86400000).round();
+  if (streak < 3 && !(streak >= 2 && days >= 12)) return null;
+  return PlateauInfo(w, streak, days, topReps.last >= repsMax);
+}
+
 /// 训练日历：给定日期集合渲染辅助。
 DateTime parseDate(String d) {
   final p = d.split('-').map(int.parse).toList();

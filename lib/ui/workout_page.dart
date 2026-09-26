@@ -1409,6 +1409,43 @@ class _ActionPanelState extends State<_ActionPanel> {
     }
   }
 
+  /// 渐进提醒行（2026-09-26）：当前重量与平台期重量一致时提醒可加重。
+  /// hitTop（次数已到顶）→ 直接给目标重量；否则提示冲到目标次数就加。
+  List<Widget> _plateauRow(BuildContext context, SessionController s) {
+    final info = s.plateauFor(widget.ex.name);
+    if (info == null) return const [];
+    // 只在"正停留在这个重量上"时提醒：已经加重/在调别的重量不打扰
+    if ((info.weightKg - s.weightDraft).abs() > 0.01) return const [];
+    final rule = widget.ex.rule;
+    final nextKg = round05(info.weightKg + rule.incrementKg);
+    final msg = info.hitTop
+        ? tx(
+            '已连续 ${info.sessions} 次·${info.days} 天 ${fmtKg(info.weightKg)}kg 且次数到顶——可以直接加重到 ${fmtKg(nextKg)}kg',
+            en: '${fmtKg(info.weightKg)}kg for ${info.sessions} sessions · ${info.days} days with top reps hit — add weight to ${fmtKg(nextKg)}kg now')
+        : tx(
+            '已连续 ${info.sessions} 次·${info.days} 天 ${fmtKg(info.weightKg)}kg——次数冲到 ${rule.repsMax} 就该 +${fmtKg(rule.incrementKg)}kg',
+            en: '${fmtKg(info.weightKg)}kg for ${info.sessions} sessions · ${info.days} days — once you reach ${rule.repsMax} reps, add +${fmtKg(rule.incrementKg)}kg');
+    return [
+      const SizedBox(height: 4),
+      Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.trending_up, size: 15, color: AppTheme.primary),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              msg,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              style:
+                  const TextStyle(color: AppTheme.primary, fontSize: 12.5),
+            ),
+          ),
+        ],
+      ),
+    ];
+  }
+
   /// 上次成绩行（无历史不显示）。
   List<Widget> _lastPerformanceRow(BuildContext context, SessionController s) {
     final last = s.lastPerformance(widget.ex.name);
@@ -1559,6 +1596,10 @@ class _ActionPanelState extends State<_ActionPanel> {
           // （大数字 = 本组推荐起点）并列的第二起点，点按整套带入重量/次数/
           // RIR；不替换建议值、不弹窗，无需手动步进即可重现上次配置。
           ..._lastPerformanceRow(context, s),
+          // 渐进提醒行（2026-09-26 Arono：薄肌渐进超负荷主动提示）：
+          // 同一重量停留过久时一行小字提醒可加重——与上次成绩行同级克制，
+          // 不弹窗不打断（红线：训练中禁止弹窗）。
+          ..._plateauRow(context, s),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -1859,6 +1900,13 @@ class _RestViewState extends State<_RestView> {
                         // 绝不进训练计时主界面、绝不默认占屏。
                         _RestBrief(),
                       ],
+                      // 渐进主动提醒（2026-09-26 Arono：薄肌渐进超负荷，
+                      // 让人不错过加重机会）：破纪录 / 平台期该加重两条横幅，
+                      // 只在休息等待页出现、小字不上屏主计时——不碰红线。
+                      if (showBrief) ...[
+                        const SizedBox(height: 8),
+                        _ProgressNudges(),
+                      ],
                       const SizedBox(height: 12),
                       // 点"下一组"展开重量步进：休息中就能调下一组重量
                       GestureDetector(
@@ -2112,6 +2160,105 @@ class _RestViewState extends State<_RestView> {
 
   bool _isWide(BuildContext context) =>
       MediaQuery.of(context).size.width >= 840;
+}
+
+/// 休息页渐进主动提醒（2026-09-26 Arono）：刚完成的组若破纪录 → 🏆 横幅；
+/// 当前动作停在同一重量过久（≥3 次或 ≥2 次跨约两周）→ 📈 平台期横幅。
+/// 只在休息等待页渲染、永不弹窗；无提醒时完全隐形。
+class _ProgressNudges extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final c = app(context);
+    final s = c.session;
+    if (!s.hasActive) return const SizedBox.shrink();
+    // 定位"刚完成的动作"：练满推进时 currentEx 已切到下一动作，
+    // extraSetExerciseName 在每次进休息前都指向刚完成的动作（与
+    // 「再来一组」同一数据源）——收动作的最后一组也能看到提醒。
+    final name = s.extraSetExerciseName ?? s.currentEx?.name;
+    if (name == null) return const SizedBox.shrink();
+    SessionExercise? ex;
+    for (final e in s.exercises) {
+      if (e.name == name) {
+        ex = e;
+        break;
+      }
+    }
+    if (ex == null) return const SizedBox.shrink();
+    final sets = s.setsByEx[ex.id] ?? const <SetEntry>[];
+    if (sets.isEmpty) return const SizedBox.shrink();
+    final last = sets.last;
+    // 只对正式组提醒（热身组破纪录不算数，与 PR 判定同口径）
+    if (last.kind != SetKind.working) return const SizedBox.shrink();
+
+    final banners = <Widget>[];
+    // ① 破纪录：刚完成的组重量超过此前历史最佳（isPrWeight 同口径；
+    // 空历史不算 PR——新动作第一组不弹"此前最佳 0kg"）
+    final history = s.historyBefore[ex.name] ?? const <SetEntry>[];
+    if (history.isNotEmpty) {
+      final priorBest =
+          history.fold(0.0, (m, e) => e.weightKg > m ? e.weightKg : m);
+      if (last.weightKg > priorBest + 0.01) {
+        banners.add(_nudge(
+          context,
+          icon: Icons.emoji_events_outlined,
+          color: AppTheme.warn,
+          text: tx(
+              '新纪录！${fmtKg(last.weightKg)}kg × ${last.reps}（此前最佳 ${fmtKg(priorBest)}kg）',
+              en: 'New PR! ${fmtKg(last.weightKg)}kg × ${last.reps} (previous best ${fmtKg(priorBest)}kg)'),
+        ));
+      }
+    }
+    // ② 平台期：同重量停留过久 → 提醒加重（正在举这个重量时才提醒）
+    final info = s.plateauFor(ex.name);
+    if (info != null && (info.weightKg - last.weightKg).abs() <= 0.01) {
+      final rule = ex.rule;
+      final nextKg = round05(info.weightKg + rule.incrementKg);
+      banners.add(_nudge(
+        context,
+        icon: Icons.trending_up,
+        color: AppTheme.primary,
+        text: info.hitTop
+            ? tx(
+                '已连续 ${info.sessions} 次·${info.days} 天 ${fmtKg(info.weightKg)}kg——次数到顶了，下一组可以直接 ${fmtKg(nextKg)}kg',
+                en: '${fmtKg(info.weightKg)}kg for ${info.sessions} sessions · ${info.days} days — reps maxed out, go ${fmtKg(nextKg)}kg next set')
+            : tx(
+                '已连续 ${info.sessions} 次·${info.days} 天 ${fmtKg(info.weightKg)}kg——次数冲到 ${rule.repsMax} 就 +${fmtKg(rule.incrementKg)}kg',
+                en: '${fmtKg(info.weightKg)}kg for ${info.sessions} sessions · ${info.days} days — reach ${rule.repsMax} reps, then +${fmtKg(rule.incrementKg)}kg'),
+      ));
+    }
+    if (banners.isEmpty) return const SizedBox.shrink();
+    return Column(children: banners);
+  }
+
+  Widget _nudge(
+    BuildContext context, {
+    required IconData icon,
+    required Color color,
+    required String text,
+  }) =>
+      Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                text,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: color, fontSize: 12.5),
+              ),
+            ),
+          ],
+        ),
+      );
 }
 
 /// 休息页轻量战报（调研条目 9）：默认收起的一行入口，点开展开 3 行小结

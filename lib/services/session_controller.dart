@@ -363,6 +363,27 @@ class SessionController extends ChangeNotifier {
     return list.isEmpty ? null : list.first;
   }
 
+  /// 平台期提醒缓存（2026-09-26 Arono：同重量停留过久 → 训练中途
+  /// 主动提示可加重）。数据源 historyBefore 是"本会话开始前"的历史，
+  /// 训练期间不变，按动作名缓存安全；新会话重建控制器/重新装载时
+  /// 随 historyBefore 重灌自然失效。
+  final _plateauCache = <String, PlateauInfo?>{};
+
+  PlateauInfo? plateauFor(String name) {
+    if (_plateauCache.containsKey(name)) return _plateauCache[name];
+    var repsMax = ProgressionRule.fallback.repsMax;
+    for (final ex in exercises) {
+      if (ex.name == name) {
+        repsMax = ex.rule.repsMax;
+        break;
+      }
+    }
+    final info =
+        plateauOf(historyBefore[name] ?? const [], repsMax: repsMax);
+    _plateauCache[name] = info;
+    return info;
+  }
+
   Future<void> _loadContextForCurrent() async {
     if (currentEx == null) return;
     final name = currentEx!.name;
@@ -386,6 +407,9 @@ class SessionController extends ChangeNotifier {
     // 双击竞态兜底：内存态置 active 之前再查一次库，只放行一个并发调用
     if (await _db.activeSession() != null) return;
     prHit.clear();
+    // 平台期缓存随新会话失效：控制器是 App 级单例，同进程第二次训练
+    // 时 historyBefore 会重灌，旧缓存（尤其 null 值）会静默挡住提醒
+    _plateauCache.clear();
     final now = DateTime.now().millisecondsSinceEpoch;
     // 会话与动作一个事务落库（sessionId 先占位，事务内回填真实 id），
     // 消除"会话已落库、动作未落库"的半写窗口。
