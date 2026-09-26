@@ -176,10 +176,19 @@ class _OverviewTabState extends State<_OverviewTab> {
             ),
             const SizedBox(height: 12),
             SectionCard(
-              title: tx('主力动作 1RM 进阶（按训练容量自动选前 4）',
-                  en: 'Top Lifts 1RM Progress (Top 4 by Volume)'),
+              // 标题收短（2026-09-26 Arono：原标题带括号说明折成四行），
+              // 说明降级为卡内小字
+              title: tx('主力动作 1RM', en: 'Top Lifts 1RM'),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  Text(
+                    tx('按训练容量自动选前 4 · 纵轴 kg · 横轴第几次练',
+                        en: 'Top 4 by volume · y-axis kg · x-axis session #'),
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
                     children: [
@@ -202,29 +211,7 @@ class _OverviewTabState extends State<_OverviewTab> {
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 200,
-                    child: (d.big4[_selectedLift] ?? []).length < 2
-                        ? Center(
-                            child: Text(
-                                tx('${exname(_selectedLift ?? 'null')} 数据不足（至少 2 次）',
-                                    en: '${exname(_selectedLift ?? 'null')}: not enough data (at least 2 sessions)'),
-                                style:
-                                    TextStyle(color: AppTheme.textDim)))
-                        : LineChart(
-                            LineChartData(
-                              gridData: const FlGridData(show: false),
-                              borderData: FlBorderData(show: false),
-                              titlesData: const FlTitlesData(show: false),
-                              lineBarsData: [
-                                LineChartBarData(
-                                  spots: d.big4[_selectedLift]!,
-                                  isCurved: false,
-                                  color: AppTheme.accent,
-                                  barWidth: 3,
-                                  dotData: const FlDotData(show: true),
-                                ),
-                              ],
-                            ),
-                          ),
+                    child: _buildRmChart(d),
                   ),
                 ],
               ),
@@ -324,6 +311,92 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
+  /// 主力动作 1RM 图（2026-09-26 Arono：之前不好看——竖线 + 无任何轴标签）。
+  /// 不足两场时给友好空态：告诉用户已经记了几场、当前 1RM 多少。
+  Widget _buildRmChart(_OverviewData d) {
+    final lift = _selectedLift;
+    final pts = lift == null ? const <FlSpot>[] : (d.big4[lift] ?? const <FlSpot>[]);
+    if (lift == null || pts.length < 2) {
+      final count = lift == null ? 0 : (d.rmSessionCount[lift] ?? 0);
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              lift == null
+                  ? tx('练几次之后，这里自动选出你的主力动作',
+                      en: 'Top lifts are picked automatically after a few workouts')
+                  : tx('${exname(lift)}：已记 $count 场',
+                      en: '${exname(lift)}: $count sessions logged'),
+              style: const TextStyle(fontSize: 14),
+            ),
+            if (pts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  tx('当前 1RM ≈ ${fmtKg(pts.last.y)} kg · 再练几场出进步趋势',
+                      en: 'Current 1RM ≈ ${fmtKg(pts.last.y)} kg · keep training to see the trend'),
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 13),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
+    final maxY = pts.map((p) => p.y).reduce((a, b) => a > b ? a : b);
+    final minY = pts.map((p) => p.y).reduce((a, b) => a < b ? a : b);
+    final leftInterval = (((maxY - minY) / 3).clamp(2.5, 50.0)).toDouble();
+    return LineChart(
+      LineChartData(
+        gridData: const FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              interval: (pts.length / 6).clamp(1, 100).toDouble(),
+              getTitlesWidget: (v, _) => Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  tx('第 ${v.toInt() + 1} 次', en: '#${v.toInt() + 1}'),
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 10),
+                ),
+              ),
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 40,
+              interval: leftInterval,
+              getTitlesWidget: (v, _) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Text(
+                  fmtKg(v),
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 10),
+                ),
+              ),
+            ),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: pts,
+            isCurved: false,
+            color: AppTheme.accent,
+            barWidth: 3,
+            dotData: const FlDotData(show: true),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 单次 JOIN 拉全部明细后内存聚合，避免逐 session 查询的 N+1。
   Future<_OverviewData> _load(AppContainer c) async {
     final now = DateTime.now();
@@ -345,6 +418,8 @@ class _OverviewTabState extends State<_OverviewTab> {
     final weekly = <int, double>{}; // 周一epoch天 -> 容量
     final setsByName = <String, List<SetEntry>>{};
     final big4 = <String, List<FlSpot>>{};
+    final rmSessionCount = <String, int>{};
+    final rmSessionLast = <String, double>{};
     final sessionIds = <int>[];
     var curSession = -1;
     for (final r in rows) {
@@ -376,10 +451,11 @@ class _OverviewTabState extends State<_OverviewTab> {
                 exerciseName: name, bodyWeightKg: bodyWeight);
         // 所有动作都算 1RM 序列，"主力动作"由容量排序动态选出
         final rm = estimate1RM(weight, reps);
-        final list = big4.putIfAbsent(name, () => <FlSpot>[]);
         final idx = sessionIds.indexOf(sid).toDouble();
-        if (list.isEmpty || rm > list.last.y) {
-          list.add(FlSpot(idx, rm));
+        addRmPointToSeries(big4.putIfAbsent(name, () => <FlSpot>[]), idx, rm);
+        if (rmSessionLast[name] != idx) {
+          rmSessionCount[name] = (rmSessionCount[name] ?? 0) + 1;
+          rmSessionLast[name] = idx;
         }
       }
     }
@@ -408,7 +484,21 @@ class _OverviewTabState extends State<_OverviewTab> {
       restDates: restDates,
       big4: big4,
       setsByName: setsByName,
+      rmSessionCount: rmSessionCount,
     );
+  }
+}
+
+/// 1RM 序列加点（@visibleForTesting 供单测；2026-09-26 修"竖线"bug）：
+/// 旧逻辑同一场训练里破 PR 的每组各 add 一个点、x 都是同一场次——
+/// 所有点叠在同一 x 上，图变成一根竖线。现在同一场只保留该场最佳
+/// （原地替换），跨场次仍只记"超过此前最佳"的进步节点。
+@visibleForTesting
+void addRmPointToSeries(List<FlSpot> list, double sessionIdx, double rm) {
+  if (list.isEmpty || list.last.x != sessionIdx) {
+    if (list.isEmpty || rm > list.last.y) list.add(FlSpot(sessionIdx, rm));
+  } else if (rm > list.last.y) {
+    list[list.length - 1] = FlSpot(sessionIdx, rm);
   }
 }
 
@@ -426,6 +516,9 @@ class _OverviewData {
   final List<String> restDates;
   final Map<String, List<FlSpot>> big4;
   final Map<String, List<SetEntry>> setsByName;
+
+  /// 各动作有正式组的场次计数（1RM 空态文案用）
+  final Map<String, int> rmSessionCount;
   _OverviewData({
     required this.weeklyVolume,
     required this.weekKeys,
@@ -434,6 +527,7 @@ class _OverviewData {
     required this.restDates,
     required this.big4,
     required this.setsByName,
+    required this.rmSessionCount,
   });
 }
 
