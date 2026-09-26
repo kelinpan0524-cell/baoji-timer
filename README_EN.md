@@ -34,6 +34,12 @@ Lean muscle comes down to low body fat, three sessions a week, and progressive o
 - Automatic rest countdown (180s compound / 120s assistance, adjustable) that keeps ticking on the lock screen or in the background, with notification-bar + exact-alarm reminders
 - Last-time comparison and automatic PR detection; Do-Not-Disturb during workouts and a nudge when you wander off into other apps
 - Set completion: vibration + visual confirmation, no need to read the screen
+- Plate math for barbell lifts: changing the weight briefly shows the per-side plate breakdown, then tucks itself away
+- Forgot to stop the timer? Before saving a suspiciously long session it asks once and can trim the log back to your last set
+
+### ⏰ Show-Up Reminders
+- Training-day reminder: if a scheduled training day comes and you have not trained by the time you set, a local notification gives you a gentle nudge (works even without Feishu)
+- Four-layer rest cue sounds with a "headphones only" mode — cues go into your earphones while you listen to music, and stay silent when none are connected
 
 ### 📈 Progressive Overload Engine
 - The Baoji plan is built in — big-four lifts, three sessions a week, ready to run
