@@ -30,6 +30,31 @@ Future<Plan> saveAiPlanAndSync(
   return plan;
 }
 
+/// 「替换现有计划」：用 AI 确认后的 specs 全量重建目标计划的内容
+/// （2026-09-26 Arono：AI 生成的计划可选择修改现有计划而不是只能新建）。
+/// 计划行（名称可选改名/排程模式/启用态）保留；若目标是使用中计划，
+/// 撤旧训练日日程后按新内容重写日历，非启用计划尽力撤残留日程。
+Future<Plan> replacePlanAndSync(
+  AppContainer c, {
+  required int planId,
+  required List<AiDaySpec> specs,
+  String? rename,
+}) async {
+  final oldDayIds =
+      (await c.db.planDays(planId)).map((d) => d.id!).toList();
+  final plan = await c.planRepo.replacePlanWithSpecs(
+    planId,
+    specs,
+    c.ai.metaMap(),
+    rename: rename,
+  );
+  unawaited(removePlanDayEvents(c, oldDayIds));
+  if (c.planRepo.activePlan?.id == planId) {
+    await syncActivePlanToLark(c);
+  }
+  return plan;
+}
+
 /// 撤下一批训练日在飞书日历上的日程（尽力而为）。
 Future<void> removePlanDayEvents(AppContainer c, List<int> dayIds) async {
   for (final id in dayIds) {

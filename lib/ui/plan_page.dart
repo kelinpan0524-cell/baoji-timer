@@ -100,6 +100,16 @@ class _PlanPageState extends State<PlanPage> {
                 ),
               ),
             ),
+            // 回收站入口：删除的计划快照保留 7 天，可恢复（2026-09-26）
+            IconButton(
+              tooltip: tx('最近删除', en: 'Recently deleted'),
+              onPressed: _openTrash,
+              icon: const Icon(
+                Icons.restore_from_trash_outlined,
+                size: 20,
+                color: AppTheme.textDim,
+              ),
+            ),
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'activate') {
@@ -719,8 +729,8 @@ class _PlanPageState extends State<PlanPage> {
     final ok = await confirmDialog(
       context,
       tx('删除「${dname(planName)}」？', en: 'Delete "${dname(planName)}"?'),
-      tx('计划的全部训练日和动作将被删除；历史训练记录保留。此操作无法撤销。',
-          en: 'All training days and exercises of this plan will be deleted; workout history is kept. This cannot be undone.'),
+      tx('计划的全部训练日和动作将移入回收站并保留 7 天，期间可恢复；历史训练记录保留。',
+          en: 'All training days and exercises move to trash and are kept for 7 days (restorable); workout history is kept.'),
       okLabel: tx('删除', en: 'Delete'),
     );
     if (!ok || !mounted) return;
@@ -735,7 +745,93 @@ class _PlanPageState extends State<PlanPage> {
     if (c.planRepo.activePlan != null) {
       await syncActivePlanToLark(c);
     }
-    if (mounted) toast(context, tx('已删除', en: 'Deleted'));
+    if (mounted) {
+      toast(context,
+          tx('已删除（7 天内可在「最近删除」恢复）',
+              en: 'Deleted (restorable from "Recently deleted" for 7 days)'));
+    }
+  }
+
+  /// 最近删除（回收站）：删除的计划快照保留 7 天，可恢复为新计划。
+  bool _trashRestoring = false;
+
+  Future<void> _openTrash() async {
+    final c = app(context);
+    await c.db.purgeExpiredDeletedPlans();
+    final rows = await c.db.listDeletedPlans();
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetCtx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+          children: [
+            Text(
+                tx('最近删除（7 天内可恢复）',
+                    en: 'Recently deleted (restorable for 7 days)'),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              tx('恢复后会成为新计划（不自动启用），训练日与动作完整保留。',
+                  en: 'Restored as a new plan (not auto-activated), with all days and exercises intact.'),
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            if (rows.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(tx('回收站是空的', en: 'Trash is empty'),
+                    style: const TextStyle(color: AppTheme.textDim)),
+              )
+            else
+              for (final row in rows)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline,
+                      color: AppTheme.textDim),
+                  title: Text(dname(row['name'] as String)),
+                  subtitle: Text(_deletedAtLabel(row['deleted_at'] as String),
+                      style: const TextStyle(fontSize: 12)),
+                  trailing: TextButton(
+                    onPressed: () async {
+                      if (_trashRestoring) return; // 防双击并发恢复出两份
+                      _trashRestoring = true;
+                      try {
+                        final plan = await c.planRepo
+                            .restoreFromTrash(row['id'] as int);
+                        if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                        if (plan != null && mounted) {
+                          toast(
+                              context,
+                              tx('已恢复「${dname(plan.name)}」（未启用）',
+                                  en: 'Restored "${dname(plan.name)}" (inactive)'));
+                        } else if (mounted) {
+                          toast(context,
+                              tx('恢复失败，请重试', en: 'Restore failed, please retry'));
+                        }
+                      } finally {
+                        _trashRestoring = false;
+                      }
+                    },
+                    child: Text(tx('恢复', en: 'Restore')),
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _deletedAtLabel(String iso) {
+    final d = DateTime.tryParse(iso);
+    if (d == null) return iso;
+    final left = 7 - DateTime.now().difference(d).inDays;
+    return tx('删除于 ${fmtDate(d)} · 约 $left 天后清除',
+        en: 'Deleted ${fmtDate(d)} · cleared in ~$left days');
   }
 
   Future<void> _createBlankPlan() async {
@@ -1115,14 +1211,33 @@ class _PlanPageState extends State<PlanPage> {
     // 调研条目 12：无论哪种来源都先进预览页逐动作确认，确认后才落库。
     // 回落时带上 AI 失败原因摘要（评审修复）：自配 API 的用户能看出
     // 是 Key 错还是网络错，而不是只见笼统的「AI 不可用」。
+    final existingPlans = await c.db.allPlans();
+    if (!mounted) return;
     final picked = await showPlanPreviewSheet(
       context,
       specs,
       localMode: localMode,
       aiError: localMode ? aiError : '',
+      existingPlans: existingPlans,
     );
     if (picked == null || !mounted) return;
-    final (name, confirmed) = picked;
+    final name = picked.name;
+    final confirmed = picked.specs;
+    // 替换现有计划（2026-09-26）：内容全量重建，计划行与启用态保留
+    if (picked.replacePlanId != null) {
+      final replaced = await replacePlanAndSync(
+        c,
+        planId: picked.replacePlanId!,
+        specs: confirmed,
+        rename: name.isEmpty ? null : name,
+      );
+      await _refresh();
+      if (!mounted) return;
+      toast(context,
+          tx('已更新「${dname(replaced.name)}」的内容，计划保持${replaced.isActive == 1 ? '使用中' : '未启用'}',
+              en: '"${dname(replaced.name)}" updated; plan stays ${replaced.isActive == 1 ? 'active' : 'inactive'}'));
+      return;
+    }
     final plan = await _switchActivePlanAndSync(
       c,
       () => c.planRepo.saveAiPlan(

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
@@ -48,7 +50,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 6,
+          version: 7,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -114,6 +116,9 @@ class Db {
     if (oldV < 6) {
       await upgradeV5to6(db);
     }
+    if (oldV < 7) {
+      await upgradeV6to7(db);
+    }
   }
 
   /// v6：计划模板目标参数快照进训练记录（调研条目 14）。
@@ -130,6 +135,20 @@ class Db {
         'ALTER TABLE session_exercises ADD COLUMN target_reps_min INTEGER NOT NULL DEFAULT 0');
     await db.execute(
         'ALTER TABLE session_exercises ADD COLUMN target_reps_max INTEGER NOT NULL DEFAULT 0');
+  }
+
+  /// v7：计划删除快照回收站（2026-09-26 Arono：删除的计划保留 7 天可恢复）。
+  /// 删除计划时整套快照（计划行+训练日+动作+排程覆盖行）进 deleted_plans，
+  /// 恢复时重建为新 id 的计划；过期（7 天）由调用方惰性清除。
+  @visibleForTesting
+  Future<void> upgradeV6to7(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS deleted_plans(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        snapshot TEXT NOT NULL,
+        deleted_at TEXT NOT NULL
+      )''');
   }
 
   /// 建表（onCreate 与单元测试共用）。
@@ -261,6 +280,13 @@ class Db {
       )''');
     await db.execute(
         'CREATE INDEX idx_sched_date ON plan_schedule(date)');
+    await db.execute('''
+      CREATE TABLE deleted_plans(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        snapshot TEXT NOT NULL,
+        deleted_at TEXT NOT NULL
+      )''');
   }
 
   // ---------- plans ----------
@@ -303,6 +329,123 @@ class Db {
   Future<void> deletePlan(int planId) async {
     final db = await database;
     await db.delete('plans', where: 'id = ?', whereArgs: [planId]);
+  }
+
+  /// 删除前把计划整套快照（计划行 + 训练日 + 动作 + 排程覆盖行）存进
+  /// 回收站 deleted_plans，随后硬删原计划（级联清依赖）。
+  /// day_id 在快照里换成 days 数组下标，恢复时按新 id 重建映射。
+  Future<void> snapshotAndDeletePlan(int planId) async {
+    final db = await database;
+    await db.transaction((tx) async {
+      final planRows =
+          await tx.query('plans', where: 'id = ?', whereArgs: [planId]);
+      if (planRows.isEmpty) return;
+      final plan = planRows.first;
+      final days = await tx.query('plan_days',
+          where: 'plan_id = ?', whereArgs: [planId], orderBy: 'id ASC');
+      final exRows = days.isEmpty
+          ? const <Map<String, Object?>>[]
+          : await tx.query(
+              'plan_exercises',
+              where: 'day_id IN (${days.map((d) => d['id'] as int).join(',')})',
+              orderBy: 'id ASC',
+            );
+      final schedRows =
+          await tx.query('plan_schedule', where: 'plan_id = ?', whereArgs: [planId]);
+      final dayIndex = <Object?, int>{
+        for (var i = 0; i < days.length; i++) days[i]['id']: i,
+      };
+      final snapshot = jsonEncode({
+        'plan': plan,
+        'days': [
+          for (final d in days)
+            {
+              'day': d,
+              'exercises': [
+                for (final e in exRows) if (e['day_id'] == d['id']) e,
+              ],
+            }
+        ],
+        'schedule': [
+          for (final sc in schedRows)
+            {
+              ...sc,
+              'day_id':
+                  sc['day_id'] == null ? null : dayIndex[sc['day_id']],
+            }
+        ],
+      });
+      await tx.insert('deleted_plans', {
+        'name': plan['name'] as String,
+        'snapshot': snapshot,
+        'deleted_at': DateTime.now().toIso8601String(),
+      });
+      await tx.delete('plans', where: 'id = ?', whereArgs: [planId]);
+    });
+  }
+
+  /// 回收站列表（最新删除在前）。
+  Future<List<Map<String, Object?>>> listDeletedPlans() async {
+    final db = await database;
+    return db.query('deleted_plans', orderBy: 'deleted_at DESC, id DESC');
+  }
+
+  /// 从回收站恢复计划：重建为新 id（不自动启用），删除回收站行。
+  /// 返回新计划 id；回收站里没有该行时返回 null。
+  /// 整段在事务里：计划重建与快照行删除原子完成，中途失败整体回滚，
+  /// 不会留下半截计划+回收站行还在（重试出重复计划）的组合。
+  Future<int?> restoreDeletedPlan(int deletedId) async {
+    final db = await database;
+    return db.transaction<int?>((tx) async {
+      final rows = await tx
+          .query('deleted_plans', where: 'id = ?', whereArgs: [deletedId]);
+      if (rows.isEmpty) return null;
+      final snap =
+          jsonDecode(rows.first['snapshot'] as String) as Map<String, dynamic>;
+      final planMap = Map<String, dynamic>.from(snap['plan'] as Map);
+      // 恢复不自动启用：删使用中计划时已有别的计划顶上，恢复的不回来抢
+      planMap['id'] = null;
+      planMap['is_active'] = 0;
+      final newPlanId = await tx.insert('plans', planMap);
+      // day_id 在快照里是 days 数组下标，按顺序收集新 id 重建映射
+      final newDayIds = <int>[];
+      for (final dayEntry in (snap['days'] as List)) {
+        final m = Map<String, dynamic>.from(dayEntry as Map);
+        final dayMap = Map<String, dynamic>.from(m['day'] as Map);
+        dayMap['id'] = null;
+        dayMap['plan_id'] = newPlanId;
+        final newDayId = await tx.insert('plan_days', dayMap);
+        newDayIds.add(newDayId);
+        for (final ex in (m['exercises'] as List)) {
+          final exMap = Map<String, dynamic>.from(ex as Map);
+          exMap['id'] = null;
+          exMap['day_id'] = newDayId;
+          await tx.insert('plan_exercises', exMap);
+        }
+      }
+      for (final sc in (snap['schedule'] as List)) {
+        final m = Map<String, dynamic>.from(sc as Map);
+        final idx = m['day_id'] as int?;
+        await tx.insert('plan_schedule', {
+          'plan_id': newPlanId,
+          'date': m['date'] as String,
+          // 下标越界（快照与表结构不一致）时回退为显式休息，不指错训练日
+          'day_id':
+              idx != null && idx >= 0 && idx < newDayIds.length ? newDayIds[idx] : null,
+        });
+      }
+      await tx.delete('deleted_plans', where: 'id = ?', whereArgs: [deletedId]);
+      return newPlanId;
+    });
+  }
+
+  /// 惰性清除超过 [keepDays] 天的回收站快照（调用方在打开回收站/计划页时触发）。
+  Future<void> purgeExpiredDeletedPlans({int keepDays = 7}) async {
+    final db = await database;
+    final cutoff =
+        DateTime.now().subtract(Duration(days: keepDays)).toIso8601String();
+    await db.delete('deleted_plans',
+        where: 'deleted_at < ?', whereArgs: [cutoff]);
   }
 
   /// 更新计划任意字段（排程模式/循环参数等；调用方负责事务语义）。
@@ -348,6 +491,13 @@ class Db {
   Future<void> deletePlanDay(int dayId) async {
     final db = await database;
     await db.delete('plan_days', where: 'id = ?', whereArgs: [dayId]);
+  }
+
+  /// 清空某计划的全部训练日（动作随级联删除）——
+  /// AI「替换现有计划」重建内容前调用。
+  Future<void> deletePlanDaysOfPlan(int planId) async {
+    final db = await database;
+    await db.delete('plan_days', where: 'plan_id = ?', whereArgs: [planId]);
   }
 
   /// 交换两个训练日的星期（拖动计划编排用：目标日已有内容则对调）。
@@ -820,6 +970,7 @@ class Db {
         'body_metrics',
         'lark_sync',
         'sync_queue',
+        'deleted_plans',
       ]) {
         await tx.delete(t);
       }

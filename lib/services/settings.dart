@@ -110,6 +110,7 @@ class Settings extends ChangeNotifier {
     ghUpdateToken = _prefs.getString('${_kprefix}ghToken') ?? '';
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
     larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
+    aiChatHistoryJson = _prefs.getString('${_kprefix}aiChatHistory') ?? '[]';
     langPref = switch (_prefs.getString('${_kprefix}lang')) {
       'zh' => LangPref.zh,
       'en' => LangPref.en,
@@ -122,6 +123,10 @@ class Settings extends ChangeNotifier {
   // token 运行时字段
   String larkAccessToken = '';
   int larkTokenExpiry = 0; // epoch ms
+
+  /// AI 教练对话历史（最近若干轮的 user/assistant 消息 JSON）。
+  /// 退出 App 再进不丢（2026-09-26 Arono）；「清空对话」时一并清掉。
+  String aiChatHistoryJson = '[]';
 
   void set(void Function() change, {bool persist = true}) {
     change();
@@ -155,6 +160,7 @@ class Settings extends ChangeNotifier {
     await _prefs.setString('${_kprefix}ghToken', ghUpdateToken);
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
     await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);
+    await _prefs.setString('${_kprefix}aiChatHistory', aiChatHistoryJson);
     await _prefs.setString('${_kprefix}lang', langPref.name);
     Lang.setResolved(resolvedLang == 'en');
     notifyListeners();
