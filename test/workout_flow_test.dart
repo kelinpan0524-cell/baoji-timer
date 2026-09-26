@@ -170,10 +170,29 @@ void main() {
       expect(refs[3].done, isFalse);
     });
 
-    test('加练的组不出现在面板里（面板只列计划组）', () {
+    test('加练的组也列入清单：第 4 组带 extra 标记且已划线', () {
       final f = _twoExercises();
       f.setsByEx[11]!.addAll([_set(11), _set(11), _set(11), _set(11)]);
-      expect(f.setRefs().length, 6, reason: '第 4 组是加练，不入清单');
+      final refs = f.setRefs();
+      // 动作甲 3 个计划组 + 1 个加练组
+      expect(refs.length, 7, reason: '加练的组要显示出来（2026-09-26 Arono）');
+      final extra = refs[3];
+      expect(extra.setNumber, 4);
+      expect(extra.extra, isTrue, reason: '第 4 组超出计划，带加练标记');
+      expect(extra.done, isTrue, reason: '加练组已记录，划线锁定');
+      // 动作乙的计划组不受影响
+      expect(refs[4].exerciseIndex, 1);
+      expect(refs[4].extra, isFalse);
+    });
+
+    test('计划组完成度统计不含加练（面板头部 X/N 仍按计划数）', () {
+      final f = _twoExercises();
+      f.setsByEx[11]!.addAll([_set(11), _set(11), _set(11), _set(11)]);
+      final refs = f.setRefs();
+      final plannedDone = refs
+          .where((r) => r.exerciseIndex == 0 && r.done && !r.extra)
+          .length;
+      expect(plannedDone, 3, reason: '头部 3/3 done 只数计划组');
     });
   });
 

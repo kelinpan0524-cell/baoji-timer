@@ -341,8 +341,8 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                     ),
                     Text(
                       tx(
-                        '已完成 ${refs.where((r) => r.exerciseIndex == i && r.done).length}/${s.exercises[i].rule.workingSets}',
-                        en: '${refs.where((r) => r.exerciseIndex == i && r.done).length}/${s.exercises[i].rule.workingSets} done',
+                        '已完成 ${refs.where((r) => r.exerciseIndex == i && r.done && !r.extra).length}/${s.exercises[i].rule.workingSets}',
+                        en: '${refs.where((r) => r.exerciseIndex == i && r.done && !r.extra).length}/${s.exercises[i].rule.workingSets} done',
                       ),
                       style: const TextStyle(
                         color: AppTheme.textDim,
@@ -382,7 +382,11 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                             ),
                           ),
                     title: Text(
-                      tx('第 ${ref.setNumber} 组', en: 'Set ${ref.setNumber}'),
+                      ref.extra
+                          ? tx('第 ${ref.setNumber} 组（加练）',
+                              en: 'Set ${ref.setNumber} (extra)')
+                          : tx('第 ${ref.setNumber} 组',
+                              en: 'Set ${ref.setNumber}'),
                       style: TextStyle(
                         fontSize: 14,
                         color: ref.done ? AppTheme.textDim : AppTheme.text,
@@ -401,10 +405,59 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                           )
                         : null,
                   ),
+                // 进行中的加练组（尚未落库，不在 refs 里）：补一行当前占位，
+                // 让「加练了」在面板上可见（2026-09-26 Arono）。
+                if (_currentExtraRef(cur, i) case final FlowSetRef extraRef)
+                  ListTile(
+                    dense: true,
+                    visualDensity: VisualDensity.compact,
+                    enabled: false,
+                    leading: SizedBox(
+                      width: 18,
+                      child: Center(
+                        child: Text(
+                          '${extraRef.setNumber}',
+                          style: const TextStyle(
+                            color: AppTheme.textDim,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      tx('第 ${extraRef.setNumber} 组（加练）',
+                          en: 'Set ${extraRef.setNumber} (extra)'),
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    trailing: Text(
+                      tx('当前', en: 'Current'),
+                      style: const TextStyle(
+                        color: AppTheme.accent,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
             ],
           ],
         ),
       ),
+    );
+  }
+
+  /// 当前正处于「加练记录页」时返回该行（供面板补当前占位）。
+  FlowSetRef? _currentExtraRef(FlowPage? cur, int exerciseIndex) {
+    if (cur == null ||
+        cur.kind != FlowPageKind.record ||
+        !cur.extra ||
+        cur.exerciseIndex != exerciseIndex) {
+      return null;
+    }
+    return FlowSetRef(
+      exerciseIndex: cur.exerciseIndex,
+      setNumber: cur.setNumber,
+      done: false,
+      extra: true,
     );
   }
 
