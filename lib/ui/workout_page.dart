@@ -1456,6 +1456,98 @@ Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
   );
 }
 
+/// 自定义次数直输（2026-09-26 Arono）：轻重量高次数（12/15+）超出计划
+/// ±2 的点选范围时直接键入，1-99 的整数。与重量直输同款交互：
+/// 用户主动点按唤起键盘、可取消，不算打断训练。
+Future<void> showRepsInputSheet(
+  BuildContext context, {
+  required int current,
+  required ValueChanged<int> onPicked,
+}) {
+  final ctrl = TextEditingController(text: '$current');
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.card,
+    builder: (sheetCtx) => StatefulBuilder(
+      builder: (sheetCtx, setSheetState) {
+        int? parsed() {
+          final v = int.tryParse(ctrl.text.trim());
+          if (v == null || v < 1 || v > 99) return null;
+          return v;
+        }
+
+        void submit() {
+          final v = parsed();
+          if (v == null) {
+            setSheetState(() {}); // 刷新 errorText 提示
+            return;
+          }
+          HapticFeedback.selectionClick();
+          onPicked(v);
+          Navigator.pop(sheetCtx);
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  tx('输入次数', en: 'Enter Reps'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  tx('轻重量高次数直接键入，如 12 或 15（1-99）',
+                      en: 'Type any rep count, e.g. 12 or 15 (1-99)'),
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  onSubmitted: (_) => submit(),
+                  style: AppTheme.bigNum(30),
+                  decoration: InputDecoration(
+                    hintText: tx('如 15', en: 'e.g. 15'),
+                    errorText: parsed() == null
+                        ? tx('请输入 1-99 的次数', en: 'Enter 1-99 reps')
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                BigButton(
+                    label: tx('确认', en: 'Confirm'),
+                    height: 64,
+                    onPressed: submit),
+                TextButton(
+                  onPressed: () => Navigator.pop(sheetCtx),
+                  child: Text(
+                    tx('取消', en: 'Cancel'),
+                    style: const TextStyle(color: AppTheme.textDim),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class _ActionPanel extends StatefulWidget {
   const _ActionPanel({
     super.key,
@@ -1759,6 +1851,43 @@ class _ActionPanelState extends State<_ActionPanel> {
                     setState(() => _reps = r);
                   },
                 ),
+              // 自定义次数（2026-09-26 Arono）：轻重量高次数（12/15+）
+              // 超出计划 ±2 的点选范围时直接键入；选中后 chip 显示实际次数。
+              Builder(
+                builder: (context) {
+                  final custom =
+                      (_reps != null && !repsChoices.contains(_reps))
+                          ? _reps!
+                          : null;
+                  return ChoiceChip(
+                    label: Text(
+                        custom != null ? '$custom' : tx('自定义', en: 'Custom')),
+                    selected: custom != null,
+                    labelStyle: TextStyle(
+                      fontSize: custom != null ? 17 : 14,
+                      fontWeight: FontWeight.w700,
+                      color: custom != null
+                          ? const Color(0xFF06220F)
+                          : AppTheme.textDim,
+                    ),
+                    selectedColor: AppTheme.primary,
+                    backgroundColor: AppTheme.cardHi,
+                    side: BorderSide.none,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    onSelected: (_) {
+                      HapticFeedback.selectionClick();
+                      showRepsInputSheet(
+                        context,
+                        current: _reps ?? ex.rule.repsMin,
+                        onPicked: (v) => setState(() => _reps = v),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
           // 备注入口（默认收起，PRD P0 字段：单组备注）；

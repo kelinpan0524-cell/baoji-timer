@@ -30,7 +30,7 @@ Lean muscle comes down to low body fat, three sessions a week, and progressive o
 ## ✨ Features
 
 ### 🏋️ During the Workout: Focus First
-- Full-screen big-button set logging: weight stepping (±0.5 / 1.25 / 2.5 / 5 kg, keyboard optional), tap-to-pick reps, RIR, warm-up / working / failure tags
+- Full-screen big-button set logging: weight stepping (±0.5 / 1.25 / 2.5 / 5 kg, keyboard optional), tap-to-pick reps, RIR, warm-up / working / failure tags; for high-rep sets (12/15+) tap "Custom" and type any rep count
 - Automatic rest countdown (180s compound / 120s assistance, adjustable) that keeps ticking on the lock screen or in the background, with notification-bar + exact-alarm reminders
 - Last-time comparison and automatic PR detection; Do-Not-Disturb during workouts and a nudge when you wander off into other apps
 - Set completion: vibration + visual confirmation, no need to read the screen
