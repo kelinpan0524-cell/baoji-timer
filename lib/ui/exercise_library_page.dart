@@ -20,8 +20,13 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
   bool _loading = true;
   List<ExerciseMeta> _metas = [];
   String _filter = '全部'; // 全部 / 肌群 / 场景
+  String _gear = '全部'; // 细分器械类目（见 _gears）
 
   static const _filters = ['全部', ...kMuscleRegions, '健身房', '居家'];
+  // 细分器械类目：中文是数据键（与动作库 gear 标注同一口径），显示层经 gearname() 翻译
+  static const _gears = [
+    '全部', '杠铃', '哑铃', '龙门架绳索', '固定器械', '弹力带', '自重', '壶铃', '其他器械',
+  ];
 
   @override
   void initState() {
@@ -43,14 +48,16 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
   }
 
   List<ExerciseMeta> get _filtered {
-    if (_filter == '全部') return _metas;
+    Iterable<ExerciseMeta> r = _metas;
+    if (_gear != '全部') r = r.where((m) => m.gear == _gear);
     if (_filter == '健身房') {
-      return _metas.where((m) => m.equipment != 'home').toList();
+      r = r.where((m) => m.equipment != 'home');
+    } else if (_filter == '居家') {
+      r = r.where((m) => m.equipment != 'gym');
+    } else if (_filter != '全部') {
+      r = r.where((m) => m.muscles.main == _filter);
     }
-    if (_filter == '居家') {
-      return _metas.where((m) => m.equipment != 'gym').toList();
-    }
-    return _metas.where((m) => m.muscles.main == _filter).toList();
+    return r.toList();
   }
 
   @override
@@ -96,11 +103,52 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                     ],
                   ),
                 ),
+                // 细分器械筛选（与上方肌群/场景筛选可叠加）
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      for (final g in _gears)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ChoiceChip(
+                            label: Text(
+                                g == '全部'
+                                    ? tx('全部', en: 'All')
+                                    : gearname(g), // 器械名是数据，显示层翻译
+                                style: const TextStyle(fontSize: 12)),
+                            selected: _gear == g,
+                            onSelected: (_) => setState(() => _gear = g),
+                            labelStyle: TextStyle(
+                                fontSize: 12,
+                                color: _gear == g
+                                    ? const Color(0xFF06220F)
+                                    : AppTheme.text),
+                            selectedColor: AppTheme.primary,
+                            backgroundColor: AppTheme.cardHi,
+                            side: BorderSide.none,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemCount: _filtered.length,
+                    itemCount: _filtered.isEmpty ? 1 : _filtered.length,
                     itemBuilder: (ctx, i) {
+                      if (_filtered.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 48),
+                          child: Text(
+                              tx('这个筛选下没有动作，换个器械或肌群试试。',
+                                  en: 'No exercises match these filters — try another equipment or muscle.'),
+                              textAlign: TextAlign.center,
+                              style:
+                                  const TextStyle(color: AppTheme.textDim)),
+                        );
+                      }
                       final m = _filtered[i];
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 3),
@@ -126,10 +174,12 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                                         tx(
                                           '主练 ${mname(m.muscles.main)}'
                                           '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.map(mname).join('/')}'}'
-                                          ' · ${m.isCompound ? '复合' : '单关节'}',
+                                          ' · ${m.isCompound ? '复合' : '单关节'}'
+                                          '${m.gear.isEmpty ? '' : ' · ${gearname(m.gear)}'}',
                                           en: 'Main ${mname(m.muscles.main)}'
                                               '${m.muscles.secondary.isEmpty ? '' : ' · Secondary ${m.muscles.secondary.map(mname).join('/')}'}'
-                                              ' · ${m.isCompound ? 'Compound' : 'Isolation'}',
+                                              ' · ${m.isCompound ? 'Compound' : 'Isolation'}'
+                                              '${m.gear.isEmpty ? '' : ' · ${gearname(m.gear)}'}',
                                         ),
                                         style: const TextStyle(
                                             color: AppTheme.textDim,
@@ -227,13 +277,24 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
               tx(
                 '主练 ${mname(m.muscles.main)}'
                 '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.map(mname).join('/')}'}'
-                ' · ${m.isCompound ? '复合动作' : '单关节动作'} · ${eqname(m.equipmentLabel)}',
+                ' · ${m.isCompound ? '复合动作' : '单关节动作'} · ${eqname(m.equipmentLabel)}'
+                '${m.gear.isEmpty ? '' : ' · ${gearname(m.gear)}'}',
                 en: 'Main ${mname(m.muscles.main)}'
                     '${m.muscles.secondary.isEmpty ? '' : ' · Secondary ${m.muscles.secondary.map(mname).join('/')}'}'
-                    ' · ${m.isCompound ? 'Compound' : 'Isolation'} · ${eqname(m.equipmentLabel)}',
+                    ' · ${m.isCompound ? 'Compound' : 'Isolation'} · ${eqname(m.equipmentLabel)}'
+                    '${m.gear.isEmpty ? '' : ' · ${gearname(m.gear)}'}',
               ),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
             ),
+            if (m.cue.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Text(tx('动作要点', en: 'Form Cues'),
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 6),
+              Text(cuen(m.name, m.cue),
+                  style: const TextStyle(fontSize: 14, height: 1.5)),
+            ],
             const SizedBox(height: 14),
             if (dates.isEmpty)
               Text(

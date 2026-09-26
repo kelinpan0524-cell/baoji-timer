@@ -426,6 +426,10 @@ void main() {
       expect(msgs[0].content.contains(AiService.planChatContract()), isTrue);
       expect(msgs[1].role, 'system');
       expect(msgs[1].content.contains('DATA-PACK'), isTrue);
+      // 2026-09-26：数据包新增「当前计划与日程」段，引导句明示其存在与
+      // 「日期均为绝对日期、不要反问今天星期几」的优先级
+      expect(msgs[1].content, contains('当前计划与日程'));
+      expect(msgs[1].content, contains('不要反问用户今天星期几'));
       expect(msgs[2].role, 'assistant');
       expect(msgs[2].content, '上次回答');
       expect(msgs[3].role, 'user');

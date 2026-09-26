@@ -59,7 +59,8 @@ class _StatsPageState extends State<StatsPage> {
 
   Future<void> _exportAiPack() async {
     final c = app(context);
-    final pack = await c.export.buildAiPack(bodyWeightKg: c.settings.bodyWeightKg);
+    final pack = await c.export.buildAiPack(
+        bodyWeightKg: c.settings.bodyWeightKg, planRepo: c.planRepo);
     await c.export.shareText(
         tx('薄肌训练 · AI 分析包', en: 'Baoji · AI Analysis Pack'),
         pack,

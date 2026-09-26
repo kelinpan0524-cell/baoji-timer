@@ -112,6 +112,11 @@ class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(14)),
       ),
+      // 深色浮层上必须高对比：M3 默认正文/onInverseSurface、action/inversePrimary
+      // 是为"深色模式浅色浮层"设计的，配深底 cardHi 会深字压深底看不清。
+      contentTextStyle: TextStyle(color: text, fontSize: 14),
+      actionTextColor: primary,
+      disabledActionTextColor: textDim,
     ),
     progressIndicatorTheme: const ProgressIndicatorThemeData(
       color: primary,

@@ -63,7 +63,14 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
   List<ExerciseMeta> get _filtered {
     final q = _searchCtrl.text.trim();
     return _all.where((m) {
-      if (q.isNotEmpty && !m.name.contains(q)) return false;
+      // 四路匹配：中文名 / 英文名 / 中文器械 / 英文器械（搜「龙门架」「barbell」都能命中）
+      if (q.isNotEmpty &&
+          !m.name.contains(q) &&
+          !exname(m.name).toLowerCase().contains(q.toLowerCase()) &&
+          !(m.gear.isNotEmpty && m.gear.contains(q)) &&
+          !gearname(m.gear).toLowerCase().contains(q.toLowerCase())) {
+        return false;
+      }
       if (_muscle != '全部' && m.muscles.main != _muscle) return false;
       if (_equipment == '健身房' && m.equipment == 'home') return false;
       if (_equipment == '居家' && m.equipment == 'gym') return false;
@@ -94,8 +101,8 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search, size: 20),
-                hintText: tx('搜索动作名，如：卧推、划船…',
-                    en: 'Search by exercise name…'),
+                hintText: tx('搜索动作或器械，如：卧推、龙门架…',
+                    en: 'Search by name or equipment…'),
                 isDense: true,
               ),
             ),
@@ -170,8 +177,18 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
           Expanded(
             child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              itemCount: list.length,
+              itemCount: list.isEmpty ? 1 : list.length,
               itemBuilder: (ctx, i) {
+                if (list.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 48),
+                    child: Text(
+                        tx('没有匹配的动作，换个关键词或筛选试试。',
+                            en: 'No exercises match — try another keyword or filter.'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: AppTheme.textDim)),
+                  );
+                }
                 final m = list[i];
                 final exists = widget.existingNames.contains(m.name);
                 final sel = _selected.contains(m.name);

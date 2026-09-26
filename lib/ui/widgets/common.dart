@@ -223,7 +223,6 @@ void toast(BuildContext context, String msg) {
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(msg),
-      backgroundColor: AppTheme.cardHi,
       behavior: SnackBarBehavior.floating,
       // 抬高到底部导航/常驻按钮之上，避免遮挡可点区域
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 100),

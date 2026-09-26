@@ -96,6 +96,29 @@ const _kExerciseEn = <String, String>{
   '弹力带伐木': 'Band Woodchopper',
   '雪橇推': 'Sled Push',
   '土耳其起立': 'Turkish Get-up',
+  // —— 2026-09 补库新增 ——
+  // 胸
+  '哑铃仰卧上拉': 'Dumbbell Pullover',
+  // 背
+  '山羊挺身': 'Back Extension',
+  '反向划船': 'Inverted Row',
+  // 肩
+  '阿诺德推举': 'Arnold Press',
+  '弹力带肩外旋': 'Band External Rotation',
+  '蝴蝶机反向飞鸟（后束）': 'Reverse Pec Deck (Rear Delt Fly)',
+  // 手臂
+  '牧师凳弯举': 'Preacher Curl',
+  // 腿
+  '登阶': 'Step-Up',
+  '坐姿提踵': 'Seated Calf Raise',
+  '北欧腿弯举': 'Nordic Hamstring Curl',
+  '颈前深蹲': 'Barbell Front Squat',
+  '杠铃臀推': 'Barbell Hip Thrust',
+  // 核心
+  '绳索卷腹': 'Cable Crunch',
+  '帕洛夫推举': 'Pallof Press',
+  '反向卷腹': 'Reverse Crunch',
+  '哑铃侧屈': 'Dumbbell Side Bend',
 };
 
 /// 训练日标题 / 计划模板名 / 模板介绍等随库内置的名词。
@@ -151,6 +174,39 @@ const _kEquipmentEn = <String, String>{
   '全部': 'All',
 };
 
+/// 细分器械（ExerciseMeta.gear 的中文数据键）。
+const _kGearEn = <String, String>{
+  '杠铃': 'Barbell',
+  '哑铃': 'Dumbbell',
+  '龙门架绳索': 'Cable',
+  '固定器械': 'Machine',
+  '弹力带': 'Band',
+  '自重': 'Bodyweight',
+  '壶铃': 'Kettlebell',
+  '其他器械': 'Other Equipment',
+};
+
+/// 动作要点英译（按动作中文名键控，映射不到回落中文——
+/// DB 沉淀动作 cue 恒空、整块隐藏，基本不触发回落）。
+const _kCueEn = <String, String>{
+  '阿诺德推举': 'Seated with back support, hold a dumbbell in each hand at chest height, palms facing you; rotate the wrists to palms-forward as you press up and rotate back on the way down. Keep elbows slightly in front of the body, forearms vertical, low back on the pad. Common mistakes: going too heavy so the rotation gets cut short, turning it into a swing.',
+  '牧师凳弯举': 'Press your upper arms and armpits into the pad with elbows fixed; only the forearms curl. Pause at the top, lower slowly to feel the stretch, keep a slight bend. Common mistakes: shrugging or lifting the elbows off the pad to cheat.',
+  '哑铃仰卧上拉': 'Lie with your upper back across a flat bench, feet planted; hold one dumbbell by one end over your chest. Keep a fixed slight elbow bend; lower the dumbbell in an arc behind your head until chest and lats stretch, then pull it back along the same arc. Common mistakes: the elbow angle opening into a triceps extension, or going too deep and straining the shoulders.',
+  '山羊挺身': 'Hips on the pad of a Roman-chair bench, ankles hooked, arms crossed; hinge down until your torso is about parallel to the floor, then raise back up only to a straight line with your legs. Do not hyperextend the lower back or swing; stay slow and controlled. Hold a plate to add load.',
+  '反向划船': 'Set a bar at about waist height (or use a sturdy table), body straight from head to heels, heels on the floor, grip slightly wider than shoulders. Retract and depress the shoulder blades first, then pull your chest to the bar and pause one second. Common mistakes: sagging hips, reaching with the chin, pulling only with the arms. Raise the bar to make it easier.',
+  '登阶': 'Use a bench or step about knee height; place your whole foot on it and drive up with the front leg glutes and thighs. The trailing leg only taps for balance - do not push off. Lower slowly under control from the front leg. Common mistakes: leaning the torso too far forward, or kicking hard with the rear leg. Hold dumbbells to add load.',
+  '坐姿提踵': 'Sit on the seated calf machine with knees bent about 90 degrees, balls of the feet on the platform, pad pressed on the knees. Lower the heels to a full calf stretch, then rise to the top and hold 1-2 seconds. The bent-knee position targets the deep soleus. Common mistakes: partial range and bobbing with momentum.',
+  '北欧腿弯举': 'Kneel with ankles anchored by a partner or under a sofa; keep hips-to-shoulders in one line as you lower forward slowly. Pull yourself back up only with the hamstrings; push lightly off the floor with your hands to assist at first. The slower the lowering, the better. Common mistakes: breaking at the hips, chasing full range too soon - start half-range or with band assistance.',
+  '绳索卷腹': 'Kneel facing a high pulley, rope held at the sides of your head, hips fixed. Curl the ribs toward the pelvis with the abs, elbows traveling toward the knees, spine rounding at the top. Common mistake: bowing the whole torso down flat - that is the hips moving, not the abs crunching.',
+  '弹力带肩外旋': 'Pin your upper arm to your side with the elbow bent 90 degrees, holding one end of a band; rotate the forearm outward like opening a door, keeping the elbow glued to your side as the band pulls in. A rotator-cuff maintenance move - keep it light, 15-20 reps. Common mistakes: the elbow drifting out, the torso rotating to compensate.',
+  '蝴蝶机反向飞鸟（后束）': 'Sit with the chest firmly against the pad, shoulders down; hold the handles and sweep the arms back and out, led by the elbows. Squeeze one second at the end range, return slowly, weight controlled throughout. Common mistakes: shrugging so the traps take over, swinging through an oversized range.',
+  '帕洛夫推举': 'Stand sideways to a cable stack (band anchor at home), hold the handle pulled to your chest and feel the anti-rotation tension in the obliques. Exhale, press the arms straight out, hold 2-3 seconds, return slowly; do both sides. Common mistakes: getting rotated by the weight, holding the breath or letting the lower back arch as you press.',
+  '反向卷腹': 'Lie on your back with knees bent and lower back flat on the floor. Curl the pelvis toward the ribs and draw the knees to the chest using the lower abs - do not swing the legs. Lower slowly, keeping the lower back down the whole time. Common mistake: leg-swing momentum turning it into a leg raise.',
+  '哑铃侧屈': 'Stand tall holding a dumbbell in one hand, other hand behind your head. Bend sideways toward the weighted side, then straighten using the obliques on the opposite side, pelvis stable. Pure lateral fold - no leaning forward or back. Common mistakes: bobbing with momentum, a too-heavy bell turning it into a shrug.',
+  '颈前深蹲': 'Rest the bar on the front delts and collarbone, elbows high and pointing forward near parallel to the floor; brace the core and squat with an upright torso to at least thigh-parallel. Common mistakes: elbows dropping so the bar rolls forward, the torso pitching. If wrist or shoulder mobility is lacking, transition via goblet squats.',
+  '杠铃臀推': 'Upper back against a bench, padded barbell over the hips, feet flat. Drive through the heels until shoulders, hips and knees form a straight line; squeeze the glutes 1-2 seconds at the top, lower under control. Common mistakes: overextending into a lower-back arch at the top, bouncing with momentum.',
+};
+
 /// 动作名显示（动作库/训练/历史/统计等处）。
 String exname(String zh) => Lang.isEn ? (_kExerciseEn[zh] ?? zh) : zh;
 
@@ -162,3 +218,9 @@ String mname(String zh) => Lang.isEn ? (_kMuscleEn[zh] ?? zh) : zh;
 
 /// 器械场景显示。
 String eqname(String zh) => Lang.isEn ? (_kEquipmentEn[zh] ?? zh) : zh;
+
+/// 细分器械显示（ExerciseMeta.gear）。
+String gearname(String zh) => Lang.isEn ? (_kGearEn[zh] ?? zh) : zh;
+
+/// 动作要点显示（按动作名映射英译，映射不到回落中文）。
+String cuen(String name, String zh) => Lang.isEn ? (_kCueEn[name] ?? zh) : zh;
