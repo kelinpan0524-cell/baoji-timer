@@ -4,11 +4,12 @@ import '../core/app.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
+import 'ai_coach_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'workout_page.dart';
 
-/// 首页（今日）：训练进度、今日计划卡、上次小结。
+/// 首页（今日）：训练进度、今日计划卡、AI 教练入口、上次小结。
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
@@ -75,6 +76,9 @@ class _HomePageState extends State<HomePage> {
         children: [
           _weekDots(today),
           const SizedBox(height: 16),
+          // AI 教练唯一入口（2026-09-26 Arono 需求）：首页置顶一张卡，
+          // 不再散落在数据页顶栏 / 设置页里
+          _aiCoachCard(context),
           if (repo.activePlan == null)
             _noPlanCard(c)
           else ...[
@@ -87,6 +91,50 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           if (_lastSession != null) _lastSummaryCard(c),
         ],
+      ),
+    );
+  }
+
+  /// AI 教练入口卡：问训练数据 / 对话排计划，点开进 AiCoachPage。
+  /// 排版贴 SectionCard 视觉，但用主色淡底突出"这是唯一的 AI 入口"。
+  Widget _aiCoachCard(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Material(
+        color: AppTheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AiCoachPage()),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.smart_toy_outlined, color: AppTheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(tx('AI 教练', en: 'AI Coach'),
+                          style: const TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(
+                          tx('问训练数据 · 一句话排计划，一键存入 App',
+                              en: 'Ask your training data · build a plan in one sentence, save it in one tap'),
+                          style: const TextStyle(
+                              color: AppTheme.textDim, fontSize: 12)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: AppTheme.textDim),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

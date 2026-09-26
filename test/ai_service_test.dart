@@ -414,13 +414,16 @@ void main() {
       expect(p.contains('调整建议'), isTrue);
     });
 
-    test('buildCoachMessages：人设开头、数据包独立段、用户输入在末尾', () {
+    test('buildCoachMessages：人设+排计划契约合并为 system 首段、数据包独立、输入在末尾', () {
       final msgs = ai.buildCoachMessages('DATA-PACK',
           history: const [AiMessage('assistant', '上次回答')],
           userText: '我练得怎么样？');
       expect(msgs.length, 4);
       expect(msgs[0].role, 'system');
-      expect(msgs[0].content, AiService.kCoachPersona);
+      // 2026-09-26：排计划契约并入每次对话，任何轮次给出完整计划 JSON
+      // 都能提取成可保存计划（不再有"排计划模式"开关）
+      expect(msgs[0].content, startsWith(AiService.kCoachPersona));
+      expect(msgs[0].content.contains(AiService.planChatContract()), isTrue);
       expect(msgs[1].role, 'system');
       expect(msgs[1].content.contains('DATA-PACK'), isTrue);
       expect(msgs[2].role, 'assistant');
@@ -699,21 +702,6 @@ void main() {
       expect(p.contains('间隔 48 小时'), isTrue);
       // 参考词表进契约：动作名才能落在内置词表上
       expect(p.contains('杠铃卧推'), isTrue);
-    });
-
-    test('buildPlanChatMessages：人设+排计划契约合并、数据包独立、历史与输入在尾', () {
-      final msgs = ai.buildPlanChatMessages('DATA-PACK',
-          history: const [AiMessage('assistant', '上次')],
-          userText: 'u');
-      expect(msgs.length, 4);
-      expect(msgs[0].role, 'system');
-      expect(msgs[0].content.contains('薄肌教练'), isTrue, reason: '人设保留');
-      expect(msgs[0].content.contains('排计划模式'), isTrue, reason: '契约叠加');
-      expect(msgs[1].role, 'system');
-      expect(msgs[1].content.contains('DATA-PACK'), isTrue);
-      expect(msgs[2].content, '上次');
-      expect(msgs[3].role, 'user');
-      expect(msgs[3].content, 'u');
     });
 
     test('tryExtractPlan：思路 + json 围栏 + 说明 的教练回复可提取出计划', () {

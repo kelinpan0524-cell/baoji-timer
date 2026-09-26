@@ -12,7 +12,6 @@ import '../services/ai_service.dart';
 import '../services/focus_service.dart';
 import '../services/settings.dart';
 import '../services/update_service.dart';
-import 'ai_coach_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -827,18 +826,12 @@ class _AiCardState extends State<_AiCard> {
               ),
             ),
           const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: configured
-                  ? () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const AiCoachPage()),
-                      )
-                  : null,
-              icon: const Icon(Icons.smart_toy_outlined, size: 18),
-              label: Text(tx('打开 AI 教练（对话与一键分析）',
-                  en: 'Open AI Coach (chat & one-tap analysis)')),
-            ),
+          // AI 教练入口已统一到首页顶部卡片（2026-09-26）：这里只留指路，
+          // 配置完成后不再提供第二个入口按钮。
+          Text(
+            tx('配置成功后，回首页点顶部「AI 教练」卡片即可开始对话与排计划。',
+                en: 'Once connected, tap the "AI Coach" card at the top of the Home tab to chat and build plans.'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
           ),
         ],
       ),
