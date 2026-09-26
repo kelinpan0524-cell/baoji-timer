@@ -13,6 +13,7 @@ import '../services/notify_service.dart';
 import '../services/plan_repository.dart';
 import '../services/session_controller.dart';
 import '../services/settings.dart';
+import '../services/training_reminder.dart';
 
 /// 全局容器：App 启动时构造一次，经 AppScope 注入整棵 Widget 树。
 class AppContainer {
@@ -56,9 +57,20 @@ class AppContainer {
     };
     // 休息音效四层（条目 10）：调度由 SessionController（RestCueScheduler
     // 区间阈值判断），这里只负责播——原生 ToneGenerator 按层选音调。
+    // 仅耳机偏好在这里读（Settings 实时值），没接耳机时原生侧静默跳过。
     session.onRestCue = (cue) {
-      unawaited(notify.playRestCue(cue));
+      unawaited(
+          notify.playRestCue(cue, headphoneOnly: settings.restCueHeadphoneOnly));
     };
+    // 练前提醒（2026-09-26）：训练日傍晚未练的本地兜底通知。
+    // 训练结束/放弃、计划或排程变化都会触发全量重排（幂等，失败静默）。
+    trainReminders = TrainingReminderService(this.db, planRepo, settings);
+    session.onSessionClosed = () {
+      unawaited(trainReminders.reschedule());
+    };
+    planRepo.addListener(() {
+      unawaited(trainReminders.reschedule());
+    });
     // 生命周期：条目 2 双通道互斥——人在屏上时休息到点只走屏内提示，
     // 离开前台才交回系统精确提醒；两通道互不重复。
     WidgetsBinding.instance.addObserver(_LifecycleHook(this));
@@ -74,6 +86,7 @@ class AppContainer {
   late final AiService ai;
   late final LarkService lark;
   late final ExportService export;
+  late final TrainingReminderService trainReminders;
 
   bool _inForeground = true;
 
@@ -114,6 +127,8 @@ class AppContainer {
     await ensureFirstRunSeeded();
     await planRepo.reload();
     await session.restore();
+    // 练前提醒：计划加载完成后排一轮（planRepo 监听会覆盖后续变化）
+    unawaited(trainReminders.reschedule());
     // 联网补写飞书离线队列（失败静默，下轮再试）
     unawaited(lark.retryPending());
   }

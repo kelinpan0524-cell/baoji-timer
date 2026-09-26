@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
+import '../presets/exercise_library.dart' show libraryMetaByName;
 import '../services/session_controller.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
@@ -165,6 +166,9 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     final c = app(context);
     final s = c.session;
     if (s.session == null) return;
+    // 忘停表守护（2026-09-26）：可疑长会话保存前先问一句再落库；
+    // 只在用户主动收尾 / 最后一组自动结束的时点出现，不碰训练中禁弹窗。
+    if (!await _forgottenStopGuard(s)) return;
     _finishing = true;
     try {
       final stats = await s.stats();
@@ -203,6 +207,95 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       });
     } finally {
       _finishing = false;
+    }
+  }
+
+  /// 忘停表守护：时长可疑（一组没记挂机 30 分钟+ / 有记录但组均超 15 分钟）
+  /// 时弹收起面板让用户拍板。返回是否继续正常收尾；选「不留记录」在这里
+  /// 直接 quit 并退出训练页。可疑时截断由 truncateDurationToLastSet 落库前生效
+  /// （ended_at 截到最后一条记录 +2 分钟，时长桶扣掉挂机段，只减不增）。
+  Future<bool> _forgottenStopGuard(SessionController s) async {
+    if (!isSuspiciousSessionDuration(
+      startedAtMs: s.session!.startedAt,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+      setCount: s.setCount,
+    )) {
+      return true;
+    }
+    final wallMin =
+        (DateTime.now().millisecondsSinceEpoch - s.session!.startedAt) ~/ 60000;
+    final wallText = wallMin >= 60
+        ? tx('${wallMin ~/ 60} 小时 ${wallMin % 60} 分',
+            en: '${wallMin ~/ 60}h ${wallMin % 60}m')
+        : tx('$wallMin 分钟', en: '$wallMin min');
+    final last = s.lastSetDoneAtMs;
+    final lastText = last == null
+        ? ''
+        : tx(
+            '最后一条记录在 '
+            '${DateTime.fromMillisecondsSinceEpoch(last).hour.toString().padLeft(2, '0')}:${DateTime.fromMillisecondsSinceEpoch(last).minute.toString().padLeft(2, '0')}',
+            en:
+                'Last set logged at ${DateTime.fromMillisecondsSinceEpoch(last).hour.toString().padLeft(2, '0')}:${DateTime.fromMillisecondsSinceEpoch(last).minute.toString().padLeft(2, '0')}',
+          );
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                tx('这次开了 $wallText，是不是忘停表了？',
+                    en: 'This session ran $wallText — forgot to stop the timer?'),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (lastText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(lastText,
+                    style:
+                        const TextStyle(color: AppTheme.textDim, fontSize: 13)),
+              ),
+            ListTile(
+              leading:
+                  const Icon(Icons.content_cut, color: AppTheme.primary),
+              title: Text(tx('截到最后一条记录保存（推荐）',
+                  en: 'Trim to last set & save (recommended)')),
+              onTap: () => Navigator.pop(ctx, 'truncate'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.save_outlined),
+              title: Text(tx('照原样保存', en: 'Save as is')),
+              onTap: () => Navigator.pop(ctx, 'asis'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppTheme.danger),
+              title: Text(tx('不留记录', en: 'Discard session')),
+              onTap: () => Navigator.pop(ctx, 'discard'),
+            ),
+          ],
+        ),
+      ),
+    );
+    switch (choice) {
+      case 'truncate':
+        s.truncateDurationToLastSet();
+        return true;
+      case 'discard':
+        if (!mounted) return false;
+        final navigator = Navigator.of(context);
+        await s.quit();
+        navigator.pop(); // 退出训练页回首页
+        return false;
+      default:
+        return true; // 照原样保存 / 下拉取消
     }
   }
 
@@ -1647,6 +1740,9 @@ class _ActionPanelState extends State<_ActionPanel> {
               ),
             ],
           ),
+          // 杠铃片速配（2026-09-26 Arono）：杠铃动作改重量时短暂显示
+          // 每边挂片，约 4 秒自动收起；非杠铃动作完全不占位。
+          _PlateHintStrip(s: s, gear: libraryMetaByName(ex.name)?.gear ?? ''),
           // 上次成绩行（调研条目 7，wger/LibreFit 思路）：与渐进引擎建议值
           // （大数字 = 本组推荐起点）并列的第二起点，点按整套带入重量/次数/
           // RIR；不替换建议值、不弹窗，无需手动步进即可重现上次配置。
@@ -2484,6 +2580,99 @@ class _SummaryPage extends StatelessWidget {
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(color: AppTheme.textDim)),
         ],
+      ),
+    );
+  }
+}
+
+/// 杠铃片速配（2026-09-26 Arono）：杠铃动作下改重量时，在重量数字下方
+/// 短暂显示每边挂片组合，约 4 秒自动收起。低调不弹窗：字号小、暗色、
+/// 不挡任何操作；非杠铃动作整块不渲染。
+class _PlateHintStrip extends StatefulWidget {
+  const _PlateHintStrip({required this.s, required this.gear});
+
+  final SessionController s;
+
+  /// 当前动作的细分器械（动作库词表外为空 → 不显示）。
+  final String gear;
+
+  @override
+  State<_PlateHintStrip> createState() => _PlateHintStripState();
+}
+
+class _PlateHintStripState extends State<_PlateHintStrip> {
+  Timer? _hideTimer;
+  bool _visible = false;
+  String _text = '';
+
+  @override
+  void didUpdateWidget(_PlateHintStrip old) {
+    super.didUpdateWidget(old);
+    // 只在重量变化时闪现；切动作但重量没动不闪（换动作的推荐值变化除外，
+    // 那也是一次"该挂几片"的有效提示）
+    if (widget.s.weightDraft != old.s.weightDraft) _flash();
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _flash() {
+    _hideTimer?.cancel();
+    final w = widget.s.weightDraft;
+    if (widget.gear != '杠铃' || w <= 0) {
+      _collapse();
+      return;
+    }
+    final b = platesForLoad(w);
+    final String t;
+    if (b.perSide.isEmpty) {
+      t = tx('空杆 20kg，不用挂片', en: 'Empty 20kg bar, no plates needed');
+    } else if (b.exact) {
+      t = tx('每边 ${b.perSide.map(_fmtPlate).join(' + ')}',
+          en: 'Per side: ${b.perSide.map(_fmtPlate).join(' + ')}');
+    } else {
+      t = tx('配不平：每边还差 ${_fmtPlate(b.leftoverPerSide)}kg',
+          en: "Can't match exactly: ${_fmtPlate(b.leftoverPerSide)}kg short per side");
+    }
+    setState(() {
+      _visible = true;
+      _text = t;
+    });
+    _hideTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) _collapse();
+    });
+  }
+
+  void _collapse() {
+    if (!mounted) return;
+    setState(() => _visible = false);
+  }
+
+  static String _fmtPlate(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.gear != '杠铃') return const SizedBox.shrink();
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: _visible ? 1 : 0,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            _text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+          ),
+        ),
       ),
     );
   }

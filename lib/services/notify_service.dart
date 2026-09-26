@@ -113,9 +113,13 @@ class NotifyService {
   /// 播放一层休息提示音（开始/半程/3-2-1 倒数）。原生用 ToneGenerator
   /// 按层选不同音调（复用现有 'baoji/training' 通道，零新增依赖、零音频资源）；
   /// 只在屏内/前台服务场景播，触发时机与去重由 RestCueScheduler 决定。
-  Future<void> playRestCue(RestCue cue) async {
+  /// [headphoneOnly]：没接耳机（有线/蓝牙）就不播，健身房外放不扰人。
+  Future<void> playRestCue(RestCue cue, {bool headphoneOnly = false}) async {
     try {
-      await _trainingChannel.invokeMethod('cue', {'cue': cue.name});
+      await _trainingChannel.invokeMethod('cue', {
+        'cue': cue.name,
+        'headphoneOnly': headphoneOnly,
+      });
     } on PlatformException {
       // 原生侧异常不拖垮训练
     } on MissingPluginException {
