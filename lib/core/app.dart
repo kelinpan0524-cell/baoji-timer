@@ -15,14 +15,15 @@ import '../services/settings.dart';
 
 /// 全局容器：App 启动时构造一次，经 AppScope 注入整棵 Widget 树。
 class AppContainer {
-  AppContainer({required this.prefs, Db? db})
+  AppContainer({required this.prefs, Db? db, AiService? aiOverride})
     : settings = Settings(prefs),
       db = db ?? Db.instance,
       notify = NotifyService() {
     focus = FocusService(settings);
     planRepo = PlanRepository(this.db, settings);
     session = SessionController(this.db, settings, prefs, focus);
-    ai = AiService(settings);
+    // [aiOverride] 仅测试注入（MockClient 模拟 AI 回复做端到端渲染验证）
+    ai = aiOverride ?? AiService(settings);
     lark = LarkService(settings, this.db);
     export = ExportService(this.db);
 

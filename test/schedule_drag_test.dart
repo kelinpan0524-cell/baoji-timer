@@ -89,9 +89,15 @@ void main() {
         ),
       ),
     )));
-    // 初始加载：ffi 在后台 isolate，真实延时等回包再渲染
-    await tester.runAsync(
-        () async => Future<void>.delayed(const Duration(milliseconds: 150)));
+    // 初始加载：ffi 在后台 isolate，真实延时等回包再渲染。
+    // 轮询直到格子渲染出来（固定延时在慢机/满载机上不够，曾致假失败）
+    for (var i = 0;
+        i < 10 && find.text('推日').evaluate().isEmpty;
+        i++) {
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump();
+    }
     await tester.pump();
 
     final src = find.text('推日');
@@ -109,10 +115,15 @@ void main() {
     await gesture.moveBy(dstCenter - srcCenter);
     await tester.pump();
     await gesture.up();
-    // accept 回调走真库异步
-    await tester.runAsync(
-        () async => Future<void>.delayed(const Duration(milliseconds: 200)));
-    await tester.pump();
+    // accept 回调走真库异步：轮询直到确认提示出现（固定延时在慢机/
+    // 满载机上不够，互换的 DB 写回未落就会假失败）
+    for (var i = 0;
+        i < 10 && find.textContaining('已互换').evaluate().isEmpty;
+        i++) {
+      await tester.runAsync(
+          () async => Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pump();
+    }
 
     expect(find.textContaining('已互换'), findsOneWidget,
         reason: '互换后应出现确认提示');
@@ -131,5 +142,12 @@ void main() {
       restored = e?.dayId == dayAId;
     });
     expect(restored, isTrue, reason: '撤销后今天的训练应还原为「推日」');
+
+    // 收尾排水：accept/undo 触发的 _reload 仍在后台跑（真库 isolate），
+    // 让它在 tearDown 关库前落地——否则「database already closed」异常
+    // 会算到已完成的测试头上（b47 发布 run 与本地满载时的同款假失败）
+    await tester.runAsync(
+        () async => Future<void>.delayed(const Duration(milliseconds: 300)));
+    await tester.pump();
   });
 }
