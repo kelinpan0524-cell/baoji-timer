@@ -141,21 +141,22 @@ class SessionController extends ChangeNotifier {
         chronoStartMs: s.startedAt,
       );
     }
+    // 组号语义与页面流同口径（workout_flow.currentPage）：计划内第 N/M 组，
+    // 加练组不封顶——「加练 第 X 组」，不再出现夹回「第 3/3 组」的旧 bug。
+    final planned = rule?.workingSets ?? 1;
+    final doneRaw = workingSetsDone;
+    final setPart = doneRaw >= planned
+        ? tx('加练 第 ${doneRaw - planned + 1} 组',
+            en: 'Extra set ${doneRaw - planned + 1}')
+        : tx('第 ${doneRaw + 1}/$planned 组', en: 'Set ${doneRaw + 1}/$planned');
     return TrainingCard(
       active: true,
       resting: false,
       paused: false,
       title: currentEx?.name ?? tx('训练中', en: 'Workout in progress'),
-      // 组数封顶在本动作组数上：最后一个动作完成后、finish 落库前的瞬时
-      // 推卡不出现「第 4/3 组」越界文案。
       text: tx(
-        '本组 $wText×$reps · 第 '
-        '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
-        '/${rule?.workingSets ?? 0} 组',
-        en:
-            'This set $wText×$reps · set '
-            '${(workingSetsDone + 1).clamp(1, rule?.workingSets ?? 1)}'
-            '/${rule?.workingSets ?? 0}',
+        '本组 $wText×$reps · $setPart',
+        en: 'This set $wText×$reps · $setPart',
       ),
       remaining: -1,
       total: 0,

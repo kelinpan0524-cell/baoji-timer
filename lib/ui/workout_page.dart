@@ -1311,13 +1311,8 @@ class _ExerciseInfo extends StatelessWidget {
         ? tx('首次训练这个动作', en: 'First time on this exercise')
         : tx('上次：${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}',
             en: 'Last time: ${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}');
-    // 计划组练满后（加练态）进度行换成加练计数，不再显示"第 5 / 4 组"
-    final extraNo = s.workingSetsDone - ex.rule.workingSets + 1;
-    final progressText = s.workingSetsDone >= ex.rule.workingSets
-        ? tx('已练满 ${ex.rule.workingSets} 组 · 加练第 $extraNo 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次',
-            en: '${ex.rule.workingSets} sets done · Extra set $extraNo · Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps')
-        : tx('第 ${s.workingSetsDone + 1} / ${ex.rule.workingSets} 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次 · RIR ${ex.rule.rirTarget}',
-            en: 'Set ${s.workingSetsDone + 1} / ${ex.rule.workingSets} · Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps · RIR ${ex.rule.rirTarget}');
+    // 组数/目标行已升格为动作面板第一行的大字号条（2026-09-26 Arono），
+    // 这里不再重复显示，避免同屏两处组号且挤占小屏纵向空间。
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1341,11 +1336,6 @@ class _ExerciseInfo extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        Text(
-          progressText,
-          style: const TextStyle(color: AppTheme.accent, fontSize: 16),
-        ),
-        const SizedBox(height: 12),
         Text(
           lastText,
           style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
@@ -1660,6 +1650,57 @@ class _ActionPanelState extends State<_ActionPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 组数 + 目标常显（2026-09-26 Arono：帮人数组、防忘目标）：
+          // 放在动作面板视线主区第一行；加练态显示「加练 第 N 组」，
+          // 组号继续涨，不再被夹回计划数。
+          Builder(
+            builder: (context) {
+              final planned = ex.rule.workingSets;
+              final targetText = ex.rule.repsMin == ex.rule.repsMax
+                  ? tx('目标 ${ex.rule.repsMin} 次',
+                      en: 'Target ${ex.rule.repsMin} reps')
+                  : tx('目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次',
+                      en: 'Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps');
+              final setText = s.workingSetsDone >= planned
+                  ? tx('加练 第 ${s.workingSetsDone - planned + 1} 组',
+                      en: 'Extra set ${s.workingSetsDone - planned + 1}')
+                  : tx('第 ${s.workingSetsDone + 1}/$planned 组',
+                      en: 'Set ${s.workingSetsDone + 1}/$planned');
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: setText,
+                        style: TextStyle(
+                          fontSize: compact ? 20 : 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '  ·  ',
+                        style: TextStyle(
+                          fontSize: compact ? 15 : 17,
+                          color: AppTheme.textDim,
+                        ),
+                      ),
+                      TextSpan(
+                        text: targetText,
+                        style: TextStyle(
+                          fontSize: compact ? 15 : 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.text,
+                        ),
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            },
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -2025,8 +2066,9 @@ class _RestViewState extends State<_RestView> {
               ? tx('准备结束训练', en: 'Ready to Finish')
               : tx('下一个动作：${exname(s.exercises[s.curExIdx + 1].name)}',
                   en: 'Next exercise: ${exname(s.exercises[s.curExIdx + 1].name)}'))
-        : tx('下一组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
-            en: 'Next set: ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
+        // 下一组带组号（2026-09-26 Arono：休息中也能看到接下来是第几组）
+        : tx('下一组 第 ${s.workingSetsDone + 1}/$plannedWorking 组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
+            en: 'Next: set ${s.workingSetsDone + 1}/$plannedWorking · ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
 
     // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，

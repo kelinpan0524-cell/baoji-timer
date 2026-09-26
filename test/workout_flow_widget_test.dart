@@ -393,4 +393,60 @@ void main() {
       expect(find.text('12'), findsOneWidget, reason: '改对后正常生效');
     });
   });
+
+  group('组数+目标显示（2026-09-26 Arono：帮人数组防忘目标）', () {
+    testWidgets('动作面板第一行显示「第 1/3 组 · 目标 5-8 次」', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      // 面板大字条（计划 5-8 次）
+      expect(find.textContaining('目标 5-8 次'), findsWidgets);
+      // 面板条 + 顶部 chip 两处都显示当前组号
+      expect(find.textContaining('第 1/3 组'), findsNWidgets(2));
+    });
+
+    testWidgets('休息页「下一组」chip 带组号与目标次数', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      // 划线 900ms 定时器在真实时区：runAsync 等它走完再 pump 翻页
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 1000)));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('下一组 第 2/3 组'), findsOneWidget,
+          reason: '完成一组后的休息页能看到接下来是第几组');
+      expect(find.textContaining('× 5-8 次'), findsOneWidget,
+          reason: '休息页同时显示下一组的目标次数，防忘');
+    });
+
+    testWidgets('加练态面板显示「加练 第 1 组」且组号不封顶', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      // 单动作 1 组：练满即加练态
+      await tester.runAsync(() async {
+        final day = await makeDay('加练日');
+        final a = await addEx(day, '卧推', 0, workingSets: 1);
+        await container.session.startFromDay(day: day, planExercises: [a]);
+      });
+      await tester.pumpWidget(host(container, const WorkoutPage()));
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.tap(find.text('开始训练'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+        container.session.startExtraSet();
+        await Future<void>.delayed(const Duration(milliseconds: 200));
+      });
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('加练 第 1 组'), findsWidgets,
+          reason: '加练的这一组要显性显示出来（旧 bug：永远显示 1/1）');
+      expect(find.textContaining('第 1/1 组'), findsNothing,
+          reason: '不再被夹回计划组数');
+    });
+  });
 }
