@@ -337,4 +337,60 @@ void main() {
       expect(find.text('训练完成 💪'), findsNothing);
     });
   });
+
+  group('自定义次数直输（2026-09-26 Arono：轻重量高次数 12/15+）', () {
+    testWidgets('点「自定义」键入 15 → chip 显示 15 → 完成组落库 reps=15',
+        (tester) async {
+      // 高屏（折叠屏展开态）：保证次数行完整可见可点
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      // 计划 5-8 次：点选范围 3-10，没有 15
+      expect(find.text('15'), findsNothing);
+      expect(find.text('自定义'), findsOneWidget);
+
+      await tester.tap(find.text('自定义'));
+      await tester.pump(); // 先起帧再推进动画，单次 pump(300) 弹层停在屏外
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(find.byType(TextField), '15');
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(find.text('自定义'), findsNothing,
+          reason: '自定义值生效后 chip 直接显示次数');
+      expect(find.text('15'), findsOneWidget, reason: '自定义次数以选中态显示');
+
+      await tester.runAsync(() async {
+        await tester.tap(find.byKey(const Key('workoutCompleteSet')));
+        await Future<void>.delayed(const Duration(milliseconds: 400));
+      });
+      await tester.pump(const Duration(milliseconds: 100));
+      final sets = container.session.setsByEx[container.session.currentEx!.id]!;
+      expect(sets.last.reps, 15, reason: '自定义次数落库为真实记录值');
+    });
+
+    testWidgets('超出 1-99 的输入被拦下，不关闭弹层', (tester) async {
+      setSurface(tester, const Size(360, 1200));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+
+      await tester.tap(find.text('自定义'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      // 2 位上限输入 0：越界值，确认无效
+      await tester.enterText(find.byType(TextField), '0');
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(find.text('输入次数'), findsOneWidget, reason: '弹层仍开着等改对');
+      expect(find.text('请输入 1-99 的次数'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '12');
+      await tester.tap(find.text('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('12'), findsOneWidget, reason: '改对后正常生效');
+    });
+  });
 }
