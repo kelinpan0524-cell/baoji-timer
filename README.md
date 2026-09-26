@@ -6,6 +6,8 @@
 
 **防分心的力量训练记录工具，为「薄肌计划」而生**
 
+**简体中文** | [English](README_EN.md)
+
 [![Release](https://img.shields.io/github/v/release/kelinpan0524-cell/baoji-timer?color=4ADE80)](https://github.com/kelinpan0524-cell/baoji-timer/releases)
 [![Platform](https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white)](https://github.com/kelinpan0524-cell/baoji-timer/releases)
 [![Flutter](https://img.shields.io/badge/Flutter-3.35%2B-02569B?logo=flutter&logoColor=white)](https://flutter.dev)
@@ -53,6 +55,9 @@
 
 ### 📅 飞书日历联动
 训练日自动写日历（含提前提醒），练完回填摘要，离线自动排队补写。配置见 [docs/feishu-calendar.md](docs/feishu-calendar.md)。
+
+### 🌐 界面语言
+- 内置中文 / English 双语，**设置 → 语言** 随时切换（默认跟随系统语言）
 
 ## 📥 下载安装
 

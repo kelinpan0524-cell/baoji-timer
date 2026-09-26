@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/exercise_library.dart';
 import 'theme.dart';
 // app(context) 快捷读取容器（与动作库浏览页同一来源）
@@ -80,7 +82,9 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
     final list = _filtered;
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(title: Text('从动作库挑选（已选 ${_selected.length}）')),
+      appBar: AppBar(
+          title: Text(tx('从动作库挑选（已选 ${_selected.length}）',
+              en: 'Pick Exercise (${_selected.length} selected)'))),
       body: Column(
         children: [
           Padding(
@@ -88,9 +92,10 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
             child: TextField(
               controller: _searchCtrl,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search, size: 20),
-                hintText: '搜索动作名，如：卧推、划船…',
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search, size: 20),
+                hintText: tx('搜索动作名，如：卧推、划船…',
+                    en: 'Search by exercise name…'),
                 isDense: true,
               ),
             ),
@@ -104,7 +109,10 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
-                    label: Text(m, style: const TextStyle(fontSize: 12)),
+                    label: Text(
+                        // '全部' 是筛选值；肌群名是数据，显示层翻译
+                        m == '全部' ? tx('全部', en: 'All') : mname(m),
+                        style: const TextStyle(fontSize: 12)),
                     selected: _muscle == m,
                     onSelected: (_) => setState(() => _muscle = m),
                     selectedColor: AppTheme.primary,
@@ -127,7 +135,14 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
                   child: ChoiceChip(
-                    label: Text(e, style: const TextStyle(fontSize: 12)),
+                    label: Text(
+                        // 筛选值保持中文存储，仅在显示层翻译
+                        e == '全部'
+                            ? tx('全部', en: 'All')
+                            : e == '健身房'
+                                ? tx('健身房', en: 'Gym')
+                                : tx('居家', en: 'Home'),
+                        style: const TextStyle(fontSize: 12)),
                     selected: _equipment == e,
                     onSelected: (_) => setState(() => _equipment = e),
                     selectedColor: AppTheme.accent,
@@ -144,7 +159,7 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
               // 大字号下三个 chips + 计数挤同一行：Flexible 让计数缩省略号
               // 而不是把 Row 撑到溢出裁字。
               Flexible(
-                child: Text('共 ${list.length} 个',
+                child: Text(tx('共 ${list.length} 个', en: '${list.length} total'),
                     overflow: TextOverflow.ellipsis,
                     maxLines: 1,
                     style: const TextStyle(
@@ -195,7 +210,7 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(m.name,
+                                Text(exname(m.name),
                                     style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600,
@@ -204,9 +219,14 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                                             : AppTheme.text)),
                                 const SizedBox(height: 2),
                                 Text(
-                                  '主练 ${m.muscles.main}'
-                                  '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.join('/')}'}'
-                                  ' · ${m.isCompound ? '复合' : '单关节'} · ${m.equipmentLabel}',
+                                  tx(
+                                    '主练 ${mname(m.muscles.main)}'
+                                    '${m.muscles.secondary.isEmpty ? '' : ' · 兼练 ${m.muscles.secondary.map(mname).join('/')}'}'
+                                    ' · ${m.isCompound ? '复合' : '单关节'} · ${eqname(m.equipmentLabel)}',
+                                    en: 'Main ${mname(m.muscles.main)}'
+                                        '${m.muscles.secondary.isEmpty ? '' : ' · Secondary ${m.muscles.secondary.map(mname).join('/')}'}'
+                                        ' · ${m.isCompound ? 'Compound' : 'Isolation'} · ${eqname(m.equipmentLabel)}',
+                                  ),
                                   style: const TextStyle(
                                       color: AppTheme.textDim,
                                       fontSize: 12),
@@ -215,8 +235,8 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                             ),
                           ),
                           if (exists)
-                            const Text('已添加',
-                                style: TextStyle(
+                            Text(tx('已添加', en: 'Added'),
+                                style: const TextStyle(
                                     color: AppTheme.textDim,
                                     fontSize: 12)),
                         ],
@@ -239,7 +259,9 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                         _all
                             .where((m) => _selected.contains(m.name))
                             .toList()),
-                child: Text('添加 ${_selected.length} 个动作'),
+                child: Text(
+                    tx('添加 ${_selected.length} 个动作',
+                        en: 'Add ${_selected.length} exercises')),
               ),
             ),
           ),

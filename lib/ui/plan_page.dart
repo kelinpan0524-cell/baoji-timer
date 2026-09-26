@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/baoji_plan.dart';
 import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
@@ -77,8 +79,10 @@ class _PlanPageState extends State<PlanPage> {
                     children: [
                       Flexible(
                         child: Text(
-                          '${_view?.name ?? '无计划'}'
-                          '（${viewingActive ? '使用中' : '未启用'}）',
+                          tx('${dname(_view?.name ?? '无计划')}'
+                              '（${viewingActive ? '使用中' : '未启用'}）',
+                              en: '${dname(_view?.name ?? 'No plan')}'
+                                  ' (${viewingActive ? 'Active' : 'Inactive'})'),
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             fontSize: 18,
@@ -110,47 +114,48 @@ class _PlanPageState extends State<PlanPage> {
               },
               itemBuilder: (_) => [
                 if (!viewingActive)
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'activate',
                     child: Row(
                       children: [
-                        Icon(Icons.play_circle_outline, size: 18),
-                        SizedBox(width: 8),
-                        Text('设为使用中'),
+                        const Icon(Icons.play_circle_outline, size: 18),
+                        const SizedBox(width: 8),
+                        Text(tx('设为使用中', en: 'Set as active')),
                       ],
                     ),
                   ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'rename',
                   child: Row(
                     children: [
-                      Icon(Icons.edit_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('重命名'),
+                      const Icon(Icons.edit_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(tx('重命名', en: 'Rename')),
                     ],
                   ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'duplicate',
                   child: Row(
                     children: [
-                      Icon(Icons.copy_all_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('复制一份'),
+                      const Icon(Icons.copy_all_outlined, size: 18),
+                      const SizedBox(width: 8),
+                      Text(tx('复制一份', en: 'Duplicate')),
                     ],
                   ),
                 ),
-                const PopupMenuItem(
+                PopupMenuItem(
                   value: 'delete',
                   child: Row(
                     children: [
-                      Icon(
+                      const Icon(
                         Icons.delete_outline,
                         size: 18,
                         color: AppTheme.danger,
                       ),
-                      SizedBox(width: 8),
-                      Text('删除计划', style: TextStyle(color: AppTheme.danger)),
+                      const SizedBox(width: 8),
+                      Text(tx('删除计划', en: 'Delete plan'),
+                          style: const TextStyle(color: AppTheme.danger)),
                     ],
                   ),
                 ),
@@ -171,9 +176,10 @@ class _PlanPageState extends State<PlanPage> {
               color: AppTheme.warn.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Text(
-              '此计划未启用：编辑不会影响今天的训练，设为使用中后才生效。',
-              style: TextStyle(color: AppTheme.warn, fontSize: 13),
+            child: Text(
+              tx('此计划未启用：编辑不会影响今天的训练，设为使用中后才生效。',
+                  en: "This plan is inactive: edits won't affect today's workout until it is set active."),
+              style: const TextStyle(color: AppTheme.warn, fontSize: 13),
             ),
           ),
         ],
@@ -187,8 +193,10 @@ class _PlanPageState extends State<PlanPage> {
                 icon: const Icon(Icons.event_repeat, size: 18),
                 label: Text(
                   _view?.isCycle == true
-                      ? '循环：练${_view!.cycleTrain}休${_view!.cycleRest}'
-                      : '按星期排程',
+                      ? tx('循环：练${_view!.cycleTrain}休${_view!.cycleRest}',
+                          en:
+                              'Cycle: ${_view!.cycleTrain} on / ${_view!.cycleRest} off')
+                      : tx('按星期排程', en: 'Weekly schedule'),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
@@ -198,7 +206,7 @@ class _PlanPageState extends State<PlanPage> {
               child: OutlinedButton.icon(
                 onPressed: _showTemplateDaysSheet,
                 icon: const Icon(Icons.edit_outlined, size: 18),
-                label: const Text('编辑模板日',
+                label: Text(tx('编辑模板日', en: 'Edit template days'),
                     overflow: TextOverflow.ellipsis),
               ),
             ),
@@ -216,7 +224,8 @@ class _PlanPageState extends State<PlanPage> {
         FilledButton.tonalIcon(
           onPressed: () => _showTemplatePicker(),
           icon: const Icon(Icons.library_books, size: 18),
-          label: const Text('从模板添加（三分化 / 五分化 / 功能性 / 居家）'),
+          label: Text(tx('从模板添加（三分化 / 五分化 / 功能性 / 居家）',
+              en: 'Add from template (3-day / 5-day split / Functional / Home)')),
           style: FilledButton.styleFrom(
             backgroundColor: AppTheme.cardHi,
             foregroundColor: AppTheme.text,
@@ -233,7 +242,7 @@ class _PlanPageState extends State<PlanPage> {
               child: OutlinedButton.icon(
                 onPressed: () => _showAiImport(),
                 icon: const Icon(Icons.auto_awesome, size: 16),
-                label: const Text('AI 拆解导入'),
+                label: Text(tx('AI 拆解导入', en: 'AI import')),
               ),
             ),
             const SizedBox(width: 8),
@@ -241,7 +250,7 @@ class _PlanPageState extends State<PlanPage> {
               child: OutlinedButton.icon(
                 onPressed: () => _createBlankPlan(),
                 icon: const Icon(Icons.add, size: 18),
-                label: const Text('新建空白'),
+                label: Text(tx('新建空白', en: 'New blank')),
               ),
             ),
           ],
@@ -253,7 +262,8 @@ class _PlanPageState extends State<PlanPage> {
               MaterialPageRoute(builder: (_) => const ExerciseLibraryPage()),
             ),
             icon: const Icon(Icons.fitness_center, size: 16),
-            label: const Text('浏览动作库（肌群 · 居家/健身房）'),
+            label: Text(tx('浏览动作库（肌群 · 居家/健身房）',
+                en: 'Browse exercise library (muscle · home/gym)')),
           ),
         ),
       ],
@@ -265,9 +275,9 @@ class _PlanPageState extends State<PlanPage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Text(
-            '还没有计划',
-            style: TextStyle(fontSize: 18, color: AppTheme.textDim),
+          Text(
+            tx('还没有计划', en: 'No plans yet'),
+            style: const TextStyle(fontSize: 18, color: AppTheme.textDim),
           ),
           const SizedBox(height: 16),
           FilledButton(
@@ -278,8 +288,9 @@ class _PlanPageState extends State<PlanPage> {
               await syncActivePlanToLark(container);
               if (mounted) {
                 messenger.showSnackBar(
-                  const SnackBar(
-                    content: Text('薄肌计划已安装'),
+                  SnackBar(
+                    content:
+                        Text(tx('薄肌计划已安装', en: 'Baoji Plan installed')),
                     backgroundColor: AppTheme.cardHi,
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -287,22 +298,22 @@ class _PlanPageState extends State<PlanPage> {
                 await _refresh();
               }
             },
-            child: const Text('一键安装薄肌计划'),
+            child: Text(tx('一键安装薄肌计划', en: 'Install Baoji Plan')),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () => _showTemplatePicker(),
-            child: const Text('从模板添加计划'),
+            child: Text(tx('从模板添加计划', en: 'Add plan from template')),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () => _showAiImport(),
-            child: const Text('粘贴文本 · AI 拆解'),
+            child: Text(tx('粘贴文本 · AI 拆解', en: 'Paste text · AI parse')),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () => _createBlankPlan(),
-            child: const Text('新建空白计划'),
+            child: Text(tx('新建空白计划', en: 'New blank plan')),
           ),
         ],
       ),
@@ -312,13 +323,15 @@ class _PlanPageState extends State<PlanPage> {
   String _sourceLabel(String? source) {
     switch (source) {
       case 'preset':
-        return '内置计划 · 点任意训练日可人工调整';
+        return tx('内置计划 · 点任意训练日可人工调整',
+            en: 'Built-in plan · Tap any training day to adjust manually');
       case 'ai':
-        return 'AI 拆解计划 · 建议逐日校对后使用';
+        return tx('AI 拆解计划 · 建议逐日校对后使用',
+            en: 'AI-parsed plan · Review each day before use');
       case 'copy':
-        return '复制计划';
+        return tx('复制计划', en: 'Copied plan');
       default:
-        return '自定义计划';
+        return tx('自定义计划', en: 'Custom plan');
     }
   }
 
@@ -357,16 +370,23 @@ class _PlanPageState extends State<PlanPage> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('排程方式',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(tx('排程方式', en: 'Schedule mode'),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              const Text('改的是"没有手动调整过的日子"怎么排；已手动改期的日子保持不变。',
-                  style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+              Text(
+                  tx('改的是"没有手动调整过的日子"怎么排；已手动改期的日子保持不变。',
+                      en: 'Changes how days without manual edits are scheduled; manually moved days stay unchanged.'),
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 12)),
               const SizedBox(height: 12),
               SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: false, label: Text('按星期')),
-                  ButtonSegment(value: true, label: Text('循环练休')),
+                segments: [
+                  ButtonSegment(
+                      value: false,
+                      label: Text(tx('按星期', en: 'By weekday'))),
+                  ButtonSegment(
+                      value: true, label: Text(tx('循环练休', en: 'Cycle'))),
                 ],
                 selected: {cycle},
                 onSelectionChanged: (s) => setSheet(() => cycle = s.first),
@@ -386,27 +406,37 @@ class _PlanPageState extends State<PlanPage> {
               ),
               const SizedBox(height: 14),
               if (cycle) ...[
-                _numStepper('连练天数', train, 1, 7, setSheet, (v) => train = v),
-                _numStepper('休息天数', rest, 1, 7, setSheet, (v) => rest = v),
-                Text('循环示例：练 $train 休 $rest —— 从起始日开始每 ${train + rest} 天一轮。',
-                    style:
-                        const TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                _numStepper(tx('连练天数', en: 'Training days'), train, 1, 7,
+                    setSheet, (v) => train = v),
+                _numStepper(tx('休息天数', en: 'Rest days'), rest, 1, 7,
+                    setSheet, (v) => rest = v),
+                Text(
+                    tx('循环示例：练 $train 休 $rest —— 从起始日开始每 ${train + rest} 天一轮。',
+                        en: 'Cycle example: $train on / $rest off — one round every ${train + rest} days from the start date.'),
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12)),
                 if (trainableN > 0)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
-                      '计划的 $trainableN 个训练日将依次轮转：每练 $train 天休 $rest，'
-                      '约 ${(trainableN / train).ceil()} 个训练窗口转完一圈，接着从头再来'
-                      '（连练数不必等于训练日数）。',
-                      style:
-                          const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                      tx(
+                        '计划的 $trainableN 个训练日将依次轮转：每练 $train 天休 $rest，'
+                        '约 ${(trainableN / train).ceil()} 个训练窗口转完一圈，接着从头再来'
+                        '（连练数不必等于训练日数）。',
+                        en: "The plan's $trainableN training days rotate in turn: "
+                            "$train on / $rest off, about ${(trainableN / train).ceil()} "
+                            "training windows per full round, then it starts over "
+                            "(consecutive days need not equal the number of training days).",
+                      ),
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 12),
                     ),
                   ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Text('起始日  ',
-                        style: TextStyle(color: AppTheme.textDim)),
+                    Text(tx('起始日  ', en: 'Start date  '),
+                        style: const TextStyle(color: AppTheme.textDim)),
                     TextButton(
                       onPressed: () async {
                         final picked = await showDatePicker(
@@ -424,13 +454,15 @@ class _PlanPageState extends State<PlanPage> {
                   ],
                 ),
               ] else
-                const Text(
-                    '按星期模式：训练跟固定周几走（编辑模板日里改）。日期视图里也可以临时把某天挪走。',
-                    style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+                Text(
+                    tx('按星期模式：训练跟固定周几走（编辑模板日里改）。日期视图里也可以临时把某天挪走。',
+                        en: 'Weekly mode: workouts follow fixed weekdays (edit under template days). You can also move a day temporarily in the date view.'),
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12)),
               const SizedBox(height: 16),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('保存'),
+                child: Text(tx('保存', en: 'Save')),
               ),
             ],
           ),
@@ -449,7 +481,10 @@ class _PlanPageState extends State<PlanPage> {
     await _refresh();
     if (mounted) {
       toast(context,
-          cycle ? '已切为循环练$train休$rest，训练日依次轮转' : '已切为按星期排程');
+          cycle
+              ? tx('已切为循环练$train休$rest，训练日依次轮转',
+                  en: 'Switched to cycle: $train on / $rest off, training days rotate in turn')
+              : tx('已切为按星期排程', en: 'Switched to weekly schedule'));
     }
   }
 
@@ -496,20 +531,25 @@ class _PlanPageState extends State<PlanPage> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            const Text('模板日',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(tx('模板日', en: 'Template days'),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            const Text(
-                '这里是计划的内容骨架；具体哪天练哪个由排程决定（按星期/循环/手动拖动）。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            Text(
+                tx('这里是计划的内容骨架；具体哪天练哪个由排程决定（按星期/循环/手动拖动）。',
+                    en: "This is the plan's content skeleton; which day trains what is decided by scheduling (weekly / cycle / manual drag)."),
+                style: const TextStyle(
+                    color: AppTheme.textDim, fontSize: 12)),
             const SizedBox(height: 8),
             for (final d in days)
               ListTile(
                 leading: const Icon(Icons.fitness_center,
                     color: AppTheme.primary),
-                title: Text(d.title),
+                title: Text(dname(d.title)),
                 subtitle: Text(
-                    '周${'一二三四五六日'[d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                    tx(
+                        '周${'一二三四五六日'[d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                        en: '${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} exercises'),
                     style: const TextStyle(fontSize: 12)),
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () async {
@@ -549,14 +589,15 @@ class _PlanPageState extends State<PlanPage> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            const Text(
-              '切换计划',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            Text(
+              tx('切换计划', en: 'Switch plan'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
-            const Text(
-              '点计划查看/编辑；「使用中」的计划决定每天的训练安排。',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+            Text(
+              tx('点计划查看/编辑；「使用中」的计划决定每天的训练安排。',
+                  en: "Tap a plan to view/edit; the active plan decides each day's workouts."),
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
             ),
             const SizedBox(height: 8),
             for (final p in plans)
@@ -567,15 +608,17 @@ class _PlanPageState extends State<PlanPage> {
                         Icons.radio_button_unchecked,
                         color: AppTheme.textDim,
                       ),
-                title: Text(p.name),
+                title: Text(dname(p.name)),
                 subtitle: Text(
-                  '${dayCounts[p.id] ?? 0} 个训练日 · ${exCounts[p.id] ?? 0} 个动作',
+                  tx('${dayCounts[p.id] ?? 0} 个训练日 · ${exCounts[p.id] ?? 0} 个动作',
+                      en: '${dayCounts[p.id] ?? 0} training days · ${exCounts[p.id] ?? 0} exercises'),
                   style: const TextStyle(fontSize: 12),
                 ),
                 trailing: p.id == _view?.id
-                    ? const Text(
-                        '查看中',
-                        style: TextStyle(color: AppTheme.accent, fontSize: 12),
+                    ? Text(
+                        tx('查看中', en: 'Viewing'),
+                        style: const TextStyle(
+                            color: AppTheme.accent, fontSize: 12),
                       )
                     : null,
                 onTap: () {
@@ -617,7 +660,7 @@ class _PlanPageState extends State<PlanPage> {
       await c.planRepo.reload(includeAll: true);
     });
     if (mounted) {
-      toast(context, '已设为使用中「${view.name}」');
+      toast(context, tx('已设为使用中「${dname(view.name)}」', en: '"${dname(view.name)}" is now active'));
       await _refresh(view: view);
     }
   }
@@ -629,16 +672,18 @@ class _PlanPageState extends State<PlanPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.card,
-        title: const Text('重命名计划'),
+        title: Text(tx('重命名计划', en: 'Rename plan')),
         content: TextField(controller: ctrl, autofocus: true),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+            child: Text(tx('取消', en: 'Cancel'),
+                style: const TextStyle(color: AppTheme.textDim)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('保存', style: TextStyle(color: AppTheme.primary)),
+            child: Text(tx('保存', en: 'Save'),
+                style: const TextStyle(color: AppTheme.primary)),
           ),
         ],
       ),
@@ -647,7 +692,7 @@ class _PlanPageState extends State<PlanPage> {
     final c = app(context);
     await c.db.renamePlan(_view!.id!, name);
     await _refresh();
-    if (mounted) toast(context, '已重命名');
+    if (mounted) toast(context, tx('已重命名', en: 'Renamed'));
   }
 
   Future<void> _duplicatePlan() async {
@@ -655,12 +700,16 @@ class _PlanPageState extends State<PlanPage> {
     final c = app(context);
     final newId = await c.planRepo.duplicatePlan(
       _view!.id!,
-      '${_view!.name}（副本）',
+      tx('${_view!.name}（副本）', en: '${_view!.name} (copy)'),
     );
     final plans = await c.db.allPlans();
     final copy = plans.where((p) => p.id == newId).firstOrNull;
     await _refresh(view: copy);
-    if (mounted) toast(context, '已复制为副本，可独立编辑不影响原计划');
+    if (mounted) {
+      toast(context,
+          tx('已复制为副本，可独立编辑不影响原计划',
+              en: 'Duplicated as an independent copy; the original stays untouched'));
+    }
   }
 
   Future<void> _deletePlan() async {
@@ -669,9 +718,10 @@ class _PlanPageState extends State<PlanPage> {
     final planName = _view!.name;
     final ok = await confirmDialog(
       context,
-      '删除「$planName」？',
-      '计划的全部训练日和动作将被删除；历史训练记录保留。此操作无法撤销。',
-      okLabel: '删除',
+      tx('删除「${dname(planName)}」？', en: 'Delete "${dname(planName)}"?'),
+      tx('计划的全部训练日和动作将被删除；历史训练记录保留。此操作无法撤销。',
+          en: 'All training days and exercises of this plan will be deleted; workout history is kept. This cannot be undone.'),
+      okLabel: tx('删除', en: 'Delete'),
     );
     if (!ok || !mounted) return;
     final c = app(context);
@@ -685,22 +735,23 @@ class _PlanPageState extends State<PlanPage> {
     if (c.planRepo.activePlan != null) {
       await syncActivePlanToLark(c);
     }
-    if (mounted) toast(context, '已删除');
+    if (mounted) toast(context, tx('已删除', en: 'Deleted'));
   }
 
   Future<void> _createBlankPlan() async {
-    final ctrl = TextEditingController(text: '我的计划');
+    final ctrl = TextEditingController(text: tx('我的计划', en: 'My plan'));
     final name = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppTheme.card,
-        title: const Text('新建空白计划'),
+        title: Text(tx('新建空白计划', en: 'New blank plan')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              '创建后可自行编排每周训练日与动作。',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 13),
+            Text(
+              tx('创建后可自行编排每周训练日与动作。',
+                  en: 'After creating, arrange the weekly training days and exercises yourself.'),
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
             ),
             const SizedBox(height: 12),
             TextField(controller: ctrl, autofocus: true),
@@ -709,11 +760,13 @@ class _PlanPageState extends State<PlanPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+            child: Text(tx('取消', en: 'Cancel'),
+                style: const TextStyle(color: AppTheme.textDim)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-            child: const Text('创建', style: TextStyle(color: AppTheme.primary)),
+            child: Text(tx('创建', en: 'Create'),
+                style: const TextStyle(color: AppTheme.primary)),
           ),
         ],
       ),
@@ -736,7 +789,7 @@ class _PlanPageState extends State<PlanPage> {
     final created =
         (await c.db.allPlans()).where((p) => p.id == plan.id).firstOrNull;
     await _refresh(view: created);
-    if (mounted) toast(context, '已创建，点击任意一天开始编排');
+    if (mounted) toast(context, tx('已创建，点击任意一天开始编排', en: 'Created; tap any day to start building'));
   }
 
   // ================= 模板选择 =================
@@ -757,27 +810,31 @@ class _PlanPageState extends State<PlanPage> {
           controller: scroll,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            const Text(
-              '选择计划模板',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            Text(
+              tx('选择计划模板', en: 'Choose a plan template'),
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
-            const Text(
-              '安装后可逐日修改动作与组数；同模板重复安装不会重复建。',
-              style: TextStyle(color: AppTheme.textDim, fontSize: 12),
+            Text(
+              tx('安装后可逐日修改动作与组数；同模板重复安装不会重复建。',
+                  en: 'After installing, edit exercises and sets day by day; reinstalling the same template will not create a duplicate.'),
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
             ),
             const SizedBox(height: 12),
             _templateCard(
               ctx,
               name: kBaojiPlanName,
-              intro: '每周三练（推/拉/腿），四大项渐进超负荷，为本 App 量身设计',
-              note: '适合按邵艾伦薄肌计划训练的人',
+              intro: tx('每周三练（推/拉/腿），四大项渐进超负荷，为本 App 量身设计',
+                  en: 'Three workouts a week (Push/Pull/Legs), progressive overload on the big four lifts, designed for this app'),
+              note: tx('适合按邵艾伦薄肌计划训练的人',
+                  en: "For those training on Shao Ailun's Baoji Plan"),
               install: () async {
                 final plan = await _switchActivePlanAndSync(
                   c,
                   () => c.planRepo.installBaojiPlan(),
                 );
-                return '已安装并设为使用中「${plan.name}」，可在编辑器微调';
+                return tx('已安装并设为使用中「${dname(plan.name)}」，可在编辑器微调',
+                    en: '"${dname(plan.name)}" installed and set active; fine-tune in the editor');
               },
             ),
             for (final t in kPlanTemplates)
@@ -792,8 +849,10 @@ class _PlanPageState extends State<PlanPage> {
                     () => c.planRepo.installTemplate(t),
                   );
                   return created
-                      ? '已安装并设为使用中「${plan.name}」，可在编辑器微调'
-                      : '已存在同名模板计划，已设为使用中（未重复安装）';
+                      ? tx('已安装并设为使用中「${dname(plan.name)}」，可在编辑器微调',
+                          en: '"${dname(plan.name)}" installed and set active; fine-tune in the editor')
+                      : tx('已存在同名模板计划，已设为使用中（未重复安装）',
+                          en: 'A template plan with the same name already exists; set active (not installed again)');
                 },
               ),
           ],
@@ -838,7 +897,7 @@ class _PlanPageState extends State<PlanPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      name,
+                      dname(name),
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -853,10 +912,10 @@ class _PlanPageState extends State<PlanPage> {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(intro, style: const TextStyle(fontSize: 13)),
+              Text(dname(intro), style: const TextStyle(fontSize: 13)),
               const SizedBox(height: 4),
               Text(
-                '适合：$note',
+                tx('适合：${dname(note)}', en: 'For: ${dname(note)}'),
                 style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
               ),
             ],
@@ -892,15 +951,20 @@ class _PlanPageState extends State<PlanPage> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'AI 计划',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                Text(
+                  tx('AI 计划', en: 'AI Plan'),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 10),
                 SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: false, label: Text('原文导入')),
-                    ButtonSegment(value: true, label: Text('描述生成')),
+                  segments: [
+                    ButtonSegment(
+                        value: false,
+                        label: Text(tx('原文导入', en: 'Import text'))),
+                    ButtonSegment(
+                        value: true,
+                        label: Text(tx('描述生成', en: 'Generate'))),
                   ],
                   selected: {genMode},
                   onSelectionChanged: (s) => setSheet(() => genMode = s.first),
@@ -924,8 +988,10 @@ class _PlanPageState extends State<PlanPage> {
                 const SizedBox(height: 8),
                 Text(
                   genMode
-                      ? '用大白话描述你想要什么，AI 直接设计计划。例："每周四练，练背、胸、腿，增肌，家里只有哑铃"。'
-                      : '粘贴现成计划原文（如"周一 卧推 3×5-8 …"），AI 逐字转成结构化计划。',
+                      ? tx('用大白话描述你想要什么，AI 直接设计计划。例："每周四练，练背、胸、腿，增肌，家里只有哑铃"。',
+                          en: 'Describe what you want in plain words and the AI designs the plan. Example: "Train every Thursday, back, chest and legs, muscle gain, only dumbbells at home."')
+                      : tx('粘贴现成计划原文（如"周一 卧推 3×5-8 …"），AI 逐字转成结构化计划。',
+                          en: 'Paste an existing plan (e.g. "Mon bench press 3×5-8 ...") and the AI converts it into a structured plan.'),
                   style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
                 ),
                 const SizedBox(height: 12),
@@ -933,21 +999,27 @@ class _PlanPageState extends State<PlanPage> {
                   controller: ctrl,
                   maxLines: genMode ? 4 : 8,
                   decoration: InputDecoration(
-                    hintText: genMode ? '描述你的目标、频率、部位、器械…' : '在此粘贴计划原文…',
+                    hintText: genMode
+                        ? tx('描述你的目标、频率、部位、器械…',
+                            en: 'Describe your goal, frequency, body parts, equipment...')
+                        : tx('在此粘贴计划原文…', en: 'Paste plan text here...'),
                   ),
                 ),
                 const SizedBox(height: 12),
                 if (!c.settings.aiConfigured)
-                  const Text(
-                    '尚未配置 AI 接口：请先到 设置 → AI 配置 填写。',
-                    style: TextStyle(color: AppTheme.warn),
+                  Text(
+                    tx('尚未配置 AI 接口：请先到 设置 → AI 配置 填写。',
+                        en: 'AI is not configured yet: set it up in Settings → AI first.'),
+                    style: const TextStyle(color: AppTheme.warn),
                   ),
                 const SizedBox(height: 8),
                 FilledButton(
                   onPressed: ctrl.text.trim().isEmpty
                       ? null
                       : () => Navigator.pop(ctx, true),
-                  child: Text(genMode ? '生成计划' : '开始拆解'),
+                  child: Text(genMode
+                      ? tx('生成计划', en: 'Generate plan')
+                      : tx('开始拆解', en: 'Start parsing')),
                 ),
               ],
             ),
@@ -973,10 +1045,12 @@ class _PlanPageState extends State<PlanPage> {
                 children: [
                   const CircularProgressIndicator(),
                   const SizedBox(height: 14),
-                  const Text('正在让 AI 处理计划…', style: TextStyle(fontSize: 15)),
+                  Text(tx('正在让 AI 处理计划…', en: 'AI is processing the plan...'),
+                      style: const TextStyle(fontSize: 15)),
                   const SizedBox(height: 4),
                   Text(
-                    '通常 10-30 秒，可关闭稍等',
+                    tx('通常 10-30 秒，可关闭稍等',
+                        en: 'Usually 10-30 s; you can close this and wait'),
                     style: TextStyle(color: AppTheme.textDim, fontSize: 12),
                   ),
                 ],
@@ -998,7 +1072,8 @@ class _PlanPageState extends State<PlanPage> {
     } on AiException catch (e) {
       aiError = e.message;
     } catch (e) {
-      aiError = 'AI 请求失败，请重试或换模型（$e）';
+      aiError = tx('AI 请求失败，请重试或换模型（$e）',
+          en: 'AI request failed; retry or switch models ($e)');
     }
     if (nav.canPop()) nav.pop();
 
@@ -1008,7 +1083,8 @@ class _PlanPageState extends State<PlanPage> {
       final local = localPlanFromDescription(ctrl.text.trim());
       if (local.isEmpty) {
         if (mounted) {
-          toast(context, aiError.isEmpty ? '本地生成失败，请重试' : aiError);
+          toast(context,
+              aiError.isEmpty ? tx('本地生成失败，请重试', en: 'Local generation failed; please try again') : aiError);
         }
         return;
       }
@@ -1054,10 +1130,13 @@ class _PlanPageState extends State<PlanPage> {
         // 名字不误导产物来源。
         name: name.isEmpty
             ? (localMode
-                ? '本地计划 ${fmtDate(DateTime.now())}'
+                ? tx('本地计划 ${fmtDate(DateTime.now())}',
+                    en: 'Local plan ${fmtDate(DateTime.now())}')
                 : (genMode
-                    ? 'AI 生成 ${fmtDate(DateTime.now())}'
-                    : 'AI 计划 ${fmtDate(DateTime.now())}'))
+                    ? tx('AI 生成 ${fmtDate(DateTime.now())}',
+                        en: 'AI generated ${fmtDate(DateTime.now())}')
+                    : tx('AI 计划 ${fmtDate(DateTime.now())}',
+                        en: 'AI plan ${fmtDate(DateTime.now())}')))
             : name,
         specs: confirmed,
         metaMap: c.ai.metaMap(),
@@ -1068,8 +1147,10 @@ class _PlanPageState extends State<PlanPage> {
     toast(
       context,
       localMode
-          ? '本地模式已生成「${plan.name}」（AI 不可用），请逐日校对'
-          : '已保存并设为使用中「${plan.name}」，点任意一天可微调',
+          ? tx('本地模式已生成「${dname(plan.name)}」（AI 不可用），请逐日校对',
+              en: '"${dname(plan.name)}" generated in local mode (AI unavailable); review each day')
+          : tx('已保存并设为使用中「${dname(plan.name)}」，点任意一天可微调',
+              en: '"${dname(plan.name)}" saved and set active; tap any day to fine-tune'),
     );
   }
 

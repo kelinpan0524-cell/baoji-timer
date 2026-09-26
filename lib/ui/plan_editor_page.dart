@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -71,8 +73,10 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     if (occupant != null) {
       final ok = await confirmDialog(
           context,
-          '与周${'一二三四五六日'[weekday - 1]}对调？',
-          '「${occupant.title}」已安排在周${'一二三四五六日'[weekday - 1]}，确认后两天的内容将互相交换。');
+          tx('与周${'一二三四五六日'[weekday - 1]}对调？',
+              en: 'Swap with ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}?'),
+          tx('「${dname(occupant.title)}」已安排在周${'一二三四五六日'[weekday - 1]}，确认后两天的内容将互相交换。',
+              en: '"${dname(occupant.title)}" is already on ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}; confirming will swap the contents of the two days.'));
       if (!ok || !mounted) return;
     }
     if (occupant == null) {
@@ -100,8 +104,10 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     _dirty = true;
     messenger.showSnackBar(SnackBar(
       content: Text(occupant == null
-          ? '已调整到周${'一二三四五六日'[weekday - 1]}'
-          : '已与周${'一二三四五六日'[weekday - 1]}「${occupant.title}」对调'),
+          ? tx('已调整到周${'一二三四五六日'[weekday - 1]}',
+              en: 'Moved to ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}')
+          : tx('已与周${'一二三四五六日'[weekday - 1]}「${dname(occupant.title)}」对调',
+              en: 'Swapped with ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]} "${dname(occupant.title)}"')),
       backgroundColor: AppTheme.cardHi,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
@@ -143,7 +149,9 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     _dirty = true;
     await _reload();
     if (mounted) {
-      toast(context, '已添加 ${picked.length} 个动作，点开可微调组数');
+      toast(context,
+          tx('已添加 ${picked.length} 个动作，点开可微调组数',
+              en: 'Added ${picked.length} exercises; tap one to adjust sets'));
     }
   }
 
@@ -169,8 +177,10 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
       incrementKg: result.kind == 'compound' ? 2.5 : 1.25,
       workingSets: result.sets,
       desc: result.kind == 'compound'
-          ? '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 2.5kg；有组低于 ${result.repsMin} 次 → 减 5%'
-          : '全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 1.25kg',
+          ? tx('全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 2.5kg；有组低于 ${result.repsMin} 次 → 减 5%',
+              en: 'All working sets reach ${result.repsMax} reps with ≥1 in reserve on the last set → add 2.5kg; any set below ${result.repsMin} reps → reduce 5%')
+          : tx('全部正式组达 ${result.repsMax} 次且末组余力≥1 → 加 1.25kg',
+              en: 'All working sets reach ${result.repsMax} reps with ≥1 in reserve on the last set → add 1.25kg'),
     );
 
     // 肌群/场景标注写回动作库（保留既有次要肌群），热力图与动作库才正确
@@ -224,12 +234,17 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
   Future<void> _copyExercise(PlanExercise ex) async {
     final c = app(context);
     await c.db.insertPlanExercise(
-      ex.copyWith(id: null, name: '${ex.name}（副本）', orderIdx: _exercises.length),
+      ex.copyWith(
+          id: null,
+          name: tx('${ex.name}（副本）', en: '${ex.name} (copy)'),
+          orderIdx: _exercises.length),
     );
     _dirty = true;
     await _reload();
     if (mounted) {
-      toast(context, '已复制「${ex.name}」，记得改动作名');
+      toast(context,
+          tx('已复制「${exname(ex.name)}」，记得改动作名',
+              en: '"${exname(ex.name)}" copied; remember to rename it'));
     }
   }
 
@@ -249,12 +264,12 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(SnackBar(
-      content: Text('已删除「${snapshot.name}」'),
+      content: Text(tx('已删除「${exname(snapshot.name)}」', en: '"${exname(snapshot.name)}" deleted')),
       backgroundColor: AppTheme.cardHi,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 4),
       action: SnackBarAction(
-        label: '撤销',
+        label: tx('撤销', en: 'Undo'),
         textColor: AppTheme.primary,
         onPressed: () async {
           final restored = snapshot.copyWith(id: null, orderIdx: 0);
@@ -301,7 +316,8 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
             if (!mounted) return;
             navigator.pop(_dirty);
           }),
-          title: Text('周${'一二三四五六日'[_day.weekday - 1]} · 编辑训练日'),
+          title: Text(tx('周${'一二三四五六日'[_day.weekday - 1]} · 编辑训练日',
+              en: '${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][_day.weekday - 1]} · Edit training day')),
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -313,8 +329,9 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                       children: [
                         TextField(
                           controller: _titleCtrl,
-                          decoration: const InputDecoration(
-                              labelText: '训练日标题（自动保存）'),
+                          decoration: InputDecoration(
+                              labelText: tx('训练日标题（自动保存）',
+                                  en: 'Training day title (auto-saves)')),
                           onSubmitted: (_) => _saveTitle(),
                         ),
                         const SizedBox(height: 10),
@@ -322,12 +339,13 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                           spacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            const Text('安排在',
-                                style: TextStyle(
+                            Text(tx('安排在', en: 'Scheduled on'),
+                                style: const TextStyle(
                                     color: AppTheme.textDim, fontSize: 13)),
                             for (var wd = 1; wd <= 7; wd++)
                               ChoiceChip(
-                                label: Text('周${'一二三四五六日'[wd - 1]}'),
+                                label: Text(tx('周${'一二三四五六日'[wd - 1]}',
+                                    en: const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][wd - 1])),
                                 selected: _day.weekday == wd,
                                 onSelected: (_) => _moveToWeekday(wd),
                                 labelStyle: TextStyle(
@@ -344,22 +362,27 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                         const Divider(height: 28),
                         Row(
                           children: [
-                            Text('动作（${_exercises.length}）',
+                            Text(
+                                tx('动作（${_exercises.length}）',
+                                    en: 'Exercises (${_exercises.length})'),
                                 style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w700)),
                             const SizedBox(width: 8),
-                            const Text('长按拖动排序',
-                                style: TextStyle(
+                            Text(tx('长按拖动排序', en: 'Long-press to reorder'),
+                                style: const TextStyle(
                                     color: AppTheme.textDim, fontSize: 12)),
                           ],
                         ),
                         const SizedBox(height: 6),
                         if (_exercises.isEmpty)
-                          const Padding(
-                            padding: EdgeInsets.symmetric(vertical: 16),
-                            child: Text('这一天还没有动作，点下方「添加动作」开始编排。',
-                                style: TextStyle(color: AppTheme.textDim)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                                tx('这一天还没有动作，点下方「添加动作」开始编排。',
+                                    en: 'No exercises yet for this day; tap "Add exercise" below to start.'),
+                                style: const TextStyle(
+                                    color: AppTheme.textDim)),
                           )
                         else
                           ReorderableListView.builder(
@@ -393,7 +416,7 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                             child: FilledButton.icon(
                               onPressed: () => _pickFromLibrary(),
                               icon: const Icon(Icons.library_books, size: 18),
-                              label: const Text('从动作库选'),
+                              label: Text(tx('从动作库选', en: 'Pick from library')),
                               style: FilledButton.styleFrom(
                                 minimumSize: const Size.fromHeight(52),
                                 backgroundColor: AppTheme.primary,
@@ -405,7 +428,7 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                             child: OutlinedButton.icon(
                               onPressed: () => _openExerciseSheet(),
                               icon: const Icon(Icons.edit, size: 18),
-                              label: const Text('手动填写'),
+                              label: Text(tx('手动填写', en: 'Enter manually')),
                               style: OutlinedButton.styleFrom(
                                   minimumSize: const Size.fromHeight(52)),
                             ),
@@ -446,13 +469,13 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(e.name,
+                        Text(exname(e.name),
                             style: const TextStyle(
                                 fontSize: 15, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 2),
                         Text(
-                            '${e.sets}×${e.repsMin}-${e.repsMax} · 休 ${e.restSec}s · ${e.kind == 'compound' ? '复合' : '辅助'}'
-                            '${muscle != null ? ' · $muscle' : ''}',
+                            '${e.sets}×${e.repsMin}-${e.repsMax} · ${tx('休 ${e.restSec}s', en: 'Rest ${e.restSec}s')} · ${e.kind == 'compound' ? tx('复合', en: 'Compound') : tx('辅助', en: 'Assistance')}'
+                            '${muscle != null ? ' · ${mname(muscle)}' : ''}',
                             style: const TextStyle(
                                 color: AppTheme.textDim, fontSize: 12)),
                       ],
@@ -461,14 +484,14 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: '复制',
+                  tooltip: tx('复制', en: 'Copy'),
                   onPressed: () => _copyExercise(e),
                   icon: const Icon(Icons.content_copy,
                       size: 19, color: AppTheme.textDim),
                 ),
                 IconButton(
                   visualDensity: VisualDensity.compact,
-                  tooltip: '删除',
+                  tooltip: tx('删除', en: 'Delete'),
                   onPressed: () => _removeExercise(e),
                   icon: const Icon(Icons.delete_outline,
                       size: 20, color: AppTheme.danger),
@@ -571,7 +594,9 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.initial == null ? '添加动作' : '编辑动作',
+            Text(widget.initial == null
+                ? tx('添加动作', en: 'Add exercise')
+                : tx('编辑动作', en: 'Edit exercise'),
                 style:
                     const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 12),
@@ -580,7 +605,7 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
               autofocus: widget.initial == null,
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
-                labelText: '动作名',
+                labelText: tx('动作名', en: 'Exercise name'),
                 errorText: _nameError,
               ),
             ),
@@ -594,7 +619,7 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                     for (final n in suggestions)
                       ActionChip(
                         label:
-                            Text(n, style: const TextStyle(fontSize: 12)),
+                            Text(exname(n), style: const TextStyle(fontSize: 12)),
                         backgroundColor: AppTheme.cardHi,
                         side: BorderSide.none,
                         onPressed: () {
@@ -616,10 +641,10 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
               spacing: 6,
               runSpacing: 4,
               children: [
-                for (final preset in const [
-                  ('力量 3×5', 3, 5, 5, 180),
-                  ('增肌 3×8-12', 3, 8, 12, 120),
-                  ('耐力 2×15', 2, 15, 20, 75),
+                for (final preset in [
+                  (tx('力量 3×5', en: 'Strength 3×5'), 3, 5, 5, 180),
+                  (tx('增肌 3×8-12', en: 'Hypertrophy 3×8-12'), 3, 8, 12, 120),
+                  (tx('耐力 2×15', en: 'Endurance 2×15'), 2, 15, 20, 75),
                 ])
                   ActionChip(
                     label: Text(preset.$1,
@@ -636,14 +661,14 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
               ],
             ),
             const SizedBox(height: 10),
-            _stepper(
-                '组数', _sets, 1, 8, 1, (v) => setState(() => _sets = v)),
-            _stepper('次数下限', _repsMin, 1, _repsMax, 1,
+            _stepper(tx('组数', en: 'Sets'), _sets, 1, 8, 1,
+                (v) => setState(() => _sets = v)),
+            _stepper(tx('次数下限', en: 'Min reps'), _repsMin, 1, _repsMax, 1,
                 (v) => setState(() => _repsMin = v)),
-            _stepper('次数上限', _repsMax, _repsMin, 30, 1,
+            _stepper(tx('次数上限', en: 'Max reps'), _repsMax, _repsMin, 30, 1,
                 (v) => setState(() => _repsMax = v)),
-            _stepper('组间休息（秒）', _restSec, 15, 600, 15,
-                (v) => setState(() => _restSec = v)),
+            _stepper(tx('组间休息（秒）', en: 'Rest between sets (s)'), _restSec,
+                15, 600, 15, (v) => setState(() => _restSec = v)),
             // 休息快捷档：不用从 15 一档一档点到 180
             Wrap(
               spacing: 6,
@@ -652,7 +677,10 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                 for (final sec in const [45, 60, 90, 120, 180, 240, 300])
                   ActionChip(
                     label: Text(
-                        sec >= 60 ? '${sec ~/ 60} 分${sec % 60 == 0 ? '' : ' ${sec % 60} 秒'}' : '$sec 秒',
+                        sec >= 60
+                            ? tx('${sec ~/ 60} 分${sec % 60 == 0 ? '' : ' ${sec % 60} 秒'}',
+                                en: '${sec ~/ 60} min${sec % 60 == 0 ? '' : ' ${sec % 60} s'}')
+                            : tx('$sec 秒', en: '$sec s'),
                         style: TextStyle(
                             fontSize: 12,
                             color: _restSec == sec
@@ -673,10 +701,11 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text('主肌群',
-                      style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(tx('主肌群', en: 'Main muscle'),
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 13)),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -699,7 +728,17 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                                   : AppTheme.cardHi,
                               borderRadius: BorderRadius.circular(8),
                             ),
-                            child: Text(m,
+                            child: Text(
+                                tx(m,
+                                    en: const {
+                                      '胸': 'Chest',
+                                      '肩': 'Shoulders',
+                                      '背': 'Back',
+                                      '手臂': 'Arms',
+                                      '腿': 'Legs',
+                                      '核心': 'Core',
+                                      '其他': 'Other',
+                                    }[m] ?? m),
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
@@ -716,10 +755,11 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
             const SizedBox(height: 10),
             Row(
               children: [
-                const Padding(
-                  padding: EdgeInsets.only(top: 6),
-                  child: Text('场景',
-                      style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(tx('场景', en: 'Setting'),
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 13)),
                 ),
                 const SizedBox(width: 6),
                 Expanded(
@@ -727,10 +767,10 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                     spacing: 5,
                     runSpacing: 4,
                     children: [
-                      for (final eq in const [
-                        ('both', '都可以'),
-                        ('gym', '健身房'),
-                        ('home', '居家'),
+                      for (final eq in [
+                        ('both', tx('都可以', en: 'Both')),
+                        ('gym', tx('健身房', en: 'Gym')),
+                        ('home', tx('居家', en: 'Home')),
                       ])
                         GestureDetector(
                           onTap: () {
@@ -764,9 +804,9 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                _kindChip('复合', 'compound'),
+                _kindChip(tx('复合', en: 'Compound'), 'compound'),
                 const SizedBox(width: 8),
-                _kindChip('辅助', 'assistance'),
+                _kindChip(tx('辅助', en: 'Assistance'), 'assistance'),
               ],
             ),
             const SizedBox(height: 16),
@@ -774,7 +814,8 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
               onPressed: () {
                 final name = _nameCtrl.text.trim();
                 if (name.isEmpty) {
-                  setState(() => _nameError = '请填写动作名');
+                  setState(() =>
+                      _nameError = tx('请填写动作名', en: 'Please enter an exercise name'));
                   return;
                 }
                 HapticFeedback.selectionClick();
@@ -794,7 +835,7 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
                   ),
                 );
               },
-              child: const Text('保存'),
+              child: Text(tx('保存', en: 'Save')),
             ),
           ],
         ),

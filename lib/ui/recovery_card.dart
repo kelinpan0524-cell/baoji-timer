@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import '../presets/exercise_library.dart';
 import 'muscle_body_view.dart';
 import 'theme.dart';
@@ -79,7 +81,7 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
   @override
   Widget build(BuildContext context) {
     return SectionCard(
-      title: '肌群恢复度',
+      title: tx('肌群恢复度', en: 'Muscle Recovery'),
       child: FutureBuilder<Map<String, int>>(
         future: _future,
         builder: (context, snap) {
@@ -92,15 +94,15 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text('恢复度暂不可用',
-                        style:
-                            TextStyle(color: AppTheme.textDim, fontSize: 13)),
+                    Text(tx('恢复度暂不可用', en: 'Recovery unavailable'),
+                        style: const TextStyle(
+                            color: AppTheme.textDim, fontSize: 13)),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed: () => setState(() {
                         _future = _load();
                       }),
-                      child: const Text('重试'),
+                      child: Text(tx('重试', en: 'Retry')),
                     ),
                   ],
                 ),
@@ -121,14 +123,17 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '按近 7 天训练容量与 48 小时衰减估算（启发式参考，非生理测量）',
+                tx('按近 7 天训练容量与 48 小时衰减估算（启发式参考，非生理测量）',
+                    en: 'Estimated from the last 7 days of training volume with 48h decay (heuristic, not a physiological measurement)'),
                 style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
               ),
               const SizedBox(height: 12),
               SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('正面')),
-                  ButtonSegment(value: false, label: Text('背面')),
+                segments: [
+                  ButtonSegment(
+                      value: true, label: Text(tx('正面', en: 'Front'))),
+                  ButtonSegment(
+                      value: false, label: Text(tx('背面', en: 'Back'))),
                 ],
                 selected: {_front},
                 onSelectionChanged: (sel) =>
@@ -175,7 +180,7 @@ class _MuscleRecoveryCardState extends State<MuscleRecoveryCard> {
                         width: 44,
                         child: FittedBox(
                           fit: BoxFit.scaleDown,
-                          child: Text(r,
+                          child: Text(mname(r),
                               maxLines: 1,
                               style: const TextStyle(fontSize: 14)),
                         ),

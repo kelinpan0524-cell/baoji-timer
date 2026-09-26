@@ -1,3 +1,4 @@
+import '../l10n/lang.dart';
 import 'engine.dart';
 
 export '../models/models.dart' show ChainRule;
@@ -188,7 +189,11 @@ ChainVerdict evaluateChain({
       .where((s) => s.kind == SetKind.working)
       .toList(growable: false);
   if (ws.isEmpty) {
-    return ChainVerdict('hold', state, '本次无正式组记录，重量保持不变');
+    return ChainVerdict(
+        'hold',
+        state,
+        tx('本次无正式组记录，重量保持不变',
+            en: 'No working sets logged this time — weight stays the same'));
   }
   // 注意：state.weightKg == 0（自重动作的合法档位）不在此提前返回——
   // 0 档参与正常判定（±5% 档位过滤天然只收 0kg 组），达标同样可进位到
@@ -204,7 +209,10 @@ ChainVerdict evaluateChain({
       .toList(growable: false);
   if (near.isEmpty) {
     return ChainVerdict(
-        'hold', state, '本次重量与历史档位不同，重量保持不变');
+        'hold',
+        state,
+        tx('本次重量与历史档位不同，重量保持不变',
+            en: 'Weight differs from your usual tier — weight stays the same'));
   }
 
   final allMetTarget = near.every((s) => s.reps >= state.targetReps);
@@ -218,24 +226,28 @@ ChainVerdict evaluateChain({
     if (next == state) {
       // 自重档位（0kg）不展示「重量 0kg 触顶」——0 是档位起点不是天花板
       final capDesc = state.weightKg == 0
-          ? '自重档位已到规则链尽头（次数 ${state.targetReps} 次）'
-          : '已到规则链尽头（次数 ${state.targetReps} 次、'
-              '重量 ${state.weightKg}kg 触顶）';
-      return ChainVerdict('hold', state, '$capDesc → 保持当前档');
+          ? tx('自重档位已到规则链尽头（次数 ${state.targetReps} 次）',
+              en: 'Bodyweight tier has reached the end of the chain (${state.targetReps} reps)')
+          : tx('已到规则链尽头（次数 ${state.targetReps} 次、重量 ${state.weightKg}kg 触顶）',
+              en: 'Chain topped out (${state.targetReps} reps at ${state.weightKg}kg)');
+      return ChainVerdict('hold', state,
+          tx('$capDesc → 保持当前档', en: '$capDesc → hold this tier'));
     }
     if (next.weightKg != state.weightKg) {
       return ChainVerdict(
         'advance',
         next,
-        '${near.length} 组全部达到 ${state.targetReps} 次目标，'
-            '次数轴触顶 → 下次加重至 ${next.weightKg}kg、目标回到 ${next.targetReps} 次',
+        tx(
+            '${near.length} 组全部达到 ${state.targetReps} 次目标，次数轴触顶 → 下次加重至 ${next.weightKg}kg、目标回到 ${next.targetReps} 次',
+            en: 'All ${near.length} sets hit the ${state.targetReps}-rep target and the rep axis is topped out → add weight to ${next.weightKg}kg, target resets to ${next.targetReps} reps'),
       );
     }
     return ChainVerdict(
       'advance',
       next,
-      '${near.length} 组全部达到 ${state.targetReps} 次目标且末组余力 '
-          '${lastSet.rir} 次 → 下次目标 ${next.targetReps} 次（重量不变）',
+      tx(
+          '${near.length} 组全部达到 ${state.targetReps} 次目标且末组余力 ${lastSet.rir} 次 → 下次目标 ${next.targetReps} 次（重量不变）',
+          en: 'All ${near.length} sets hit the ${state.targetReps}-rep target with last-set RIR ${lastSet.rir} → next target ${next.targetReps} reps (same weight)'),
     );
   }
   if (anyBelowMin) {
@@ -246,9 +258,13 @@ ChainVerdict evaluateChain({
       ChainState(
           weightKg: round05(state.weightKg + cut),
           targetReps: state.targetReps),
-      '有组未达到下限 ${rule.repsMin} 次 → 建议减重约 5%（$cut kg），先稳动作',
+      tx('有组未达到下限 ${rule.repsMin} 次 → 建议减重约 5%（$cut kg），先稳动作',
+          en: 'Some sets missed the ${rule.repsMin}-rep floor → reduce ~5% ($cut kg) and re-groove the form'),
     );
   }
   return ChainVerdict(
-      'hold', state, '完成情况未达 ${state.targetReps} 次目标 → 重量与次数目标保持，继续冲');
+      'hold',
+      state,
+      tx('完成情况未达 ${state.targetReps} 次目标 → 重量与次数目标保持，继续冲',
+          en: "Target of ${state.targetReps} reps not met — hold weight and target, chase more reps"));
 }

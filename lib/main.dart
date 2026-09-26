@@ -1,9 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/app.dart';
+import 'l10n/lang.dart';
 import 'services/update_service.dart';
 import 'ui/onboarding_page.dart';
 import 'ui/shell.dart';
@@ -32,12 +34,36 @@ class BaojiApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppScope(
       container: container,
-      child: MaterialApp(
-        title: '薄肌训练计时器',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark,
-        home: onboarded ? const HomeShell() : const OnboardingPage(),
-      ),
+      // Builder 注册对 Settings 的依赖：语言切换（settings.notifyListeners）
+      // 时整棵 MaterialApp 重建，locale / 文案即时生效。
+      child: Builder(builder: (context) {
+        final settings = AppScope.of(context).settings;
+        return MaterialApp(
+          title: tx('薄肌训练计时器', en: 'Baoji Timer'),
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.dark,
+          // 跟随系统时传 null，由本地化解析按系统语言挑 zh/en
+          locale: switch (settings.langPref) {
+            LangPref.zh => const Locale('zh'),
+            LangPref.en => const Locale('en'),
+            LangPref.system => null,
+          },
+          supportedLocales: const [Locale('zh'), Locale('en')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          // 生效语言在这里同步给全局静态 Lang（通知/服务等非 Widget 代码读取）。
+          // builder 上下文里没有 Localizations，直接用设置解析（系统语言取平台派发器）。
+          builder: (context, child) {
+            Lang.setResolved(
+                Lang.resolve(settings.langPref, settings.systemLocale) == 'en');
+            return child!;
+          },
+          home: onboarded ? const HomeShell() : const OnboardingPage(),
+        );
+      }),
     );
   }
 }

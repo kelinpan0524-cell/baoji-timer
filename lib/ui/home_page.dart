@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'workout_page.dart';
@@ -76,7 +78,7 @@ class _HomePageState extends State<HomePage> {
           if (repo.activePlan == null)
             _noPlanCard(c)
           else ...[
-            Text(planName ?? '',
+            Text(dname(planName ?? ''),
                 style:
                     const TextStyle(color: AppTheme.textDim, fontSize: 14)),
             const SizedBox(height: 8),
@@ -101,7 +103,8 @@ class _HomePageState extends State<HomePage> {
         final done = doneDates.contains(fmtDate(d));
         return Column(
           children: [
-            Text('周$label',
+            Text(tx('周$label',
+                en: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][i]),
                 style: TextStyle(
                     fontSize: 12,
                     color: isToday ? AppTheme.primary : AppTheme.textDim)),
@@ -126,12 +129,14 @@ class _HomePageState extends State<HomePage> {
 
   Widget _noPlanCard(AppContainer c) {
     return SectionCard(
-      title: '还没有训练计划',
+      title: tx('还没有训练计划', en: 'No Workout Plan Yet'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('用内置薄肌计划开练，或粘贴自己的计划让 AI 拆解。',
-              style: TextStyle(color: AppTheme.textDim)),
+          Text(
+              tx('用内置薄肌计划开练，或粘贴自己的计划让 AI 拆解。',
+                  en: 'Start with the built-in Baoji Plan, or paste your own plan for AI to parse.'),
+              style: const TextStyle(color: AppTheme.textDim)),
           const SizedBox(height: 16),
           FilledButton(
             onPressed: () async {
@@ -139,21 +144,21 @@ class _HomePageState extends State<HomePage> {
               await c.planRepo.installBaojiPlan();
               await _syncLarkDays(c);
               if (mounted) {
-                messenger.showSnackBar(const SnackBar(
-                    content: Text('薄肌计划已就绪'),
+                messenger.showSnackBar(SnackBar(
+                    content: Text(tx('薄肌计划已就绪', en: 'Baoji Plan is ready')),
                     backgroundColor: AppTheme.cardHi,
                     behavior: SnackBarBehavior.floating));
                 _refresh();
               }
             },
-            child: const Text('一键安装薄肌计划'),
+            child: Text(tx('一键安装薄肌计划', en: 'Install Baoji Plan')),
           ),
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () {
               DefaultTabController.maybeOf(context)?.animateTo(1);
             },
-            child: const Text('去计划页导入'),
+            child: Text(tx('去计划页导入', en: 'Import on Plan page')),
           ),
         ],
       ),
@@ -174,16 +179,19 @@ class _HomePageState extends State<HomePage> {
                     color: AppTheme.primary, shape: BoxShape.circle),
               ),
               const SizedBox(width: 8),
-              const Text('训练进行中',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+              Text(tx('训练进行中', en: 'Workout in Progress'),
+                  style: const TextStyle(
+                      fontSize: 18, fontWeight: FontWeight.w700)),
             ]),
             const SizedBox(height: 8),
             Text(
-                '${s.session!.planDayTitle} · 第 ${s.curExIdx + 1}/${s.exercises.length} 个动作',
+                tx(
+                    '${dname(s.session!.planDayTitle)} · 第 ${s.curExIdx + 1}/${s.exercises.length} 个动作',
+                    en: '${dname(s.session!.planDayTitle)} · Exercise ${s.curExIdx + 1}/${s.exercises.length}'),
                 style: const TextStyle(color: AppTheme.textDim)),
             const SizedBox(height: 16),
             BigButton(
-              label: '继续训练',
+              label: tx('继续训练', en: 'Resume Workout'),
               height: 72,
               onPressed: () => _openWorkout(context),
             ),
@@ -193,12 +201,14 @@ class _HomePageState extends State<HomePage> {
     }
     if (day == null) {
       return SectionCard(
-        title: '今天是休息日',
+        title: tx('今天是休息日', en: 'Rest Day Today'),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('恢复也是训练的一部分。想加练或看看本周安排：',
-                style: TextStyle(color: AppTheme.textDim)),
+            Text(
+                tx('恢复也是训练的一部分。想加练或看看本周安排：',
+                    en: 'Recovery is part of training. Want an extra session or to check this week:'),
+                style: const TextStyle(color: AppTheme.textDim)),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -206,14 +216,14 @@ class _HomePageState extends State<HomePage> {
                   child: OutlinedButton(
                     onPressed: () =>
                         DefaultTabController.maybeOf(context)?.animateTo(1),
-                    child: const Text('查看计划'),
+                    child: Text(tx('查看计划', en: 'View Plan')),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton(
                     onPressed: _starting ? null : () => _pickExtraDay(context),
-                    child: const Text('今天加练'),
+                    child: Text(tx('今天加练', en: 'Extra Workout Today')),
                   ),
                 ),
               ],
@@ -224,25 +234,27 @@ class _HomePageState extends State<HomePage> {
     }
     final exs = c.planRepo.exercisesByDayId[day.id] ?? [];
     return SectionCard(
-      title: '今天该练',
+      title: tx('今天该练', en: "Today's Workout"),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(day.title,
+          Text(dname(day.title),
               style: const TextStyle(
                   fontSize: 22, fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
-          Text('${exs.length} 个动作 · 约 ${_estimateMin(exs)} 分钟',
+          Text(
+              tx('${exs.length} 个动作 · 约 ${_estimateMin(exs)} 分钟',
+                  en: '${exs.length} exercises · ~${_estimateMin(exs)} min'),
               style: const TextStyle(color: AppTheme.textDim)),
           const SizedBox(height: 8),
           ...exs.map((e) => Padding(
                 padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text('· ${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}',
+                child: Text('· ${exname(e.name)} ${e.sets}×${e.repsMin}-${e.repsMax}',
                     style: const TextStyle(fontSize: 15)),
               )),
           const SizedBox(height: 16),
           BigButton(
-            label: '开始训练',
+            label: tx('开始训练', en: 'Start Workout'),
             height: 72,
             onPressed: (exs.isEmpty || _starting)
                 ? null
@@ -265,16 +277,18 @@ class _HomePageState extends State<HomePage> {
     final s = _lastSession!;
     final st = _lastStats!;
     return SectionCard(
-      title: '上次训练',
+      title: tx('上次训练', en: 'Last Workout'),
       trailing: Text(s.date, style: const TextStyle(color: AppTheme.textDim)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(s.planDayTitle,
+          Text(dname(s.planDayTitle),
               style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           const SizedBox(height: 8),
           Text(
-              '总容量 ${fmtVolume(st.volume)} · ${st.workingSets} 个正式组 · ${s.durationMin} 分钟',
+              tx(
+                  '总容量 ${fmtVolume(st.volume)} · ${st.workingSets} 个正式组 · ${s.durationMin} 分钟',
+                  en: 'Total volume ${fmtVolume(st.volume)} · ${st.workingSets} working sets · ${s.durationMin} min'),
               style: const TextStyle(color: AppTheme.textDim)),
         ],
       ),
@@ -320,7 +334,10 @@ class _HomePageState extends State<HomePage> {
     ];
     if (!context.mounted) return;
     if (trainable.isEmpty) {
-      toast(context, '当前计划还没有编排动作，先去计划页添加');
+      toast(
+          context,
+          tx('当前计划还没有编排动作，先去计划页添加',
+              en: 'No exercises in this plan yet. Add some on the Plan page first.'));
       return;
     }
     await showModalBottomSheet<void>(
@@ -333,19 +350,25 @@ class _HomePageState extends State<HomePage> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            const Text('加练哪一天的内容？',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(tx('加练哪一天的内容？', en: 'Pick a Day to Train'),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            const Text('加练按该日的完整动作清单开练，记录照常保存。',
-                style: TextStyle(color: AppTheme.textDim, fontSize: 12)),
+            Text(
+                tx('加练按该日的完整动作清单开练，记录照常保存。',
+                    en: 'Extra sessions run the full exercise list of that day and are saved as usual.'),
+                style: const TextStyle(
+                    color: AppTheme.textDim, fontSize: 12)),
             const SizedBox(height: 8),
             for (final d in trainable)
               ListTile(
                 leading: const Icon(Icons.fitness_center,
                     color: AppTheme.primary),
-                title: Text(d.title),
+                title: Text(dname(d.title)),
                 subtitle: Text(
-                    '${(exByDay[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                    tx(
+                        '${(exByDay[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                        en: '${(exByDay[d.id] ?? const <PlanExercise>[]).length} exercises'),
                     style: const TextStyle(fontSize: 12)),
                 onTap: () {
                   Navigator.pop(ctx);

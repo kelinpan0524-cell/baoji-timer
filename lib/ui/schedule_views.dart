@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import '../l10n/lang.dart';
+import '../l10n/names.dart';
 import 'plan_editor_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -30,6 +32,17 @@ class ScheduleViews extends StatefulWidget {
 }
 
 enum _Mode { d3, week, month }
+
+/// 星期缩写映射（仅展示用；中文单字为键）。
+const _weekdayEn = {
+  '一': 'Mon',
+  '二': 'Tue',
+  '三': 'Wed',
+  '四': 'Thu',
+  '五': 'Fri',
+  '六': 'Sat',
+  '日': 'Sun',
+};
 
 class _CellData {
   final PlanDay? day;
@@ -132,10 +145,13 @@ class _ScheduleViewsState extends State<ScheduleViews> {
           children: [
             Expanded(
               child: SegmentedButton<_Mode>(
-                segments: const [
-                  ButtonSegment(value: _Mode.d3, label: Text('3 日')),
-                  ButtonSegment(value: _Mode.week, label: Text('一周')),
-                  ButtonSegment(value: _Mode.month, label: Text('一月')),
+                segments: [
+                  ButtonSegment(
+                      value: _Mode.d3, label: Text(tx('3 日', en: '3 Days'))),
+                  ButtonSegment(
+                      value: _Mode.week, label: Text(tx('一周', en: 'Week'))),
+                  ButtonSegment(
+                      value: _Mode.month, label: Text(tx('一月', en: 'Month'))),
                 ],
                 selected: {_mode},
                 onSelectionChanged: (s) {
@@ -165,16 +181,17 @@ class _ScheduleViewsState extends State<ScheduleViews> {
             IconButton(
               onPressed: () => _shift(_mode == _Mode.month ? -1 : -_step),
               icon: const Icon(Icons.chevron_left),
-              tooltip: '往前',
+              tooltip: tx('往前', en: 'Back'),
             ),
             TextButton(
               onPressed: _goToday,
-              child: const Text('今天', style: TextStyle(fontSize: 13)),
+              child: Text(tx('今天', en: 'Today'),
+                  style: const TextStyle(fontSize: 13)),
             ),
             IconButton(
               onPressed: () => _shift(_mode == _Mode.month ? 1 : _step),
               icon: const Icon(Icons.chevron_right),
-              tooltip: '往后',
+              tooltip: tx('往后', en: 'Forward'),
             ),
           ],
         ),
@@ -198,8 +215,10 @@ class _ScheduleViewsState extends State<ScheduleViews> {
         else
           _dayList(cells, days: _mode == _Mode.d3 ? 3 : 7),
         const SizedBox(height: 4),
-        const Text('长按拖动挪训练：拖到空日子＝移动，拖到有训练的日子＝互换。点日期管理当天安排。',
-            style: TextStyle(color: AppTheme.textDim, fontSize: 11)),
+        Text(
+            tx('长按拖动挪训练：拖到空日子＝移动，拖到有训练的日子＝互换。点日期管理当天安排。',
+                en: 'Long-press and drag a workout: drop on an empty day to move it, drop on a workout day to swap. Tap a day to manage it.'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 11)),
       ],
     );
   }
@@ -207,12 +226,15 @@ class _ScheduleViewsState extends State<ScheduleViews> {
   int get _step => _mode == _Mode.d3 ? 3 : 7;
 
   /// 「9月24日」式短日期，拖拽反馈文案用。
-  String _md(DateTime d) => '${d.month}月${d.day}日';
+  String _md(DateTime d) =>
+      tx('${d.month}月${d.day}日', en: '${d.month}/${d.day}');
 
   String _windowLabel() {
     final s = _windowStart;
     final e = _windowEnd;
-    if (_mode == _Mode.month) return '${s.year} 年 ${s.month} 月';
+    if (_mode == _Mode.month) {
+      return tx('${s.year} 年 ${s.month} 月', en: '${s.year}-${s.month}');
+    }
     if (_mode == _Mode.week && s.month == e.month) {
       return '${s.month}/${s.day} - ${e.day}';
     }
@@ -237,10 +259,14 @@ class _ScheduleViewsState extends State<ScheduleViews> {
   }
 
   Widget _dayTile(DateTime d, _CellData cell, {required bool isToday}) {
-    final label = '周${'一二三四五六日'[d.weekday - 1]} ${d.month}/${d.day}';
+    final label = tx('周${'一二三四五六日'[d.weekday - 1]} ${d.month}/${d.day}',
+        en:
+            '${_weekdayEn['一二三四五六日'[d.weekday - 1]]} ${d.month}/${d.day}');
     final status = cell.day != null
-        ? cell.day!.title
-        : (cell.explicitRest ? '休息（手动设置）' : '休息');
+        ? dname(cell.day!.title)
+        : (cell.explicitRest
+            ? tx('休息（手动设置）', en: 'Rest (manual)')
+            : tx('休息', en: 'Rest'));
     final tile = Container(
       margin: const EdgeInsets.symmetric(vertical: 3),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -275,8 +301,8 @@ class _ScheduleViewsState extends State<ScheduleViews> {
             ),
           ),
           if (cell.overridden)
-            const Text('自定义',
-                style: TextStyle(color: AppTheme.warn, fontSize: 11)),
+            Text(tx('自定义', en: 'Custom'),
+                style: const TextStyle(color: AppTheme.warn, fontSize: 11)),
           Icon(Icons.drag_indicator,
               size: 18,
               color: cell.day != null
@@ -302,7 +328,7 @@ class _ScheduleViewsState extends State<ScheduleViews> {
         for (final w in ['一', '二', '三', '四', '五', '六', '日'])
           Expanded(
             child: Center(
-                child: Text('周$w',
+                child: Text(tx('周$w', en: _weekdayEn[w]),
                     style: const TextStyle(
                         color: AppTheme.textDim, fontSize: 10))),
           ),
@@ -334,7 +360,7 @@ class _ScheduleViewsState extends State<ScheduleViews> {
   Widget _monthCell(DateTime d, _CellData cell, {required bool isToday}) {
     final title = cell.day?.title;
     final short = title == null
-        ? (cell.explicitRest ? '休' : '')
+        ? (cell.explicitRest ? tx('休', en: 'Rest') : '')
         : (title.length > 3 ? title.substring(0, 3) : title);
     final inner = Container(
       height: 52,
@@ -394,10 +420,13 @@ class _ScheduleViewsState extends State<ScheduleViews> {
         widget.onChanged();
         await _reload();
         // 放下后的肉眼确认：空目标＝移动，有训练的目标＝互换
-        final fromTitle = _cells?[fmtDate(from)]?.day?.title ?? '训练';
+        final fromTitle =
+            dname(_cells?[fmtDate(from)]?.day?.title ?? tx('训练', en: 'Workout'));
         final msg = cell.day == null
-            ? '已移动：${_md(from)}「$fromTitle」→ ${_md(d)}（原日期改休息）'
-            : '已互换：${_md(from)}「$fromTitle」⇄ ${_md(d)}「${cell.day!.title}」';
+            ? tx('已移动：${_md(from)}「$fromTitle」→ ${_md(d)}（原日期改休息）',
+                en: 'Moved: ${_md(from)} "$fromTitle" → ${_md(d)} (original day becomes rest)')
+            : tx('已互换：${_md(from)}「$fromTitle」⇄ ${_md(d)}「${dname(cell.day!.title)}」',
+                en: 'Swapped: ${_md(from)} "$fromTitle" ⇄ ${_md(d)} "${dname(cell.day!.title)}"');
         messenger
           ..hideCurrentSnackBar()
           ..showSnackBar(SnackBar(
@@ -405,7 +434,7 @@ class _ScheduleViewsState extends State<ScheduleViews> {
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 4),
             action: SnackBarAction(
-              label: '撤销',
+              label: tx('撤销', en: 'Undo'),
               onPressed: () async {
                 messenger.hideCurrentSnackBar();
                 if (!mounted) return;
@@ -449,7 +478,7 @@ class _ScheduleViewsState extends State<ScheduleViews> {
           child: Chip(
             backgroundColor: AppTheme.primary,
             label: Text(
-              cell.day!.title,
+              dname(cell.day!.title),
               style: const TextStyle(
                   color: Color(0xFF06220F), fontWeight: FontWeight.w700),
             ),
@@ -471,7 +500,8 @@ class _ScheduleViewsState extends State<ScheduleViews> {
     final c = app(context);
     final plan = widget.plan;
     final templates = _templates ?? await c.db.planDays(plan.id!);
-    final dateLabel = '${d.month}月${d.day}日';
+    final dateLabel =
+        tx('${d.month}月${d.day}日', en: '${d.month}/${d.day}');
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -483,14 +513,16 @@ class _ScheduleViewsState extends State<ScheduleViews> {
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
           children: [
-            Text('$dateLabel · ${cell.day?.title ?? '休息'}',
+            Text('$dateLabel · ${cell.day != null ? dname(cell.day!.title) : tx('休息', en: 'Rest')}',
                 style: const TextStyle(
                     fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(
               cell.overridden
-                  ? '这天有手动调整（会覆盖计划规则）'
-                  : '这天按计划规则自动排的',
+                  ? tx('这天有手动调整（会覆盖计划规则）',
+                      en: 'Manually adjusted (overrides plan rules)')
+                  : tx('这天按计划规则自动排的',
+                      en: 'Scheduled automatically by the plan'),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
             ),
             const SizedBox(height: 8),
@@ -498,7 +530,7 @@ class _ScheduleViewsState extends State<ScheduleViews> {
               ListTile(
                 leading:
                     const Icon(Icons.edit_calendar, color: AppTheme.primary),
-                title: const Text('编辑这天的动作'),
+                title: Text(tx('编辑这天的动作', en: "Edit This Day's Exercises")),
                 onTap: () async {
                   Navigator.pop(ctx);
                   final changed = await Navigator.of(context).push(
@@ -514,18 +546,18 @@ class _ScheduleViewsState extends State<ScheduleViews> {
               ),
               ListTile(
                 leading: const Icon(Icons.arrow_forward),
-                title: const Text('延后到明天'),
+                title: Text(tx('延后到明天', en: 'Move to Tomorrow')),
                 onTap: () => _move(ctx, d, d.add(const Duration(days: 1))),
               ),
               ListTile(
                 leading: const Icon(Icons.arrow_back),
-                title: const Text('提前到昨天'),
+                title: Text(tx('提前到昨天', en: 'Move to Yesterday')),
                 onTap: () =>
                     _move(ctx, d, d.subtract(const Duration(days: 1))),
               ),
               ListTile(
                 leading: const Icon(Icons.event_busy, color: AppTheme.warn),
-                title: const Text('这天改成休息'),
+                title: Text(tx('这天改成休息', en: 'Make This a Rest Day')),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await c.planRepo.setOverride(plan, d, null);
@@ -534,17 +566,22 @@ class _ScheduleViewsState extends State<ScheduleViews> {
                 },
               ),
             ] else ...[
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4),
-                child: Text('从模板日里挑一个放到这天：',
-                    style: TextStyle(color: AppTheme.textDim, fontSize: 13)),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text(tx('从模板日里挑一个放到这天：',
+                    en: 'Pick a template day to place here:'),
+                    style:
+                        const TextStyle(color: AppTheme.textDim, fontSize: 13)),
               ),
               for (final t in templates)
                 ListTile(
                   leading: const Icon(Icons.fitness_center,
                       color: AppTheme.primary),
-                  title: Text(t.title),
-                  subtitle: Text('模板 · 周${'一二三四五六日'[t.weekday - 1]}',
+                  title: Text(dname(t.title)),
+                  subtitle: Text(
+                      tx('模板 · 周${'一二三四五六日'[t.weekday - 1]}',
+                          en:
+                              'Template · ${_weekdayEn['一二三四五六日'[t.weekday - 1]]}'),
                       style: const TextStyle(fontSize: 12)),
                   onTap: () async {
                     Navigator.pop(ctx);
@@ -557,7 +594,8 @@ class _ScheduleViewsState extends State<ScheduleViews> {
             if (cell.overridden)
               ListTile(
                 leading: const Icon(Icons.settings_backup_restore),
-                title: const Text('清除自定义（跟随计划规则）'),
+                title: Text(tx('清除自定义（跟随计划规则）',
+                    en: 'Clear Custom (Follow Plan)')),
                 onTap: () async {
                   Navigator.pop(ctx);
                   await c.planRepo.clearOverride(plan, d);
@@ -579,7 +617,8 @@ class _ScheduleViewsState extends State<ScheduleViews> {
     await _reload();
     if (mounted) {
       toast(context,
-          '已${to.isAfter(from) ? '延后' : '提前'}到 ${to.month}/${to.day}');
+          tx('已${to.isAfter(from) ? '延后' : '提前'}到 ${to.month}/${to.day}',
+              en: '${to.isAfter(from) ? 'Postponed to' : 'Moved up to'} ${to.month}/${to.day}'));
     }
   }
 }

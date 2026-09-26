@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:ui' show Locale, PlatformDispatcher;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../l10n/lang.dart';
 import '../models/app_release.dart';
 
 /// 应用设置：只存手机本地（shared_preferences）。密钥类字段永不进仓库/日志。
@@ -62,6 +65,23 @@ class Settings extends ChangeNotifier {
   String ghUpdateToken = ''; // 只读令牌，与 AI Key 同一本地存放策略
   AppRelease? pendingUpdate; // 运行时状态（发现的新版），不落盘
 
+  // 界面语言（跟随系统 / 中文 / English）
+  LangPref langPref = LangPref.system;
+
+  /// 系统语言（服务侧解析全局语言也用它）。
+  /// 走 WidgetsBinding 的派发器：测试环境可用 localeTestValue 覆盖
+  /// （test/flutter_test_config.dart 钉成中文），纯 Dart 上下文回落平台实例。
+  Locale? get systemLocale {
+    try {
+      return WidgetsBinding.instance.platformDispatcher.locale;
+    } catch (_) {
+      return PlatformDispatcher.instance.locale;
+    }
+  }
+
+  /// 已解析语言码（'zh' / 'en'），偏好为"跟随系统"时按系统语言
+  String get resolvedLang => Lang.resolve(langPref, systemLocale);
+
   void _load() {
     restCompoundSec = _prefs.getInt('${_kprefix}restCompound') ?? 180;
     restAssistanceSec = _prefs.getInt('${_kprefix}restAssist') ?? 120;
@@ -90,6 +110,13 @@ class Settings extends ChangeNotifier {
     ghUpdateToken = _prefs.getString('${_kprefix}ghToken') ?? '';
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
     larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
+    langPref = switch (_prefs.getString('${_kprefix}lang')) {
+      'zh' => LangPref.zh,
+      'en' => LangPref.en,
+      _ => LangPref.system,
+    };
+    // 服务侧（通知/导出/前台服务）读全局静态值，启动即与偏好同步一次
+    Lang.setResolved(resolvedLang == 'en');
   }
 
   // token 运行时字段
@@ -128,6 +155,8 @@ class Settings extends ChangeNotifier {
     await _prefs.setString('${_kprefix}ghToken', ghUpdateToken);
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
     await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);
+    await _prefs.setString('${_kprefix}lang', langPref.name);
+    Lang.setResolved(resolvedLang == 'en');
     notifyListeners();
   }
 

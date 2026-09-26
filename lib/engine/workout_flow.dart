@@ -11,6 +11,7 @@
 //   与训练卡文案「第 N/M 组」的封顶口径一致（T-N9）。
 //
 // 纯 Dart 无 Flutter 依赖，便于单元测试。
+import '../l10n/lang.dart';
 import '../models/models.dart';
 
 /// 页面种类：起始 / 记录 / 休息 / 总结。
@@ -71,8 +72,9 @@ class FlowPage {
   String setLabel() {
     if (kind == FlowPageKind.record || kind == FlowPageKind.rest) {
       return extra
-          ? '第 $setNumber/$plannedSets 组 · 加练'
-          : '第 $setNumber/$plannedSets 组';
+          ? tx('第 $setNumber/$plannedSets 组 · 加练',
+          en: 'Set $setNumber/$plannedSets · extra')
+          : tx('第 $setNumber/$plannedSets 组', en: 'Set $setNumber/$plannedSets');
     }
     return '';
   }

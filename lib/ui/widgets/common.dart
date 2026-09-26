@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/app.dart';
+import '../../l10n/lang.dart';
 import '../theme.dart';
 
 /// 通用小组件。
@@ -164,13 +165,13 @@ String fmtKg(double v) => v == v.roundToDouble()
           .replaceAll(RegExp(r'\.$'), '');
 
 /// 自重动作（0kg）显示"自重"而不是"0"。
-String fmtWeight(double v) => v <= 0 ? '自重' : fmtKg(v);
+String fmtWeight(double v) => v <= 0 ? tx('自重', en: 'Bodyweight') : fmtKg(v);
 
 /// 训练页重量显示：负值 = 辅助器械配重（辅30 = 辅助 30kg，配重越大越轻），
 /// 0 = 自重，正值 = 常规负重。
 String fmtLoad(double v) {
-  if (v < 0) return '辅 ${fmtKg(-v)}';
-  if (v == 0) return '自重';
+  if (v < 0) return tx('辅 ${fmtKg(-v)}', en: 'Assist ${fmtKg(-v)}');
+  if (v == 0) return tx('自重', en: 'Bodyweight');
   return fmtKg(v);
 }
 
@@ -186,11 +187,13 @@ String fmtVolume(double v) {
 }
 
 /// App 级确认弹窗（非训练页使用）。
+/// [okLabel] 缺省时按当前语言显示「确认/Confirm」
+/// （默认参数须为编译期常量，故声明为可空、在函数体内回落）。
 Future<bool> confirmDialog(
   BuildContext context,
   String title,
   String content, {
-  String okLabel = '确认',
+  String? okLabel,
 }) async {
   final r = await showDialog<bool>(
     context: context,
@@ -201,11 +204,13 @@ Future<bool> confirmDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(c, false),
-          child: const Text('取消', style: TextStyle(color: AppTheme.textDim)),
+          child: Text(tx('取消', en: 'Cancel'),
+              style: const TextStyle(color: AppTheme.textDim)),
         ),
         TextButton(
           onPressed: () => Navigator.pop(c, true),
-          child: Text(okLabel, style: const TextStyle(color: AppTheme.danger)),
+          child: Text(okLabel ?? tx('确认', en: 'Confirm'),
+              style: const TextStyle(color: AppTheme.danger)),
         ),
       ],
     ),

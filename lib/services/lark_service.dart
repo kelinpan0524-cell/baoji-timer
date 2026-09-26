@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../db/db.dart';
+import '../l10n/lang.dart';
 import '../models/models.dart';
 import 'settings.dart';
 
@@ -103,7 +104,10 @@ class LarkService {
   /// 拿用户主日历 id（设置页"测试连接"用）。
   Future<String> fetchPrimaryCalendar() async {
     final token = await ensureToken();
-    if (token == null) throw const LarkException('授权失效或网络不可用，请检查后重试');
+    if (token == null) {
+      throw LarkException(tx('授权失效或网络不可用，请检查后重试',
+          en: 'Auth expired or network unavailable, check settings and retry'));
+    }
     final resp = await http
         .get(
           Uri.parse('$_base/open-apis/calendar/v4/calendars?page_size=50'),
@@ -112,7 +116,10 @@ class LarkService {
         .timeout(const Duration(seconds: 20));
     final data =
         jsonDecode(utf8.decode(resp.bodyBytes)) as Map<String, dynamic>;
-    if (data['code'] != 0) throw LarkException('获取日历失败：${data['msg']}');
+    if (data['code'] != 0) {
+      throw LarkException(tx('获取日历失败：${data['msg']}',
+          en: 'Failed to load calendars: ${data['msg']}'));
+    }
     final items = (data['data']?['calendar_list'] as List?) ?? [];
     for (final c in items) {
       final m = Map<String, dynamic>.from(c as Map);
@@ -122,7 +129,7 @@ class LarkService {
       return Map<String, dynamic>.from(items.first as Map)['calendar_id']
           as String;
     }
-    throw const LarkException('没有可用日历');
+    throw LarkException(tx('没有可用日历', en: 'No available calendar'));
   }
 
   /// 计划日 → 日历事件（有则更新、无则建）。
@@ -288,7 +295,8 @@ class LarkService {
     if (eventId == null) {
       // 找不到事件不能静默当成功：主路径要入队、离线行要保留重试，
       // 等日程补写成功后摘要随之补上
-      throw const LarkException('当天未找到训练日程（可能尚未同步或被手动删除）');
+      throw LarkException(tx('当天未找到训练日程（可能尚未同步或被手动删除）',
+          en: 'No workout event found for that day (not synced yet or deleted manually)'));
     }
     // 已回填过就跳过，避免重试时摘要重复追加
     if (prevDesc.contains(_doneMarker)) return;
