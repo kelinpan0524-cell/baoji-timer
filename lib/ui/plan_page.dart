@@ -251,7 +251,8 @@ class _PlanPageState extends State<PlanPage> {
             Expanded(
               child: OutlinedButton.icon(
                 onPressed: () => _showAiImport(),
-                icon: const Icon(Icons.auto_awesome, size: 16),
+                icon: const Icon(Icons.auto_awesome,
+                    size: 16, color: AppTheme.violetSoft), // 紫=AI（全 App 统一）
                 label: Text(tx('AI 拆解导入', en: 'AI import')),
               ),
             ),

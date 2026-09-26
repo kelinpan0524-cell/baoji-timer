@@ -96,18 +96,26 @@ class BigButton extends StatelessWidget {
     return SizedBox(
       height: height,
       width: double.infinity,
-      child: FilledButton(
-        onPressed: onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: const Color(0xFF06220F),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
-          ),
+      // 主色光晕只给可用态：禁用/进行中变灰时无光，光晕本身就是"可按"的信号
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          boxShadow:
+              onPressed == null ? null : AppTheme.glow(color, alpha: 0.25),
         ),
-        child: Text(
-          label,
-          style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800),
+        child: FilledButton(
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: const Color(0xFF06220F),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800),
+          ),
         ),
       ),
     );

@@ -292,7 +292,8 @@ class _AiCoachPageState extends State<AiCoachPage> {
           Icon(
             Icons.smart_toy_outlined,
             size: 14,
-            color: configured ? AppTheme.primary : AppTheme.warn,
+            // AI 触点统一用紫（2026-09-26 设计翻新：紫=智能、绿=训练）
+            color: configured ? AppTheme.violetSoft : AppTheme.warn,
           ),
           const SizedBox(width: 6),
           Expanded(
@@ -311,7 +312,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
       children: [
-        const Center(child: Icon(Icons.smart_toy_outlined, size: 56, color: AppTheme.textDim)),
+        const Center(
+            child: Icon(Icons.smart_toy_outlined,
+                size: 56, color: AppTheme.violetSoft)),
         const SizedBox(height: 12),
         Center(
           child: Text(tx('和你的训练数据对话', en: 'Chat with your training data'),
@@ -447,7 +450,7 @@ class _AiCoachPageState extends State<AiCoachPage> {
         ),
         decoration: BoxDecoration(
           color: isUser
-              ? AppTheme.primary.withValues(alpha: 0.16)
+              ? AppTheme.violet.withValues(alpha: 0.16)
               : AppTheme.cardHi,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(14),
@@ -546,7 +549,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
             const SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(strokeWidth: 2),
+              // 紫=AI：聊天流里的等待转圈跟随 AI 身份色，不吃全局主题绿
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppTheme.violetSoft),
             ),
             const SizedBox(width: 10),
             Text(
@@ -613,11 +618,26 @@ class _AiCoachPageState extends State<AiCoachPage> {
           IconButton.filled(
             tooltip: tx('发送', en: 'Send'),
             onPressed: configured && !_sending ? _submit : null,
+            // 评审必修：styleFrom 的静态色会覆盖禁用态，未配置时紫底看着能点。
+            // 按状态解析：禁用回落灰（与输入框置灰同语言），可用才上紫。
+            style: ButtonStyle(
+              backgroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? AppTheme.cardHi
+                    : AppTheme.violet,
+              ),
+              foregroundColor: WidgetStateProperty.resolveWith(
+                (states) => states.contains(WidgetState.disabled)
+                    ? AppTheme.textDim
+                    : Colors.white,
+              ),
+            ),
             icon: _sending
                 ? const SizedBox(
                     width: 18,
                     height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppTheme.violetSoft),
                   )
                 : const Icon(Icons.send),
           ),

@@ -18,6 +18,29 @@ class AppTheme {
   static const text = Color(0xFFE5E7EB);
   static const textDim = Color(0xFF9CA3AF);
 
+  // ========= 紫罗兰强调色（2026-09-26 设计翻新：借鉴 qoder.com / undraw.co）=========
+  // 两站共性语言：近黑深底 + 单一紫罗兰强调（qoder #8B5CF6 / undraw #6c63ff）。
+  // 本项目语义化落地：紫 = AI 智能（AI 教练入口/聊天气泡/发送键/设置 AI 行），
+  // 绿仍是训练主色，红黄语义不变——四色各管一摊，互不侵占。
+
+  /// AI 智能身份色：一切 AI 触点（入口卡、气泡、图标、按钮）统一用紫，
+  /// 用户扫一眼就知道"这块是 AI"，与训练操作的绿形成条件反射式区分。
+  static const violet = Color(0xFF8B5CF6);
+
+  /// 紫的亮变体：小字号/小图标在深底上的可读版。
+  static const violetSoft = Color(0xFFA78BFA);
+
+  /// CTA 光晕（qoder 风格柔和投影）：主按钮在自己颜色的下方晕开一圈，
+  /// 不用读字也知道"这颗是能按的主键"。纯静态装饰，不参与动画，不影响 60fps 基线。
+  static List<BoxShadow> glow(Color c, {double alpha = 0.30, double blur = 28}) =>
+      [
+        BoxShadow(
+          color: c.withValues(alpha: alpha),
+          blurRadius: blur,
+          offset: const Offset(0, 6),
+        ),
+      ];
+
   // ============ 数据分级色（2026-09-26 Arono：按程度分色，不要全绿） ============
 
   /// 恢复度分级色（pct 0-100）：0=疲劳红 → 60=黄 → 100=满血绿。
@@ -58,8 +81,11 @@ class AppTheme {
       color: card,
       elevation: 0,
       margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      // 6% 白描边（qoder 深底卡片语言）：近黑底上纯色块轮廓模糊，
+      // 一条极淡描边把卡片边界立起来，深色模式下更有层次。
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(20)),
+        side: BorderSide(color: Color(0x0FFFFFFF)),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(

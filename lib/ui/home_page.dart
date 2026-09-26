@@ -96,23 +96,30 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// AI 教练入口卡：问训练数据 / 对话排计划，点开进 AiCoachPage。
-  /// 排版贴 SectionCard 视觉，但用主色淡底突出"这是唯一的 AI 入口"。
+  /// 排版贴 SectionCard 视觉；配色用 AI 专属紫（2026-09-26 设计翻新：
+  /// 借鉴 qoder/undraw 的"深底单紫"，紫=智能、绿=训练，全 App 统一），
+  /// 外加一圈淡紫光晕让唯一 AI 入口在首页里浮出来。
   Widget _aiCoachCard(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Material(
-        color: AppTheme.primary.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const AiCoachPage()),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Row(
-              children: [
-                const Icon(Icons.smart_toy_outlined, color: AppTheme.primary),
+          boxShadow: AppTheme.glow(AppTheme.violet, alpha: 0.15, blur: 20),
+        ),
+        child: Material(
+          color: AppTheme.violet.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const AiCoachPage()),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(children: [
+                const Icon(Icons.smart_toy_outlined,
+                    color: AppTheme.violetSoft),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -131,7 +138,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const Icon(Icons.chevron_right, color: AppTheme.textDim),
-              ],
+              ]),
             ),
           ),
         ),
