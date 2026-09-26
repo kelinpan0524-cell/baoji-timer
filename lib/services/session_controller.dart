@@ -56,6 +56,10 @@ class SessionController extends ChangeNotifier {
   int activeMs = 0;
   DateTime? _phaseSince;
 
+  /// 忘停表守护的截断点（epoch ms，非 null = finish 落库时用它当 ended_at）。
+  /// 由 truncateDurationToLastSet 设置；新会话/放弃时清零。
+  int? truncatedEndAtMs;
+
   void _accrueTime() {
     final since = _phaseSince;
     if (since == null) return;
@@ -386,6 +390,7 @@ class SessionController extends ChangeNotifier {
     // 双击竞态兜底：内存态置 active 之前再查一次库，只放行一个并发调用
     if (await _db.activeSession() != null) return;
     prHit.clear();
+    truncatedEndAtMs = null;
     final now = DateTime.now().millisecondsSinceEpoch;
     // 会话与动作一个事务落库（sessionId 先占位，事务内回填真实 id），
     // 消除"会话已落库、动作未落库"的半写窗口。
@@ -876,6 +881,45 @@ class SessionController extends ChangeNotifier {
     return true;
   }
 
+  /// 本次训练里最后一次记录组的时刻（epoch ms）；一组没记返回 null。
+  /// 忘停表守护 UI 展示"截到几点"用。
+  int? get lastSetDoneAtMs {
+    int? last;
+    for (final list in setsByEx.values) {
+      for (final e in list) {
+        if (last == null || e.doneAt > last) last = e.doneAt;
+      }
+    }
+    return last;
+  }
+
+  int get setCount {
+    var n = 0;
+    for (final list in setsByEx.values) {
+      n += list.length;
+    }
+    return n;
+  }
+
+  /// 把会话时长截到最后一次记录组 + 2 分钟缓冲（忘停表守护，只减不增）。
+  /// 超时发生在退出前所处的相位里（练完挂着 → active 桶；组间挂着 → rest 桶），
+  /// 超出部分从对应桶里扣（地板 0），ended_at 截到 [truncatedEndAtMs]。
+  /// finish 时按真实墙钟补记最后一段（_accrueTime），扣掉的量正好抵消挂机段。
+  void truncateDurationToLastSet() {
+    final last = lastSetDoneAtMs;
+    if (last == null) return;
+    final cap = last + 2 * 60000;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (cap >= now) return;
+    final excess = now - cap;
+    if (phase == WorkoutPhase.resting) {
+      restMs = (restMs - excess).clamp(0, 1 << 31);
+    } else {
+      activeMs = (activeMs - excess).clamp(0, 1 << 31);
+    }
+    truncatedEndAtMs = cap;
+  }
+
   // ---------- 结束 ----------
 
   Future<void> finish() async {
@@ -884,7 +928,7 @@ class SessionController extends ChangeNotifier {
     _finishRest();
     onRestAlarmChanged?.call(null); // 会话结束：精确提醒一并取消
     await _db.updateSession(session!.id!, {
-      'ended_at': DateTime.now().millisecondsSinceEpoch,
+      'ended_at': truncatedEndAtMs ?? DateTime.now().millisecondsSinceEpoch,
       'status': 'done',
       'rest_ms': restMs,
       'active_ms': activeMs,
@@ -894,6 +938,7 @@ class SessionController extends ChangeNotifier {
     WakelockPlus.disable();
     prHit.clear();
     _setPhase(WorkoutPhase.idle);
+    onSessionClosed?.call();
   }
 
   Future<void> quit() async {
@@ -911,7 +956,9 @@ class SessionController extends ChangeNotifier {
     WakelockPlus.disable();
     session = null;
     prHit.clear();
+    truncatedEndAtMs = null;
     _setPhase(WorkoutPhase.idle);
+    onSessionClosed?.call();
   }
 
   /// 本次训练汇总（用于结束页与飞书回填）。
@@ -961,6 +1008,10 @@ class SessionController extends ChangeNotifier {
   /// 暂停时取消，恢复会话时补挂）。人在屏上时容器会跳过挂钟、只走屏内
   /// 提醒（双通道互斥，离开前台由生命周期钩子重挂）。
   Future<void> Function(int? endAtMs)? onRestAlarmChanged;
+
+  /// 会话关闭（结束/放弃）后回调：App 容器接练前提醒重排——
+  /// 今天已练完，当天未到的练前提醒随即取消。
+  void Function()? onSessionClosed;
 
   Future<void> _enterFocus() async {
     WakelockPlus.enable();

@@ -56,6 +56,16 @@ class Settings extends ChangeNotifier {
   // 休息到点的提示沿用原有 _onRestFinished 通道（声音+震动）。
   bool restCueEnabled = true;
 
+  // 提示音仅耳机（2026-09-26 Arono）：戴着耳机听音乐时提示音混进耳机不扰人；
+  // 没接耳机（有线/蓝牙都没连）就不播，避免健身房外放打扰别人。
+  // 震动与休息到点的系统提醒不受影响。默认开。
+  bool restCueHeadphoneOnly = true;
+
+  // 练前提醒（2026-09-26 Arono）：训练日到了设定时刻还没练就发本地通知。
+  // trainReminderMinOfDay = 一天内的分钟数（20:00 = 1200）。
+  bool trainReminderOn = true;
+  int trainReminderMinOfDay = 20 * 60;
+
   // 锁屏时保持显示（调研条目 6，FitoTrack showOnLockScreen）：
   // 系统锁屏后训练计时仍显示在锁屏上（Android 8.1+ setShowWhenLocked）。
   // 默认关：与常亮（训练时屏幕不灭）是两个独立维度。
@@ -106,6 +116,10 @@ class Settings extends ChangeNotifier {
     idleNudgeEnabled = _prefs.getBool('${_kprefix}idleNudgeOn') ?? true;
     idleNudgeMinutes = _prefs.getInt('${_kprefix}idleNudgeMin') ?? 10;
     restCueEnabled = _prefs.getBool('${_kprefix}restCue') ?? true;
+    restCueHeadphoneOnly = _prefs.getBool('${_kprefix}restCueHpOnly') ?? true;
+    trainReminderOn = _prefs.getBool('${_kprefix}trainRemindOn') ?? true;
+    trainReminderMinOfDay =
+        _prefs.getInt('${_kprefix}trainRemindMin') ?? 20 * 60;
     lockScreenKeepOn = _prefs.getBool('${_kprefix}lockScreenKeepOn') ?? false;
     ghUpdateToken = _prefs.getString('${_kprefix}ghToken') ?? '';
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
@@ -156,6 +170,9 @@ class Settings extends ChangeNotifier {
     await _prefs.setBool('${_kprefix}idleNudgeOn', idleNudgeEnabled);
     await _prefs.setInt('${_kprefix}idleNudgeMin', idleNudgeMinutes);
     await _prefs.setBool('${_kprefix}restCue', restCueEnabled);
+    await _prefs.setBool('${_kprefix}restCueHpOnly', restCueHeadphoneOnly);
+    await _prefs.setBool('${_kprefix}trainRemindOn', trainReminderOn);
+    await _prefs.setInt('${_kprefix}trainRemindMin', trainReminderMinOfDay);
     await _prefs.setBool('${_kprefix}lockScreenKeepOn', lockScreenKeepOn);
     await _prefs.setString('${_kprefix}ghToken', ghUpdateToken);
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
