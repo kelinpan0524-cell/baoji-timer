@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
+import '../presets/exercise_library.dart' show libraryMetaByName;
 import '../services/session_controller.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
@@ -165,6 +166,9 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
     final c = app(context);
     final s = c.session;
     if (s.session == null) return;
+    // 忘停表守护（2026-09-26）：可疑长会话保存前先问一句再落库；
+    // 只在用户主动收尾 / 最后一组自动结束的时点出现，不碰训练中禁弹窗。
+    if (!await _forgottenStopGuard(s)) return;
     _finishing = true;
     try {
       final stats = await s.stats();
@@ -203,6 +207,95 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       });
     } finally {
       _finishing = false;
+    }
+  }
+
+  /// 忘停表守护：时长可疑（一组没记挂机 30 分钟+ / 有记录但组均超 15 分钟）
+  /// 时弹收起面板让用户拍板。返回是否继续正常收尾；选「不留记录」在这里
+  /// 直接 quit 并退出训练页。可疑时截断由 truncateDurationToLastSet 落库前生效
+  /// （ended_at 截到最后一条记录 +2 分钟，时长桶扣掉挂机段，只减不增）。
+  Future<bool> _forgottenStopGuard(SessionController s) async {
+    if (!isSuspiciousSessionDuration(
+      startedAtMs: s.session!.startedAt,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+      setCount: s.setCount,
+    )) {
+      return true;
+    }
+    final wallMin =
+        (DateTime.now().millisecondsSinceEpoch - s.session!.startedAt) ~/ 60000;
+    final wallText = wallMin >= 60
+        ? tx('${wallMin ~/ 60} 小时 ${wallMin % 60} 分',
+            en: '${wallMin ~/ 60}h ${wallMin % 60}m')
+        : tx('$wallMin 分钟', en: '$wallMin min');
+    final last = s.lastSetDoneAtMs;
+    final lastText = last == null
+        ? ''
+        : tx(
+            '最后一条记录在 '
+            '${DateTime.fromMillisecondsSinceEpoch(last).hour.toString().padLeft(2, '0')}:${DateTime.fromMillisecondsSinceEpoch(last).minute.toString().padLeft(2, '0')}',
+            en:
+                'Last set logged at ${DateTime.fromMillisecondsSinceEpoch(last).hour.toString().padLeft(2, '0')}:${DateTime.fromMillisecondsSinceEpoch(last).minute.toString().padLeft(2, '0')}',
+          );
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                tx('这次开了 $wallText，是不是忘停表了？',
+                    en: 'This session ran $wallText — forgot to stop the timer?'),
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ),
+            if (lastText.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Text(lastText,
+                    style:
+                        const TextStyle(color: AppTheme.textDim, fontSize: 13)),
+              ),
+            ListTile(
+              leading:
+                  const Icon(Icons.content_cut, color: AppTheme.primary),
+              title: Text(tx('截到最后一条记录保存（推荐）',
+                  en: 'Trim to last set & save (recommended)')),
+              onTap: () => Navigator.pop(ctx, 'truncate'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.save_outlined),
+              title: Text(tx('照原样保存', en: 'Save as is')),
+              onTap: () => Navigator.pop(ctx, 'asis'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: AppTheme.danger),
+              title: Text(tx('不留记录', en: 'Discard session')),
+              onTap: () => Navigator.pop(ctx, 'discard'),
+            ),
+          ],
+        ),
+      ),
+    );
+    switch (choice) {
+      case 'truncate':
+        s.truncateDurationToLastSet();
+        return true;
+      case 'discard':
+        if (!mounted) return false;
+        final navigator = Navigator.of(context);
+        await s.quit();
+        navigator.pop(); // 退出训练页回首页
+        return false;
+      default:
+        return true; // 照原样保存 / 下拉取消
     }
   }
 
@@ -1218,13 +1311,8 @@ class _ExerciseInfo extends StatelessWidget {
         ? tx('首次训练这个动作', en: 'First time on this exercise')
         : tx('上次：${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}',
             en: 'Last time: ${last.map((e) => '${fmtKg(e.weightKg)}kg×${e.reps}').join('  ')}');
-    // 计划组练满后（加练态）进度行换成加练计数，不再显示"第 5 / 4 组"
-    final extraNo = s.workingSetsDone - ex.rule.workingSets + 1;
-    final progressText = s.workingSetsDone >= ex.rule.workingSets
-        ? tx('已练满 ${ex.rule.workingSets} 组 · 加练第 $extraNo 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次',
-            en: '${ex.rule.workingSets} sets done · Extra set $extraNo · Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps')
-        : tx('第 ${s.workingSetsDone + 1} / ${ex.rule.workingSets} 组 · 目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次 · RIR ${ex.rule.rirTarget}',
-            en: 'Set ${s.workingSetsDone + 1} / ${ex.rule.workingSets} · Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps · RIR ${ex.rule.rirTarget}');
+    // 组数/目标行已升格为动作面板第一行的大字号条（2026-09-26 Arono），
+    // 这里不再重复显示，避免同屏两处组号且挤占小屏纵向空间。
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1248,11 +1336,6 @@ class _ExerciseInfo extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        Text(
-          progressText,
-          style: const TextStyle(color: AppTheme.accent, fontSize: 16),
-        ),
-        const SizedBox(height: 12),
         Text(
           lastText,
           style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
@@ -1363,6 +1446,98 @@ Future<void> showWeightInputSheet(BuildContext context, SessionController s) {
   );
 }
 
+/// 自定义次数直输（2026-09-26 Arono）：轻重量高次数（12/15+）超出计划
+/// ±2 的点选范围时直接键入，1-99 的整数。与重量直输同款交互：
+/// 用户主动点按唤起键盘、可取消，不算打断训练。
+Future<void> showRepsInputSheet(
+  BuildContext context, {
+  required int current,
+  required ValueChanged<int> onPicked,
+}) {
+  final ctrl = TextEditingController(text: '$current');
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.card,
+    builder: (sheetCtx) => StatefulBuilder(
+      builder: (sheetCtx, setSheetState) {
+        int? parsed() {
+          final v = int.tryParse(ctrl.text.trim());
+          if (v == null || v < 1 || v > 99) return null;
+          return v;
+        }
+
+        void submit() {
+          final v = parsed();
+          if (v == null) {
+            setSheetState(() {}); // 刷新 errorText 提示
+            return;
+          }
+          HapticFeedback.selectionClick();
+          onPicked(v);
+          Navigator.pop(sheetCtx);
+        }
+
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetCtx).viewInsets.bottom,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  tx('输入次数', en: 'Enter Reps'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  tx('轻重量高次数直接键入，如 12 或 15（1-99）',
+                      en: 'Type any rep count, e.g. 12 or 15 (1-99)'),
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                    LengthLimitingTextInputFormatter(2),
+                  ],
+                  onSubmitted: (_) => submit(),
+                  style: AppTheme.bigNum(30),
+                  decoration: InputDecoration(
+                    hintText: tx('如 15', en: 'e.g. 15'),
+                    errorText: parsed() == null
+                        ? tx('请输入 1-99 的次数', en: 'Enter 1-99 reps')
+                        : null,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                BigButton(
+                    label: tx('确认', en: 'Confirm'),
+                    height: 64,
+                    onPressed: submit),
+                TextButton(
+                  onPressed: () => Navigator.pop(sheetCtx),
+                  child: Text(
+                    tx('取消', en: 'Cancel'),
+                    style: const TextStyle(color: AppTheme.textDim),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
 class _ActionPanel extends StatefulWidget {
   const _ActionPanel({
     super.key,
@@ -1394,6 +1569,7 @@ class _ActionPanelState extends State<_ActionPanel> {
   String _kind = SetKind.working;
   int? _reps;
   int? _rir;
+  bool _rirPrompt = false; // 余力没填写提醒：第一按只提示不落库
   String _note = '';
   bool _noteOpen = false;
   bool _saving = false; // 防抖：力竭手抖双击不能记两组
@@ -1406,6 +1582,7 @@ class _ActionPanelState extends State<_ActionPanel> {
     if (old.ex.id != widget.ex.id) {
       _reps = null;
       _kind = SetKind.working;
+      _rirPrompt = false;
     }
   }
 
@@ -1512,6 +1689,57 @@ class _ActionPanelState extends State<_ActionPanel> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 组数 + 目标常显（2026-09-26 Arono：帮人数组、防忘目标）：
+          // 放在动作面板视线主区第一行；加练态显示「加练 第 N 组」，
+          // 组号继续涨，不再被夹回计划数。
+          Builder(
+            builder: (context) {
+              final planned = ex.rule.workingSets;
+              final targetText = ex.rule.repsMin == ex.rule.repsMax
+                  ? tx('目标 ${ex.rule.repsMin} 次',
+                      en: 'Target ${ex.rule.repsMin} reps')
+                  : tx('目标 ${ex.rule.repsMin}-${ex.rule.repsMax} 次',
+                      en: 'Target ${ex.rule.repsMin}-${ex.rule.repsMax} reps');
+              final setText = s.workingSetsDone >= planned
+                  ? tx('加练 第 ${s.workingSetsDone - planned + 1} 组',
+                      en: 'Extra set ${s.workingSetsDone - planned + 1}')
+                  : tx('第 ${s.workingSetsDone + 1}/$planned 组',
+                      en: 'Set ${s.workingSetsDone + 1}/$planned');
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: setText,
+                        style: TextStyle(
+                          fontSize: compact ? 20 : 24,
+                          fontWeight: FontWeight.w800,
+                          color: AppTheme.primary,
+                        ),
+                      ),
+                      TextSpan(
+                        text: '  ·  ',
+                        style: TextStyle(
+                          fontSize: compact ? 15 : 17,
+                          color: AppTheme.textDim,
+                        ),
+                      ),
+                      TextSpan(
+                        text: targetText,
+                        style: TextStyle(
+                          fontSize: compact ? 15 : 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.text,
+                        ),
+                      ),
+                    ],
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              );
+            },
+          ),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -1592,6 +1820,9 @@ class _ActionPanelState extends State<_ActionPanel> {
               ),
             ],
           ),
+          // 杠铃片速配（2026-09-26 Arono）：杠铃动作改重量时短暂显示
+          // 每边挂片，约 4 秒自动收起；非杠铃动作完全不占位。
+          _PlateHintStrip(s: s, gear: libraryMetaByName(ex.name)?.gear ?? ''),
           // 上次成绩行（调研条目 7，wger/LibreFit 思路）：与渐进引擎建议值
           // （大数字 = 本组推荐起点）并列的第二起点，点按整套带入重量/次数/
           // RIR；不替换建议值、不弹窗，无需手动步进即可重现上次配置。
@@ -1634,48 +1865,89 @@ class _ActionPanelState extends State<_ActionPanel> {
           ),
           const SizedBox(height: 8),
           // RIR（余力）：默认用计划目标值，可点选覆盖。
-          // Wrap 而非 Row：系统大字号（1.6x）下窄屏一行放不下时自动换行
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Tooltip(
-                message: tx('余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
-                    en: 'RIR = reps left in the tank; keep the plan default if unsure'),
-                child: Text(
-                  tx('余力 ', en: 'RIR '),
-                  style: const TextStyle(color: AppTheme.textDim, fontSize: 14),
-                ),
-              ),
-              for (var r = 0; r <= 4; r++)
-                GestureDetector(
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    setState(() => _rir = (_rir == r) ? null : r);
-                  },
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 3),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _rir == r ? AppTheme.accent : AppTheme.cardHi,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '$r',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _rir == r
-                            ? const Color(0xFF06220F)
-                            : AppTheme.textDim,
+          // Wrap 而非 Row：系统大字号（1.6x）下窄屏一行放不下时自动换行。
+          // _rirPrompt：忘了填余力时整行高亮 + 行下提示（第一按不落库）。
+          Container(
+            padding: _rirPrompt
+                ? const EdgeInsets.symmetric(horizontal: 8, vertical: 4)
+                : null,
+            decoration: _rirPrompt
+                ? BoxDecoration(
+                    border: Border.all(color: AppTheme.warn, width: 1.5),
+                    borderRadius: BorderRadius.circular(12),
+                  )
+                : null,
+            child: Column(
+              children: [
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Tooltip(
+                      message: tx('余力(RIR) = 做完这组还能再做几次，不确定就用计划默认值',
+                          en: 'RIR = reps left in the tank; keep the plan default if unsure'),
+                      child: Text(
+                        _rirPrompt
+                            ? tx('余力没填写 ', en: 'RIR missing ')
+                            : tx('余力 ', en: 'RIR '),
+                        style: TextStyle(
+                          color: _rirPrompt
+                              ? AppTheme.warn
+                              : AppTheme.textDim,
+                          fontSize: 14,
+                          fontWeight: _rirPrompt
+                              ? FontWeight.w800
+                              : FontWeight.w400,
+                        ),
                       ),
                     ),
-                  ),
+                    for (var r = 0; r <= 4; r++)
+                      GestureDetector(
+                        onTap: () {
+                          HapticFeedback.selectionClick();
+                          setState(() {
+                            _rir = (_rir == r) ? null : r;
+                            if (_rir != null) _rirPrompt = false;
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 3),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _rir == r ? AppTheme.accent : AppTheme.cardHi,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '$r',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: _rir == r
+                                  ? const Color(0xFF06220F)
+                                  : (_rirPrompt
+                                      ? AppTheme.text
+                                      : AppTheme.textDim),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
-            ],
+                if (_rirPrompt) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    tx('点一个数字；不确定就再按一次「完成本组」，按计划默认记',
+                        en: 'Pick a number, or tap Done again to log the plan default'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        color: AppTheme.warn, fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
           ),
           const SizedBox(height: 10),
           Wrap(
@@ -1704,6 +1976,43 @@ class _ActionPanelState extends State<_ActionPanel> {
                     setState(() => _reps = r);
                   },
                 ),
+              // 自定义次数（2026-09-26 Arono）：轻重量高次数（12/15+）
+              // 超出计划 ±2 的点选范围时直接键入；选中后 chip 显示实际次数。
+              Builder(
+                builder: (context) {
+                  final custom =
+                      (_reps != null && !repsChoices.contains(_reps))
+                          ? _reps!
+                          : null;
+                  return ChoiceChip(
+                    label: Text(
+                        custom != null ? '$custom' : tx('自定义', en: 'Custom')),
+                    selected: custom != null,
+                    labelStyle: TextStyle(
+                      fontSize: custom != null ? 17 : 14,
+                      fontWeight: FontWeight.w700,
+                      color: custom != null
+                          ? const Color(0xFF06220F)
+                          : AppTheme.textDim,
+                    ),
+                    selectedColor: AppTheme.primary,
+                    backgroundColor: AppTheme.cardHi,
+                    side: BorderSide.none,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                    onSelected: (_) {
+                      HapticFeedback.selectionClick();
+                      showRepsInputSheet(
+                        context,
+                        current: _reps ?? ex.rule.repsMin,
+                        onPicked: (v) => setState(() => _reps = v),
+                      );
+                    },
+                  );
+                },
+              ),
             ],
           ),
           // 备注入口（默认收起，PRD P0 字段：单组备注）；
@@ -1752,6 +2061,16 @@ class _ActionPanelState extends State<_ActionPanel> {
             onPressed: _saving
                 ? null
                 : () async {
+                    // 余力没填写提醒（2026-09-26 Arono）：正式组第一按不落库，
+                    // 高亮余力行提示补填；再按一次按计划默认记（不拦人）。
+                    // 热身/力竭组不提醒（力竭本身就是 RIR 0）。
+                    if (_kind == SetKind.working &&
+                        _rir == null &&
+                        !_rirPrompt) {
+                      HapticFeedback.selectionClick();
+                      setState(() => _rirPrompt = true);
+                      return;
+                    }
                     _saving = true;
                     HapticFeedback.mediumImpact();
                     final reps = _reps ?? ex.rule.repsMin;
@@ -1764,6 +2083,7 @@ class _ActionPanelState extends State<_ActionPanel> {
                       note: _note,
                     );
                     _saving = false;
+                    _rirPrompt = false;
                     _noteCtrl.clear();
                     _note = '';
                     if (_noteOpen) setState(() => _noteOpen = false);
@@ -1841,8 +2161,10 @@ class _RestViewState extends State<_RestView> {
               ? tx('准备结束训练', en: 'Ready to Finish')
               : tx('下一个动作：${exname(s.exercises[s.curExIdx + 1].name)}',
                   en: 'Next exercise: ${exname(s.exercises[s.curExIdx + 1].name)}'))
-        : tx('下一组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
-            en: 'Next set: ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
+        // 下一组带动作名 + 组号（2026-09-26 Arono：休息中要知道接下来
+        // 练什么动作、第几组、做多少次）
+        : tx('下一组 · ${exname(ex?.name ?? '')} 第 ${s.workingSetsDone + 1}/$plannedWorking 组：${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} 次（点击可改重量）',
+            en: 'Next · ${exname(ex?.name ?? '')} set ${s.workingSetsDone + 1}/$plannedWorking · ${fmtLoad(s.weightDraft)}${s.weightDraft != 0 ? 'kg' : ''} × ${ex?.rule.repsMin}-${ex?.rule.repsMax} reps (tap to change weight)');
 
     // 上半（倒计时）+ 底部操作区装进同一滚动区：装得下时 min-height 撑满
     // 视口（操作区贴底，与原布局一致）；横屏/矮屏装不下时可滚动，
@@ -2502,6 +2824,99 @@ class _SummaryPage extends StatelessWidget {
           const SizedBox(height: 4),
           Text(label, style: const TextStyle(color: AppTheme.textDim)),
         ],
+      ),
+    );
+  }
+}
+
+/// 杠铃片速配（2026-09-26 Arono）：杠铃动作下改重量时，在重量数字下方
+/// 短暂显示每边挂片组合，约 4 秒自动收起。低调不弹窗：字号小、暗色、
+/// 不挡任何操作；非杠铃动作整块不渲染。
+class _PlateHintStrip extends StatefulWidget {
+  const _PlateHintStrip({required this.s, required this.gear});
+
+  final SessionController s;
+
+  /// 当前动作的细分器械（动作库词表外为空 → 不显示）。
+  final String gear;
+
+  @override
+  State<_PlateHintStrip> createState() => _PlateHintStripState();
+}
+
+class _PlateHintStripState extends State<_PlateHintStrip> {
+  Timer? _hideTimer;
+  bool _visible = false;
+  String _text = '';
+
+  @override
+  void didUpdateWidget(_PlateHintStrip old) {
+    super.didUpdateWidget(old);
+    // 只在重量变化时闪现；切动作但重量没动不闪（换动作的推荐值变化除外，
+    // 那也是一次"该挂几片"的有效提示）
+    if (widget.s.weightDraft != old.s.weightDraft) _flash();
+  }
+
+  @override
+  void dispose() {
+    _hideTimer?.cancel();
+    super.dispose();
+  }
+
+  void _flash() {
+    _hideTimer?.cancel();
+    final w = widget.s.weightDraft;
+    if (widget.gear != '杠铃' || w <= 0) {
+      _collapse();
+      return;
+    }
+    final b = platesForLoad(w);
+    final String t;
+    if (b.perSide.isEmpty) {
+      t = tx('空杆 20kg，不用挂片', en: 'Empty 20kg bar, no plates needed');
+    } else if (b.exact) {
+      t = tx('每边 ${b.perSide.map(_fmtPlate).join(' + ')}',
+          en: 'Per side: ${b.perSide.map(_fmtPlate).join(' + ')}');
+    } else {
+      t = tx('配不平：每边还差 ${_fmtPlate(b.leftoverPerSide)}kg',
+          en: "Can't match exactly: ${_fmtPlate(b.leftoverPerSide)}kg short per side");
+    }
+    setState(() {
+      _visible = true;
+      _text = t;
+    });
+    _hideTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) _collapse();
+    });
+  }
+
+  void _collapse() {
+    if (!mounted) return;
+    setState(() => _visible = false);
+  }
+
+  static String _fmtPlate(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.gear != '杠铃') return const SizedBox.shrink();
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      alignment: Alignment.topCenter,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: _visible ? 1 : 0,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Text(
+            _text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+          ),
+        ),
       ),
     );
   }

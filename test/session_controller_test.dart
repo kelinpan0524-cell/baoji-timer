@@ -1202,4 +1202,89 @@ void main() {
       await drainContinuations();
     });
   });
+
+  group('组数显示（2026-09-26 Arono：第几组帮人记好，加练组不封顶）', () {
+    test('加练态训练卡显示「加练 第 N 组」，不再夹回计划组数', () async {
+      final day = await makePlanDay('日');
+      final a = await addPlanEx(day, '动作甲', 0, sets: 1, workingSets: 1);
+      final b = await addPlanEx(day, '动作乙', 1, sets: 1, workingSets: 1);
+
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [a, b]);
+      // 计划内第 1 组
+      expect(c.buildCard().text, contains('第 1/1 组'));
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await c.startExtraSet(); // 回到动作甲加练
+      final card = c.buildCard();
+      expect(card.text, contains('加练 第 1 组'), reason: '加练组显性计数');
+      expect(card.text, isNot(contains('第 2/1 组')), reason: '不出现越界组号');
+
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await c.startExtraSet();
+      expect(c.buildCard().text, contains('加练 第 2 组'),
+          reason: '第二次加练组号继续涨');
+    });
+  });
+
+  group('忘停表守护截断', () {
+    // completeSet 的悬挂续体排干（与休息规则组同模式）
+    Future<void> drainContinuations() =>
+        Future<void>.delayed(const Duration(milliseconds: 120));
+
+    test('截到最后一条记录 +2 分钟：ended_at 与时长桶只减不增', () async {
+      final day = await makePlanDay('守护日');
+      final e = await addPlanEx(day, '深蹲', 0);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await drainContinuations();
+      c.skipRest(); // 回到动作态：挂机超时发生在 lifting 相位，扣 active 桶
+
+      // 模拟"练完挂着没停表"：把这条记录的 doneAt 拨回 3 小时前，
+      // 时长桶灌成虚高值（挂机段全进了 active 桶）。
+      final pastDoneAt = DateTime.now().millisecondsSinceEpoch - 3 * 3600000;
+      final list = c.setsByEx[c.currentEx!.id]!;
+      final old = list.removeLast();
+      list.add(SetEntry(
+        sessionExerciseId: old.sessionExerciseId,
+        weightKg: old.weightKg,
+        reps: old.reps,
+        rir: old.rir,
+        kind: old.kind,
+        doneAt: pastDoneAt,
+      ));
+      expect(c.lastSetDoneAtMs, pastDoneAt);
+      expect(c.setCount, 1);
+      c.activeMs = 200 * 60000; // 3 小时挂机 + 40 分钟训练
+
+      c.truncateDurationToLastSet();
+
+      final cap = pastDoneAt + 2 * 60000;
+      expect(c.truncatedEndAtMs, cap);
+      // 挂机段（now - cap）从 active 桶扣掉（±5 秒容差）
+      final excessMs = DateTime.now().millisecondsSinceEpoch - cap;
+      expect(c.activeMs, closeTo(200 * 60000 - excessMs, 5000));
+
+      await c.finish();
+      expect(c.session!.endedAt, cap);
+      // 总时长收敛到 cap - startedAt（分钟级 ≈ 3h 内的最后几段，不再是 3h+）
+      expect(c.session!.durationMin, lessThan(180));
+    });
+
+    test('刚记完一组（未超时）不截断', () async {
+      final day = await makePlanDay('正常日');
+      final e = await addPlanEx(day, '卧推', 0);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [e]);
+      await c.completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+      await drainContinuations();
+
+      c.activeMs = 30 * 60000;
+      c.truncateDurationToLastSet();
+      expect(c.truncatedEndAtMs, isNull); // cap >= now，不动作
+      expect(c.activeMs, 30 * 60000);
+      await c.finish();
+      expect(c.session!.durationMin, lessThan(5)); // 正常即时结束
+    });
+  });
 }

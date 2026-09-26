@@ -102,6 +102,22 @@ class TrainingPrefsPage extends StatelessWidget {
                 s.save();
               },
             ),
+            if (s.restCueEnabled)
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tx('仅耳机播放', en: 'Headphones only')),
+                subtitle: Text(
+                  tx('戴着耳机听音乐时提示音进耳机；没接耳机就不播，不外放扰人',
+                      en: 'Cues play into your headphones; with none connected they stay silent instead of playing out loud'),
+                  style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
+                value: s.restCueHeadphoneOnly,
+                activeThumbColor: AppTheme.primary,
+                onChanged: (v) {
+                  s.restCueHeadphoneOnly = v;
+                  s.save();
+                },
+              ),
             const Divider(height: 1, thickness: 1, color: AppTheme.cardHi),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -139,11 +155,53 @@ class TrainingPrefsPage extends StatelessWidget {
                 s.idleNudgeMinutes = v;
                 s.save();
               }),
+            const Divider(height: 1, thickness: 1, color: AppTheme.cardHi),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(tx('练前提醒', en: 'Training day reminder')),
+              subtitle: Text(
+                tx('训练日到了设定时刻还没练，发通知叫一声（不配飞书也有兜底）',
+                    en: 'If a training day comes and you have not trained by the set time, a notification nudges you (works without Feishu)'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+              ),
+              value: s.trainReminderOn,
+              activeThumbColor: AppTheme.primary,
+              onChanged: (v) {
+                s.trainReminderOn = v;
+                s.save();
+                c.trainReminders.reschedule();
+              },
+            ),
+            if (s.trainReminderOn)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(tx('提醒时刻', en: 'Reminder time')),
+                trailing: Text(
+                  _fmtMinutesOfDay(s.trainReminderMinOfDay),
+                  style: const TextStyle(
+                      fontSize: 17, fontWeight: FontWeight.w600),
+                ),
+                onTap: () async {
+                  final picked = await showTimePicker(
+                    context: context,
+                    initialTime: TimeOfDay(
+                        hour: s.trainReminderMinOfDay ~/ 60,
+                        minute: s.trainReminderMinOfDay % 60),
+                  );
+                  if (picked == null) return;
+                  s.trainReminderMinOfDay = picked.hour * 60 + picked.minute;
+                  s.save();
+                  c.trainReminders.reschedule();
+                },
+              ),
           ],
         ),
       ),
     ]);
   }
+
+  String _fmtMinutesOfDay(int m) =>
+      '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
 
   Widget _numRow(String label, int value, ValueChanged<int> onChanged) {
     return Row(

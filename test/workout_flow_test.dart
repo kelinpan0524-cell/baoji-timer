@@ -121,13 +121,13 @@ void main() {
       expect(p.setNumber, 1, reason: '只有正式组推进"下一组"');
     });
 
-    test('动作记满：加练记录页（extra=true，组号封顶在计划组数）', () {
+    test('动作记满：加练记录页（extra=true，组号继续涨不封顶）', () {
       final f = _twoExercises();
       f.setsByEx[11]!.addAll([_set(11), _set(11), _set(11)]);
       final p = f.currentPage(resting: false, curExIdx: 0);
       expect(p.extra, isTrue, reason: '计划 3 组已练满，继续记录即加练');
-      expect(p.setNumber, 3, reason: '组号封顶，不出现第 4/3 组');
-      expect(p.setLabel(), '第 3/3 组 · 加练');
+      expect(p.setNumber, 4, reason: '加练组号继续涨（第 4 组），不再夹回 3/3');
+      expect(p.setLabel(), '第 4 组 · 加练');
       // 练满转休息（加练后组间）同样是休息页
       expect(f.currentPage(resting: true, curExIdx: 0).kind, FlowPageKind.rest);
     });

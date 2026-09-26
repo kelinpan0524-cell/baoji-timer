@@ -71,8 +71,12 @@ class MainActivity : FlutterActivity() {
                             // 休息音效四层（条目 10）：ToneGenerator 按层选音调，
                             // 零新增依赖零音频资源；走媒体音量（STREAM_MUSIC），
                             // 与用户自己的音乐混音而不是抢通知音量。
+                            // 仅耳机模式：没接耳机就不播（健身房外放不扰人）。
                             "cue" -> {
-                                playCue(call.argument<String>("cue") ?: "")
+                                playCue(
+                                    call.argument<String>("cue") ?: "",
+                                    call.argument<Boolean>("headphoneOnly") ?: false
+                                )
                                 result.success(null)
                             }
                             // 锁屏时保持显示（条目 6）：锁屏后训练计时仍在锁屏可见
@@ -286,13 +290,16 @@ class MainActivity : FlutterActivity() {
 
     // ---- 休息音效（条目 10） ----
     /** ToneGenerator 按层选音调：开始=确认音、半程=双哔、倒数=短哔。 */
-    private fun playCue(cue: String) {
+    private fun playCue(cue: String, headphoneOnly: Boolean) {
         val tone = when (cue) {
             "start" -> ToneGenerator.TONE_PROP_ACK
             "half" -> ToneGenerator.TONE_PROP_BEEP2
             "countdown" -> ToneGenerator.TONE_PROP_BEEP
             else -> return
         }
+        // 仅耳机模式（2026-09-26 Arono）：有线/蓝牙耳机都没接就不播，
+        // 避免健身房外放打扰别人；震动与到点系统提醒不受影响。
+        if (headphoneOnly && !isHeadsetOn()) return
         try {
             val gen = toneGen
                 ?: ToneGenerator(AudioManager.STREAM_MUSIC, 80).also { toneGen = it }
@@ -301,6 +308,13 @@ class MainActivity : FlutterActivity() {
             // 音频资源被占用/初始化失败：下次重试，不影响计时
             toneGen = null
         }
+    }
+
+    /** 有线或蓝牙音频输出是否已连接（isWiredHeadsetOn/isBluetoothA2dpOn 虽废弃但跨版本行为稳定）。 */
+    @Suppress("DEPRECATION")
+    private fun isHeadsetOn(): Boolean {
+        val am = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        return am.isWiredHeadsetOn || am.isBluetoothA2dpOn || am.isBluetoothScoOn
     }
 
     // ---- 锁屏保持显示（条目 6） ----

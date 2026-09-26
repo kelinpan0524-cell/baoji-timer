@@ -4,6 +4,7 @@ import 'volume.dart';
 
 export '../models/models.dart';
 export 'local_plan.dart';
+export 'plates.dart';
 export 'progression_chain.dart';
 export 'recovery.dart';
 export 'rest_rules.dart';
@@ -304,4 +305,20 @@ String fmtDate(DateTime d) =>
 DateTime mondayOf(DateTime d) {
   final wd = d.weekday; // 1=Mon
   return DateTime(d.year, d.month, d.day).subtract(Duration(days: wd - 1));
+}
+
+/// 忘停表守护（2026-09-26 Arono）：会话时长是否可疑。
+/// 判据（调研 workout-timer 口径，只提示不自动改）：
+/// - 一组没记且已挂机 30 分钟以上 → 开了训练走开了，基本是忘停；
+/// - 有记录且总时长 ≥45 分钟但组均超过 15 分钟 → 练完后挂着没停表。
+/// 正常大容量日（组均 <15 分钟）不会误伤。
+bool isSuspiciousSessionDuration({
+  required int startedAtMs,
+  required int nowMs,
+  required int setCount,
+}) {
+  if (nowMs <= startedAtMs) return false;
+  final wallMin = (nowMs - startedAtMs) / 60000;
+  if (setCount == 0) return wallMin >= 30;
+  return wallMin >= 45 && wallMin / setCount > 15;
 }
