@@ -71,7 +71,10 @@ class AiService {
     return [
       AiMessage('system', '$kCoachPersona\n\n${planChatContract()}'),
       AiMessage('system',
-          '以下是用户 App 导出的真实训练数据，回答必须以此为依据：\n\n$dataPack'),
+          '以下是用户 App 导出的真实训练数据。开头的「当前计划与日程」是用户此刻的真实计划状态：'
+              '使用中计划、今天/明天练什么、未来 7 天日程；日期均为绝对日期，'
+              '你不知道今天几号，所有日期判断以此段为准，给训练安排类建议时优先参考它，'
+              '不要反问用户今天星期几：\n\n$dataPack'),
       ...history,
       AiMessage('user', userText),
     ];

@@ -64,8 +64,10 @@ class _AiCoachPageState extends State<AiCoachPage> {
       _dataPack = null;
     });
     try {
-      final pack = await c.export
-          .buildAiData(weeks: 8, bodyWeightKg: c.settings.bodyWeightKg);
+      final pack = await c.export.buildAiData(
+          weeks: 8,
+          bodyWeightKg: c.settings.bodyWeightKg,
+          planRepo: c.planRepo);
       if (mounted) setState(() => _dataPack = pack);
     } catch (e) {
       if (mounted) {

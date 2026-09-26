@@ -6,6 +6,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../db/db.dart';
 import '../engine/engine.dart';
+import 'plan_repository.dart';
 
 /// 导出：CSV / JSON 全量 / AI 分析包（Markdown，可直接粘给任何 AI）。
 class ExportService {
@@ -87,16 +88,36 @@ class ExportService {
     return (data['sessions'] as List).length;
   }
 
+  String _hhmm(int epochMs) {
+    final t = DateTime.fromMillisecondsSinceEpoch(epochMs);
+    return '${t.hour.toString().padLeft(2, '0')}:'
+        '${t.minute.toString().padLeft(2, '0')}';
+  }
+
   /// AI 数据包（纯数据，无提示词）：App 内「AI 教练」的对话上下文。
   /// [bodyWeightKg]：自重容量折算体重——不传/传 0 时自重动作容量记 0
   /// （旧口径）。调用点传 settings.bodyWeightKg 与统计页保持同一容量口径。
-  Future<String> buildAiData({int weeks = 8, double bodyWeightKg = 0}) async {
+  /// [planRepo]：非 null 时数据包第一段插入「当前计划与日程」（使用中计划、
+  /// 今天/明天练什么、未来 7 天日程）——LLM 不知道今天几号，导出分享类
+  /// 调用不传则该段不出现。
+  Future<String> buildAiData({
+    int weeks = 8,
+    double bodyWeightKg = 0,
+    PlanRepository? planRepo,
+  }) async {
     final now = DateTime.now();
     final from = fmtDate(now.subtract(Duration(days: weeks * 7)));
     final to = fmtDate(now);
     final sessions = await _db.sessionsBetween(from, to);
 
     final buf = StringBuffer();
+    if (planRepo != null) {
+      final snap = await _resolvePlanContext(planRepo, now);
+      if (snap != null) {
+        buf.write(buildPlanContextSection(snap));
+        buf.writeln();
+      }
+    }
     buf.writeln('## 训练概要');
     buf.writeln('- 数据时间范围：$from 至 $to');
     buf.writeln('- 训练次数：${sessions.length} 次');
@@ -184,7 +205,11 @@ class ExportService {
 
   /// AI 分析包：预制教练提示词 + 数据包（buildAiData）。
   /// 目标：直接整段复制给任意大模型，即可获得训练分析与总结。
-  Future<String> buildAiPack({int weeks = 8, double bodyWeightKg = 0}) async {
+  Future<String> buildAiPack({
+    int weeks = 8,
+    double bodyWeightKg = 0,
+    PlanRepository? planRepo,
+  }) async {
     final buf = StringBuffer();
     buf.writeln('# 训练数据分析请求');
     buf.writeln();
@@ -196,7 +221,177 @@ class ExportService {
         '（参考：增肌复合动作 90-180 秒、辅助动作 60-90 秒、大重量低次数力量组 3-5 分钟）；');
     buf.writeln('5. 给出未来 2-4 周的具体调整建议（加重策略、弱项补强、恢复建议）。');
     buf.writeln();
-    buf.write(await buildAiData(weeks: weeks, bodyWeightKg: bodyWeightKg));
+    buf.write(await buildAiData(
+        weeks: weeks, bodyWeightKg: bodyWeightKg, planRepo: planRepo));
     return buf.toString();
   }
+
+  /// 「当前计划与日程」快照解析：计划现查（不读 repo.activePlan 缓存
+  /// ——ai_coach_page._loadData 不调 reload，缓存可能过期），逐日走
+  /// repo.dayForDateOn（首页同一口径：覆盖行 > 循环推导 > 星期模板）。
+  /// 解析不出计划返回 null，调用方整段省略。
+  Future<PlanContextSnapshot?> _resolvePlanContext(
+      PlanRepository repo, DateTime now) async {
+    final plan = await _db.activePlan();
+    if (plan == null) return null;
+    final today = DateTime(now.year, now.month, now.day);
+    final todayDay = await _resolveDayLine(plan, repo, today, expand: true);
+    final tomorrowDay = await _resolveDayLine(
+        plan, repo, today.add(const Duration(days: 1)));
+    final next7 = <PlanDayLine>[];
+    for (var i = 0; i < 7; i++) {
+      next7.add(
+          await _resolveDayLine(plan, repo, today.add(Duration(days: i))));
+    }
+    const wd = '一二三四五六日';
+    final String scheduleDesc;
+    if (plan.isCycle) {
+      final head = plan.cycleRest > 0
+          ? '循环 练${plan.cycleTrain}休${plan.cycleRest}'
+          : '循环连练 ${plan.cycleTrain} 天（未设休息日）';
+      if (plan.patternStart.isEmpty) {
+        scheduleDesc = '$head（未设起始日，暂无法推导）';
+      } else {
+        final start = parseDate(plan.patternStart);
+        scheduleDesc =
+            '$head，起始日 ${plan.patternStart}（周${wd[start.weekday - 1]}）';
+      }
+    } else {
+      final days = await _db.planDays(plan.id!);
+      final byWd = <int, String>{for (final d in days) d.weekday: d.title};
+      scheduleDesc = '按星期（${[
+        for (var i = 1; i <= 7; i++)
+          if (byWd[i] != null) '周${wd[i - 1]}=${byWd[i]}',
+      ].join('；')}）';
+    }
+    // 'active' 可能是上次崩溃残留（session_controller 有恢复逻辑），
+    // 文案用「尚未结束」而不是断言用户此刻正在训练。
+    final active = await _db.activeSession();
+    final sessionNote = active == null
+        ? null
+        : '${active.planDayTitle}（${fmtDate(DateTime.fromMillisecondsSinceEpoch(active.startedAt))} '
+            '${_hhmm(active.startedAt)} 开始，尚未结束）';
+    return PlanContextSnapshot(
+      today: fmtDate(today),
+      planName: plan.name,
+      scheduleDesc: scheduleDesc,
+      todayDay: todayDay,
+      tomorrowDay: tomorrowDay,
+      next7: next7,
+      activeSessionNote: sessionNote,
+    );
+  }
+
+  /// 单日行解析。dayForDateOn 返回 null → 休息日；返回训练日但动作清单为空
+  /// → 「标题（未编排动作）」不当作休息日（飞书同步会跳过空动作日，这里刻意
+  /// 不跳，避免 AI 对当天安排得出错误结论）。只有今天（expand=true）逐动作展开。
+  Future<PlanDayLine> _resolveDayLine(
+      Plan plan, PlanRepository repo, DateTime d,
+      {bool expand = false}) async {
+    final day = await repo.dayForDateOn(plan, d);
+    final date = fmtDate(d);
+    if (day == null) {
+      return PlanDayLine(date: date, title: '');
+    }
+    final exs = await _db.dayExercises(day.id!);
+    if (exs.isEmpty) {
+      return PlanDayLine(date: date, title: '${day.title}（未编排动作）');
+    }
+    return PlanDayLine(
+      date: date,
+      title: day.title,
+      exCount: exs.length,
+      exLines: expand
+          ? [
+              for (final e in exs)
+                '${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}',
+            ]
+          : const [],
+    );
+  }
+}
+
+/// 「当前计划与日程」单日行。title 为空 = 休息日；exLines 仅今天展开
+/// （已格式化为「杠铃卧推 4×6-8」）。
+class PlanDayLine {
+  final String date; // yyyy-MM-dd
+  final String title; // '' = 休息日；「标题（未编排动作）」= 训练日但无动作
+  final int exCount;
+  final List<String> exLines;
+
+  const PlanDayLine({
+    required this.date,
+    required this.title,
+    this.exCount = 0,
+    this.exLines = const [],
+  });
+}
+
+/// 「当前计划与日程」快照（纯数据）。planName 为空 = 无使用中计划。
+class PlanContextSnapshot {
+  final String today; // yyyy-MM-dd
+  final String planName;
+  final String scheduleDesc;
+  final PlanDayLine? todayDay;
+  final PlanDayLine? tomorrowDay;
+  final List<PlanDayLine> next7;
+  final String? activeSessionNote;
+
+  const PlanContextSnapshot({
+    required this.today,
+    required this.planName,
+    required this.scheduleDesc,
+    required this.todayDay,
+    required this.tomorrowDay,
+    required this.next7,
+    required this.activeSessionNote,
+  });
+}
+
+/// 「当前计划与日程」段文本组装（纯函数，无 DB/网络/密钥，可直接单测）。
+/// 全中文紧凑，喂给大模型的数据段不走 tx() 本地化。
+String buildPlanContextSection(PlanContextSnapshot s) {
+  const wd = '一二三四五六日';
+  final buf = StringBuffer('## 当前计划与日程（日期为绝对日期）\n');
+  if (s.planName.isEmpty) {
+    buf.writeln('- 使用中计划：无（未启用任何训练计划）');
+    return buf.toString();
+  }
+  buf.writeln('- 使用中计划：${s.planName}');
+  if (s.scheduleDesc.isNotEmpty) buf.writeln('- 排程方式：${s.scheduleDesc}');
+  String weekdayOf(String date) => '周${wd[DateTime.parse(date).weekday - 1]}';
+  String dayLabel(PlanDayLine d) {
+    if (d.title.isEmpty) return '休息日';
+    if (d.exCount == 0) return d.title; // 已含「（未编排动作）」后缀
+    return '${d.title}（${d.exCount} 个动作）';
+  }
+
+  final today = s.todayDay;
+  if (today != null) {
+    buf.writeln(today.title.isEmpty
+        ? '- 今天 ${today.date}（${weekdayOf(today.date)}）：'
+            '今天是休息日（按计划无训练安排）'
+        : '- 今天 ${today.date}（${weekdayOf(today.date)}）：${today.title}');
+    if (today.exLines.isNotEmpty) {
+      buf.writeln('- 动作清单（组×次）：');
+      for (final line in today.exLines) {
+        buf.writeln('  - $line');
+      }
+    }
+  }
+  final tomorrow = s.tomorrowDay;
+  if (tomorrow != null) {
+    buf.writeln(
+        '- 明天 ${tomorrow.date}（${weekdayOf(tomorrow.date)}）：${dayLabel(tomorrow)}');
+  }
+  if (s.next7.isNotEmpty) {
+    buf.writeln('- 未来 7 天日程：');
+    for (final d in s.next7) {
+      buf.writeln('  - ${d.date} ${weekdayOf(d.date)}：${dayLabel(d)}');
+    }
+  }
+  if (s.activeSessionNote != null) {
+    buf.writeln('- 注意：当前有一场进行中的训练会话「${s.activeSessionNote}」');
+  }
+  return buf.toString();
 }

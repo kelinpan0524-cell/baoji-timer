@@ -380,14 +380,23 @@ class ExerciseMeta {
   /// 器械场景：gym=健身房（杠铃/器械）、home=居家（哑铃/弹力带/自重）、both=皆可
   final String equipment;
 
+  /// 动作要点讲解（中文数据键，显示层经 l10n cuen() 英译；空=不显示）
+  final String cue;
+
+  /// 细分器械（中文数据键）：杠铃/哑铃/龙门架绳索/固定器械/弹力带/自重/壶铃/其他器械（空=未标注）
+  final String gear;
+
   const ExerciseMeta(this.name, this.muscles, this.isCompound,
-      [this.equipment = 'both']);
+      [this.equipment = 'both', this.cue = '', this.gear = '']);
 
   String get equipmentLabel => switch (equipment) {
         'gym' => '健身房',
         'home' => '居家',
         _ => '皆可',
       };
+
+  /// 细分器械中文标签（gear 本身即中文数据键，直出；英文显示层经 l10n gearname()）
+  String get gearLabel => gear;
 
   Map<String, dynamic> toMap() => {
         'name': name,

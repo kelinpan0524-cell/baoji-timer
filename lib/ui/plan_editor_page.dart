@@ -270,7 +270,6 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
       duration: const Duration(seconds: 4),
       action: SnackBarAction(
         label: tx('撤销', en: 'Undo'),
-        textColor: AppTheme.primary,
         onPressed: () async {
           final restored = snapshot.copyWith(id: null, orderIdx: 0);
           final newId = await c.db.insertPlanExercise(restored);

@@ -292,8 +292,9 @@ class SettingsPage extends StatelessWidget {
               const SizedBox(height: 8),
               OutlinedButton(
                 onPressed: () async {
-                  final pack = await c.export
-                      .buildAiPack(bodyWeightKg: c.settings.bodyWeightKg);
+                  final pack = await c.export.buildAiPack(
+                      bodyWeightKg: c.settings.bodyWeightKg,
+                      planRepo: c.planRepo);
                   await c.export.shareText(
                     tx('AI 分析包', en: 'AI Analysis Pack'),
                     pack,
