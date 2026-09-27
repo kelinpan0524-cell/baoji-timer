@@ -555,4 +555,34 @@ void main() {
       }
     });
   });
+
+  group('收工兜底（2026-09-28 真机回归）', () {
+    testWidgets('控制器记满自动结束后，面板回调即使丢失页面也能进总结页', (tester) async {
+      setSurface(tester, const Size(360, 800));
+      await startLifting(tester);
+      // 全程 controller 直记（模拟真机上面板先被卸载、回调丢失的场景）：
+      // 最后一组落库时状态机自动结束会话，页面此后才 build。
+      await tester.runAsync(() async {
+        final s = container.session;
+        for (var i = 0; i < 6; i++) {
+          await s.completeSet(
+              weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+          if (s.phase == WorkoutPhase.resting) s.skipRest();
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      expect(container.session.hasActive, isFalse, reason: '状态机已自动结束');
+
+      await tester.pumpWidget(host(container, const WorkoutPage()));
+      // 占位分支调度兜底收尾 → _finishFlow 走真实 isolate DB → 总结页入流
+      await tester.pump();
+      await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 400)));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('本次训练已结束'), findsNothing,
+          reason: '不允许停在占位页');
+      expect(find.text('训练完成 💪'), findsOneWidget,
+          reason: '兜底收尾把总结页接进页面流');
+    });
+  });
 }
