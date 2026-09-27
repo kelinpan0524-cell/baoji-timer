@@ -29,7 +29,7 @@ class UpdateService {
   final Settings _settings;
   final http.Client _client;
 
-  static const _repo = 'kelinpan0524-cell/baoji-timer';
+  static const _repo = 'kelinpan0524-cell/leanlift';
   static const _timeout = Duration(seconds: 15);
   static const _channel = MethodChannel('baoji/updater');
 
