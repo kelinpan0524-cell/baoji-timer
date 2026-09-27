@@ -475,6 +475,12 @@ class SessionController extends ChangeNotifier {
   }) async {
     final ex = currentEx;
     if (ex == null) return false;
+    // 「当时处方」快照（wger 的 *_target 列，v8）：完成时把引擎给的
+    // 推荐重量与链目标次数一并写进组行——用户手调过的重量与它对比，
+    // 历史页就能回看「计划 vs 实际」。lastWorkout/historyBefore 在
+    // 同一动作的组间不变（done 过滤），快照值组间稳定。
+    final chainTarget = chainStateFromHistory(
+        lastWorkout[ex.name] ?? const [], ex.rule);
     final entry = SetEntry(
       sessionExerciseId: ex.id!,
       weightKg: weight,
@@ -483,6 +489,8 @@ class SessionController extends ChangeNotifier {
       kind: kind,
       doneAt: DateTime.now().millisecondsSinceEpoch,
       note: note,
+      targetWeightKg: _recommendFor(ex.name),
+      targetReps: chainTarget.targetReps,
     );
     final id = await _db.insertSet(entry);
     setsByEx
@@ -987,6 +995,16 @@ class SessionController extends ChangeNotifier {
     truncatedEndAtMs = null;
     _setPhase(WorkoutPhase.idle);
     onSessionClosed?.call();
+  }
+
+  /// 训练后主观自评（wger 的 impression 三档：1=差/2=一般/3=好）。
+  /// 总结页点选即存、可反悔改选；已 finish（status=done）的会话照样可写。
+  Future<void> setImpression(int v) async {
+    if (session == null) return;
+    if (v < 1 || v > 3) return;
+    await _db.updateSession(session!.id!, {'impression': v});
+    session = await _db.sessionById(session!.id!);
+    notifyListeners();
   }
 
   /// 本次训练汇总（用于结束页与飞书回填）。

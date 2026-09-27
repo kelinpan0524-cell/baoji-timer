@@ -126,6 +126,15 @@ class ExportService {
           ? sessions.first.date
           : '${sessions.first.date} ~ ${sessions.last.date}';
       buf.writeln('- 时间跨度：$span');
+      // 主观自评分布（v8 起总结页可选填）：给 AI 教练的恢复/疲劳信号
+      final rated = sessions.where((s) => s.impression != null).toList();
+      if (rated.isNotEmpty) {
+        final good = rated.where((s) => s.impression == 3).length;
+        final ok = rated.where((s) => s.impression == 2).length;
+        final bad = rated.where((s) => s.impression == 1).length;
+        buf.writeln(
+            '- 主观自评（${rated.length}/${sessions.length} 次已评）：好 $good · 一般 $ok · 差 $bad');
+      }
     }
     buf.writeln();
     buf.writeln('## 每次训练明细');
@@ -135,10 +144,16 @@ class ExportService {
       final map = await _db.setsOfSession(s.id!);
       final stats = sessionStatsFrom(map, ses, bodyWeightKg: bodyWeightKg);
       buf.writeln('### ${s.date} ${s.planDayTitle}');
+      final feel = switch (s.impression) {
+        1 => ' · 自评差',
+        2 => ' · 自评一般',
+        3 => ' · 自评好',
+        _ => '',
+      };
       final timeNote = s.restMs > 0
           ? '（训练 ${(s.activeMs / 60000).ceil()} 分 · 休息 ${(s.restMs / 60000).ceil()} 分）'
           : '';
-      buf.writeln('- 总容量 ${stats.volume.toStringAsFixed(0)}kg · 正式组 ${stats.workingSets} 组 · 时长 ${s.durationMin} 分钟$timeNote');
+      buf.writeln('- 总容量 ${stats.volume.toStringAsFixed(0)}kg · 正式组 ${stats.workingSets} 组 · 时长 ${s.durationMin} 分钟$feel$timeNote');
       for (final se in ses) {
         final sets = map[se.id!] ?? const <SetEntry>[];
         if (sets.isEmpty) continue;

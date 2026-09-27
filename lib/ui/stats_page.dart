@@ -88,6 +88,10 @@ class _OverviewTabState extends State<_OverviewTab> {
   String? _selectedLift;
   Future<_OverviewData>? _future;
 
+  /// 训练趋势卡（wger 统计维度借鉴）：周/月粒度 × 容量/组数/强度指标
+  String _granularity = 'week';
+  String _metric = 'volume';
+
   @override
   void initState() {
     super.initState();
@@ -113,7 +117,7 @@ class _OverviewTabState extends State<_OverviewTab> {
           return const Center(child: CircularProgressIndicator());
         }
         final d = snap.data!;
-        if (d.weeklyVolume.isEmpty) {
+        if (d.weekTrend.isEmpty) {
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -138,40 +142,116 @@ class _OverviewTabState extends State<_OverviewTab> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
             SectionCard(
-              title: tx('每周训练容量（kg）', en: 'Weekly Volume (kg)'),
-              child: SizedBox(
-                height: 200,
-                child: d.weeklyVolume.length < 2
-                    ? Center(
-                        child: Text(
-                            tx('数据还少，再练几次就能看到趋势',
-                                en: 'Not enough data yet — a few more workouts will show the trend'),
-                            style: TextStyle(color: AppTheme.textDim)))
-                    : LineChart(
-                        LineChartData(
-                          gridData: const FlGridData(show: false),
-                          borderData: FlBorderData(show: false),
-                          titlesData: FlTitlesData(
-                            bottomTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: true,
-                                reservedSize: 22,
-                                getTitlesWidget: (v, _) =>
-                                    _weekLabel(d, v.toInt()),
+              // 统计维度升级（wger 借鉴）：周/月粒度 × 容量/组数/强度一图切换
+              title: tx(
+                  _granularity == 'week' ? '训练趋势（周）' : '训练趋势（月）',
+                  en: _granularity == 'week'
+                      ? 'Training Trend (weekly)'
+                      : 'Training Trend (monthly)'),
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      SegmentedButton<String>(
+                        segments: [
+                          ButtonSegment(
+                              value: 'week', label: Text(tx('周', en: 'Week'))),
+                          ButtonSegment(
+                              value: 'month',
+                              label: Text(tx('月', en: 'Month'))),
+                        ],
+                        selected: {_granularity},
+                        onSelectionChanged: (sel) =>
+                            setState(() => _granularity = sel.first),
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          side: WidgetStatePropertyAll(
+                              BorderSide(color: Colors.transparent)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Wrap(
+                          spacing: 6,
+                          children: [
+                            for (final (m, label) in [
+                              ('volume', tx('容量', en: 'Volume')),
+                              ('sets', tx('组数', en: 'Sets')),
+                              ('intensity', tx('强度', en: 'Intensity')),
+                            ])
+                              ChoiceChip(
+                                label: Text(label,
+                                    style: const TextStyle(fontSize: 12)),
+                                selected: _metric == m,
+                                onSelected: (_) =>
+                                    setState(() => _metric = m),
+                                selectedColor: AppTheme.primary,
+                                backgroundColor: AppTheme.cardHi,
+                                side: BorderSide.none,
+                                labelStyle: TextStyle(
+                                    fontSize: 12,
+                                    color: _metric == m
+                                        ? const Color(0xFF06220F)
+                                        : AppTheme.text),
                               ),
-                            ),
-                          ),
-                          lineBarsData: [
-                            LineChartBarData(
-                              spots: d.weeklyVolume,
-                              isCurved: true,
-                              color: AppTheme.primary,
-                              barWidth: 3,
-                              dotData: const FlDotData(show: true),
-                            ),
                           ],
                         ),
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    tx(
+                        _metric == 'volume'
+                            ? '正式组总容量（kg）· 自重按系数折算'
+                            : _metric == 'sets'
+                                ? '正式组组数'
+                                : '平均强度 = 组重量 ÷ 该动作窗口内最佳 1RM（%）',
+                        en: _metric == 'volume'
+                            ? 'Total working-set volume (kg)'
+                            : _metric == 'sets'
+                                ? 'Working sets count'
+                                : 'Avg intensity = set weight ÷ best 1RM (%)'),
+                    style:
+                        const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 200,
+                    child: _trendPoints(d).length < 2
+                        ? Center(
+                            child: Text(
+                                tx('数据还少，再练几次就能看到趋势',
+                                    en: 'Not enough data yet — a few more workouts will show the trend'),
+                                style: TextStyle(color: AppTheme.textDim)))
+                        : LineChart(
+                            LineChartData(
+                              gridData: const FlGridData(show: false),
+                              borderData: FlBorderData(show: false),
+                              titlesData: FlTitlesData(
+                                bottomTitles: AxisTitles(
+                                  sideTitles: SideTitles(
+                                    showTitles: true,
+                                    reservedSize: 22,
+                                    getTitlesWidget: (v, _) =>
+                                        _trendLabel(d, v.toInt()),
+                                  ),
+                                ),
+                              ),
+                              lineBarsData: [
+                                LineChartBarData(
+                                  spots: _trendPoints(d),
+                                  isCurved: true,
+                                  color: AppTheme.primary,
+                                  barWidth: 3,
+                                  dotData: const FlDotData(show: true),
+                                ),
+                              ],
+                            ),
+                          ),
+                  ),
+                ],
               ),
             ),
             const SizedBox(height: 12),
@@ -183,8 +263,8 @@ class _OverviewTabState extends State<_OverviewTab> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    tx('按训练容量自动选前 4 · 纵轴 kg · 横轴第几次练',
-                        en: 'Top 4 by volume · y-axis kg · x-axis session #'),
+                    tx('按训练容量自动选前 4 · 纵轴 kg · 横轴训练日期 · 每天取当日最佳',
+                        en: 'Top 4 by volume · y-axis kg · x-axis date · daily best'),
                     style: const TextStyle(
                         color: AppTheme.textDim, fontSize: 12),
                   ),
@@ -281,18 +361,44 @@ class _OverviewTabState extends State<_OverviewTab> {
 
   bool _selectedLiftIn(_OverviewData d) => d.topLifts.contains(_selectedLift);
 
-  /// 周容量 x 轴刻度：约 5 个日期标签，避免拥挤
-  Widget _weekLabel(_OverviewData d, int i) {
-    if (i < 0 || i >= d.weekKeys.length) return const SizedBox.shrink();
-    final step = (d.weekKeys.length / 5).ceil();
-    if (i % step != 0 && i != d.weekKeys.length - 1) {
+  /// 当前粒度的桶键（升序）
+  List<int> _trendKeys(_OverviewData d) {
+    final keys = (_granularity == 'week' ? d.weekTrend : d.monthTrend)
+        .keys
+        .toList()
+      ..sort();
+    return keys;
+  }
+
+  List<FlSpot> _trendPoints(_OverviewData d) {
+    final map = _granularity == 'week' ? d.weekTrend : d.monthTrend;
+    final keys = _trendKeys(d);
+    final metric = switch (_metric) {
+      'sets' => TrendMetric.sets,
+      'intensity' => TrendMetric.intensity,
+      _ => TrendMetric.volume,
+    };
+    return [
+      for (var i = 0; i < keys.length; i++)
+        FlSpot(i.toDouble(), (map[keys[i]] ?? TrendAcc()).metricValue(metric))
+    ];
+  }
+
+  /// 趋势图 x 轴刻度：约 5 个日期标签（周桶显示周一、月桶显示一号）
+  Widget _trendLabel(_OverviewData d, int i) {
+    final keys = _trendKeys(d);
+    if (i < 0 || i >= keys.length) return const SizedBox.shrink();
+    final step = (keys.length / 5).ceil();
+    if (i % step != 0 && i != keys.length - 1) {
       return const SizedBox.shrink();
     }
-    final dt = DateTime.fromMillisecondsSinceEpoch(d.weekKeys[i] * 86400000);
+    final dt = DateTime.fromMillisecondsSinceEpoch(keys[i] * 86400000);
     return Padding(
       padding: const EdgeInsets.only(top: 4),
-      child: Text('${dt.month}/${dt.day}',
-          style: const TextStyle(color: AppTheme.textDim, fontSize: 10)),
+      child: Text(
+        _granularity == 'week' ? '${dt.month}/${dt.day}' : '${dt.month}月',
+        style: const TextStyle(color: AppTheme.textDim, fontSize: 10),
+      ),
     );
   }
 
@@ -311,13 +417,18 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
-  /// 主力动作 1RM 图（2026-09-26 Arono：之前不好看——竖线 + 无任何轴标签）。
-  /// 不足两场时给友好空态：告诉用户已经记了几场、当前 1RM 多少。
+  /// 主力动作 1RM 图（wger 每日最佳口径）：x 轴日期（训练日），
+  /// y = 该动作当天的最高 1RM 估值—— dips 也能诚实显示。
+  /// 不足两天时给友好空态：告诉用户已经记了几天、当前 1RM 多少。
   Widget _buildRmChart(_OverviewData d) {
     final lift = _selectedLift;
-    final pts = lift == null ? const <FlSpot>[] : (d.big4[lift] ?? const <FlSpot>[]);
+    final byDate = lift == null ? null : d.rmByDate[lift];
+    final keys = (byDate?.keys.toList() ?? <int>[])..sort();
+    final pts = [
+      for (var i = 0; i < keys.length; i++)
+        FlSpot(i.toDouble(), byDate![keys[i]]!)
+    ];
     if (lift == null || pts.length < 2) {
-      final count = lift == null ? 0 : (d.rmSessionCount[lift] ?? 0);
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -326,8 +437,8 @@ class _OverviewTabState extends State<_OverviewTab> {
               lift == null
                   ? tx('练几次之后，这里自动选出你的主力动作',
                       en: 'Top lifts are picked automatically after a few workouts')
-                  : tx('${exname(lift)}：已记 $count 场',
-                      en: '${exname(lift)}: $count sessions logged'),
+                  : tx('${exname(lift)}：已记 ${keys.length} 天',
+                      en: '${exname(lift)}: ${keys.length} days logged'),
               style: const TextStyle(fontSize: 14),
             ),
             if (pts.isNotEmpty)
@@ -357,14 +468,18 @@ class _OverviewTabState extends State<_OverviewTab> {
               showTitles: true,
               reservedSize: 22,
               interval: (pts.length / 6).clamp(1, 100).toDouble(),
-              getTitlesWidget: (v, _) => Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  tx('第 ${v.toInt() + 1} 次', en: '#${v.toInt() + 1}'),
-                  style: const TextStyle(
-                      color: AppTheme.textDim, fontSize: 10),
-                ),
-              ),
+              getTitlesWidget: (v, _) {
+                final i = v.toInt();
+                if (i < 0 || i >= keys.length) return const SizedBox.shrink();
+                final dt =
+                    DateTime.fromMillisecondsSinceEpoch(keys[i] * 86400000);
+                return Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text('${dt.month}/${dt.day}',
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 10)),
+                );
+              },
             ),
           ),
           leftTitles: AxisTitles(
@@ -415,19 +530,14 @@ class _OverviewTabState extends State<_OverviewTab> {
       restMinutes.add(FlSpot(restMinutes.length.toDouble(), s.restMs / 60000));
       restDates.add(s.date);
     }
-    final weekly = <int, double>{}; // 周一epoch天 -> 容量
+    final weekT = <int, TrendAcc>{};
+    final monthT = <int, TrendAcc>{};
     final setsByName = <String, List<SetEntry>>{};
-    final big4 = <String, List<FlSpot>>{};
-    final rmSessionCount = <String, int>{};
-    final rmSessionLast = <String, double>{};
-    final sessionIds = <int>[];
-    var curSession = -1;
+    // 每日最佳 1RM（wger 口径）：动作 → 训练日(epoch天) → 当天最高估值
+    final dailyBest = DailyBest1Rm();
+    // 动作在窗口内的历史最佳 1RM（强度分母；按行序递增 = 时间上"截至当时"）
+    final bestRm = <String, double>{};
     for (final r in rows) {
-      final sid = (r['session_id'] as num).toInt();
-      if (sid != curSession) {
-        curSession = sid;
-        sessionIds.add(sid);
-      }
       final weight = (r['weight_kg'] as num?)?.toDouble();
       final reps = (r['reps'] as num?)?.toInt();
       if (weight == null || reps == null) continue; // 无组的动作行
@@ -444,22 +554,23 @@ class _OverviewTabState extends State<_OverviewTab> {
       final date = (r['date'] as String?) ?? '';
       setsByName.putIfAbsent(name, () => []).add(entry);
       if (kind == SetKind.working) {
-        final weekKey =
-            mondayOf(parseDate(date)).millisecondsSinceEpoch ~/ 86400000;
-        weekly[weekKey] = (weekly[weekKey] ?? 0) +
-            setVolumeWithBodyweight(entry,
-                exerciseName: name, bodyWeightKg: bodyWeight);
-        // 所有动作都算 1RM 序列，"主力动作"由容量排序动态选出
+        final d = parseDate(date);
+        final vol = setVolumeWithBodyweight(entry,
+            exerciseName: name, bodyWeightKg: bodyWeight);
         final rm = estimate1RM(weight, reps);
-        final idx = sessionIds.indexOf(sid).toDouble();
-        addRmPointToSeries(big4.putIfAbsent(name, () => <FlSpot>[]), idx, rm);
-        if (rmSessionLast[name] != idx) {
-          rmSessionCount[name] = (rmSessionCount[name] ?? 0) + 1;
-          rmSessionLast[name] = idx;
-        }
+        if (rm > (bestRm[name] ?? 0)) bestRm[name] = rm;
+        dailyBest.add(name, d, rm);
+        // 强度 = 组重量 ÷ 该动作截至当时的最佳 1RM（自重/辅助配重无意义不计）
+        final best = bestRm[name]!;
+        final intensity = weight > 0 && best > 0 ? weight / best : null;
+        weekT
+            .putIfAbsent(trendKeyOf(d, TrendGranularity.week), TrendAcc.new)
+            .add(setVolume: vol, intensity: intensity);
+        monthT
+            .putIfAbsent(trendKeyOf(d, TrendGranularity.month), TrendAcc.new)
+            .add(setVolume: vol, intensity: intensity);
       }
     }
-    final keys = weekly.keys.toList()..sort();
     // 主力动作 = 近一年正式组容量前 4（不再写死杠铃四大项名）
     final volumeByName = <String, double>{};
     for (final e in setsByName.entries) {
@@ -474,39 +585,21 @@ class _OverviewTabState extends State<_OverviewTab> {
         .toList()
       ..sort((a, b) => volumeByName[b]!.compareTo(volumeByName[a]!));
     return _OverviewData(
-      weeklyVolume: [
-        for (var i = 0; i < keys.length; i++)
-          FlSpot(i.toDouble(), weekly[keys[i]]!),
-      ],
-      weekKeys: keys,
+      weekTrend: weekT,
+      monthTrend: monthT,
       topLifts: topLifts.take(4).toList(),
       restMinutes: restMinutes,
       restDates: restDates,
-      big4: big4,
+      rmByDate: dailyBest.byExercise,
       setsByName: setsByName,
-      rmSessionCount: rmSessionCount,
     );
   }
 }
 
-/// 1RM 序列加点（@visibleForTesting 供单测；2026-09-26 修"竖线"bug）：
-/// 旧逻辑同一场训练里破 PR 的每组各 add 一个点、x 都是同一场次——
-/// 所有点叠在同一 x 上，图变成一根竖线。现在同一场只保留该场最佳
-/// （原地替换），跨场次仍只记"超过此前最佳"的进步节点。
-@visibleForTesting
-void addRmPointToSeries(List<FlSpot> list, double sessionIdx, double rm) {
-  if (list.isEmpty || list.last.x != sessionIdx) {
-    if (list.isEmpty || rm > list.last.y) list.add(FlSpot(sessionIdx, rm));
-  } else if (rm > list.last.y) {
-    list[list.length - 1] = FlSpot(sessionIdx, rm);
-  }
-}
-
 class _OverviewData {
-  final List<FlSpot> weeklyVolume;
-
-  /// 与 weeklyVolume 下标对应的周一（epoch 天），供 x 轴日期标签用
-  final List<int> weekKeys;
+  /// 周/月粒度的趋势桶（key 见 trendKeyOf）
+  final Map<int, TrendAcc> weekTrend;
+  final Map<int, TrendAcc> monthTrend;
 
   /// 近一年正式组容量前 4 的动作名（动态"四大项"）
   final List<String> topLifts;
@@ -514,20 +607,19 @@ class _OverviewData {
   /// 每次训练的休息净时长（分钟，老记录为空）+ 对应日期
   final List<FlSpot> restMinutes;
   final List<String> restDates;
-  final Map<String, List<FlSpot>> big4;
+
+  /// 每日最佳 1RM：动作 → 训练日(epoch天) → 当天最高估值
+  final Map<String, Map<int, double>> rmByDate;
   final Map<String, List<SetEntry>> setsByName;
 
-  /// 各动作有正式组的场次计数（1RM 空态文案用）
-  final Map<String, int> rmSessionCount;
   _OverviewData({
-    required this.weeklyVolume,
-    required this.weekKeys,
+    required this.weekTrend,
+    required this.monthTrend,
     required this.topLifts,
     required this.restMinutes,
     required this.restDates,
-    required this.big4,
+    required this.rmByDate,
     required this.setsByName,
-    required this.rmSessionCount,
   });
 }
 
@@ -543,6 +635,9 @@ class _MuscleTab extends StatefulWidget {
 class _MuscleTabState extends State<_MuscleTab> {
   Future<Map<String, double>>? _future;
   bool _front = true;
+
+  /// 统计窗口（wger 统计维度借鉴）：本周 / 本月
+  String _period = 'week';
 
   @override
   void initState() {
@@ -577,9 +672,33 @@ class _MuscleTabState extends State<_MuscleTab> {
             // （2026-09-25 从计划页挪到数据页，计划页只管"练什么"）
             const MuscleRecoveryCard(),
             SectionCard(
-              title: tx('本周肌群容量占比', en: "This Week's Muscle Volume Share"),
+              title: tx(
+                  _period == 'week' ? '本周肌群容量占比' : '本月肌群容量占比',
+                  en: _period == 'week'
+                      ? "This Week's Muscle Volume Share"
+                      : "This Month's Muscle Volume Share"),
               child: Column(
                 children: [
+                  SegmentedButton<String>(
+                    segments: [
+                      ButtonSegment(
+                          value: 'week', label: Text(tx('本周', en: 'Week'))),
+                      ButtonSegment(
+                          value: 'month', label: Text(tx('本月', en: 'Month'))),
+                    ],
+                    selected: {_period},
+                    onSelectionChanged: (sel) {
+                      setState(() => _period = sel.first);
+                      _future = _load(app(context));
+                    },
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      side: WidgetStatePropertyAll(
+                          BorderSide(color: Colors.transparent)),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   SegmentedButton<bool>(
                     segments: [
                       ButtonSegment(
@@ -682,6 +801,83 @@ class _MuscleTabState extends State<_MuscleTab> {
                 ],
               ),
             ),
+            const SizedBox(height: 12),
+            // 上下肢分布（wger 的 upper/lower 口径）：七分区归并成
+            // 上肢（胸肩背手臂）/ 下肢（腿）/ 核心+其他 三条，一眼看结构
+            SectionCard(
+              title: tx(
+                  _period == 'week' ? '上下肢分布（本周）' : '上下肢分布（本月）',
+                  en: _period == 'week'
+                      ? 'Upper/Lower Split (this week)'
+                      : 'Upper/Lower Split (this month)'),
+              child: Builder(builder: (_) {
+                final groups = regionGroupShare(share);
+                const order = ['上肢', '下肢', '核心'];
+                final hint = groups['下肢'] ?? 0;
+                return Column(
+                  children: [
+                    for (final g in order)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 44,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  tx(g,
+                                      en: switch (g) {
+                                        '上肢' => 'Upper',
+                                        '下肢' => 'Lower',
+                                        _ => 'Core',
+                                      }),
+                                  maxLines: 1,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: groups[g] ?? 0,
+                                  minHeight: 10,
+                                  backgroundColor: AppTheme.cardHi,
+                                  valueColor: AlwaysStoppedAnimation(
+                                      AppTheme.loadColor(groups[g] ?? 0)),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 52,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Text(
+                                  '${((groups[g] ?? 0) * 100).toStringAsFixed(0)}%',
+                                  maxLines: 1,
+                                  textAlign: TextAlign.right,
+                                  style: const TextStyle(fontSize: 13),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (hint < 0.25)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          tx('提示：下肢容量不足四分之一——练上不练下，力量和体态都会失衡。',
+                              en: 'Tip: Lower-body work is under a quarter of volume — don\'t skip leg day.'),
+                          style: const TextStyle(
+                              color: AppTheme.warn, fontSize: 13),
+                        ),
+                      ),
+                  ],
+                );
+              }),
+            ),
           ],
         );
       },
@@ -689,9 +885,11 @@ class _MuscleTabState extends State<_MuscleTab> {
   }
 
   Future<Map<String, double>> _load(AppContainer c) async {
-    final monday = mondayOf(DateTime.now());
-    final sessions = await c.db
-        .sessionsBetween(fmtDate(monday), fmtDate(DateTime.now()));
+    final now = DateTime.now();
+    final from = _period == 'week'
+        ? mondayOf(now)
+        : DateTime(now.year, now.month, 1);
+    final sessions = await c.db.sessionsBetween(fmtDate(from), fmtDate(now));
     final metaMap = {for (final m in kExerciseLibrary) m.name: m};
     // 内置词表 + DB 沉淀合并（与动作库页同口径）：
     // AI 计划/编辑器沉淀的词表外动作才能在热力图与占比里正确归类
@@ -837,6 +1035,14 @@ class _BodyTabState extends State<_BodyTab>
                       if (w == null && waist == null && fat == null) {
                         toast(this.context,
                             tx('至少填一项', en: 'Fill in at least one field'));
+                        return;
+                      }
+                      // 防呆区间（wger measurements/limits 口径）：超界直接拦，
+                      // 防手滑多敲一位把曲线打飞（单位填错也拦得住）
+                      final err = validateBodyMetric(
+                          weightKg: w, waistCm: waist, bodyFatPct: fat);
+                      if (err != null) {
+                        toast(this.context, err);
                         return;
                       }
                       await c.db.upsertBodyMetric(BodyMetric(

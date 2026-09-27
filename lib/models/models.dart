@@ -434,6 +434,10 @@ class Session {
   final int restMs;
   final int activeMs;
 
+  /// 训练后主观自评（学 wger 的 impression 三档）：1=差 / 2=一般 / 3=好。
+  /// null = 未评（老记录 / 没选就收工）。
+  final int? impression;
+
   const Session({
     this.id,
     required this.date,
@@ -445,6 +449,7 @@ class Session {
     this.notes = '',
     this.restMs = 0,
     this.activeMs = 0,
+    this.impression,
   });
 
   Map<String, dynamic> toMap() => {
@@ -458,6 +463,7 @@ class Session {
         'notes': notes,
         'rest_ms': restMs,
         'active_ms': activeMs,
+        'impression': impression,
       };
 
   factory Session.fromMap(Map<String, dynamic> m) => Session(
@@ -471,6 +477,7 @@ class Session {
         notes: (m['notes'] as String?) ?? '',
         restMs: (m['rest_ms'] as num?)?.toInt() ?? 0,
         activeMs: (m['active_ms'] as num?)?.toInt() ?? 0,
+        impression: (m['impression'] as num?)?.toInt(),
       );
 
   /// 训练时长（分钟，不足 1 分钟按 1 分钟计）。
@@ -575,6 +582,13 @@ class SetEntry {
   final int doneAt; // epoch ms
   final String note;
 
+  /// 完成这组时引擎给出的「当时处方」快照（学 wger 的 *_target 列）：
+  /// targetWeightKg = 渐进链推荐重量（用户手调前的计划值）；
+  /// targetReps = 渐进链当前目标次数。
+  /// null = 老记录（v8 之前）无快照。历史页据此展示「目标 vs 实际」。
+  final double? targetWeightKg;
+  final int? targetReps;
+
   const SetEntry({
     this.id,
     required this.sessionExerciseId,
@@ -584,6 +598,8 @@ class SetEntry {
     required this.kind,
     required this.doneAt,
     this.note = '',
+    this.targetWeightKg,
+    this.targetReps,
   });
 
   /// 训练容量 = 重量 × 次数（热身组不计入容量）。
@@ -601,6 +617,8 @@ class SetEntry {
         'kind': kind,
         'done_at': doneAt,
         'note': note,
+        'target_weight_kg': targetWeightKg,
+        'target_reps': targetReps,
       };
 
   factory SetEntry.fromMap(Map<String, dynamic> m) => SetEntry(
@@ -612,6 +630,8 @@ class SetEntry {
         kind: (m['kind'] as String?) ?? SetKind.working,
         doneAt: (m['done_at'] as num?)?.toInt() ?? 0,
         note: (m['note'] as String?) ?? '',
+        targetWeightKg: (m['target_weight_kg'] as num?)?.toDouble(),
+        targetReps: (m['target_reps'] as num?)?.toInt(),
       );
 }
 

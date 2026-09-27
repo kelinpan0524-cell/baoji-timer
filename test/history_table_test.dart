@@ -1,13 +1,12 @@
 // 历史页表格化排版（2026-09-26 Arono：别再一条文字流，要格子）
-//   + 1RM 序列同场叠点修复（旧 bug：同场破 PR 各组叠在同一 x 成竖线）。
 // 覆盖：日期单独做卡片标题、计划标题独立一行、每动作一张
 // 「组/重量 kg/次数/余力」表（R2 缩写改明示余力列）、备注保留。
 // 明细行走公开布局函数 buildSessionDetailRows 直测（不绕页面异步）。
-import 'package:fl_chart/fl_chart.dart';
+// （2026-09-27：1RM 竖线修复的 addRmPointToSeries 测试随函数一并移除，
+//  1RM 图改走「每日最佳」口径，见 test/wger_p0_test.dart 的 DailyBest1Rm。）
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/engine/engine.dart';
-import 'package:baoji_timer/ui/stats_page.dart' show addRmPointToSeries;
 import 'package:baoji_timer/ui/history_page.dart';
 
 void main() {
@@ -84,34 +83,5 @@ void main() {
     // 备注保留
     expect(find.textContaining('备注'), findsOneWidget);
     expect(find.textContaining('热身偏轻'), findsOneWidget);
-  });
-
-  group('addRmPointToSeries（1RM 竖线修复）', () {
-    test('同一场破 PR 多组：只保留该场最佳，不叠同 x 点', () {
-      final list = <FlSpot>[];
-      addRmPointToSeries(list, 0, 40);
-      addRmPointToSeries(list, 0, 45.6); // 同场更好：原地替换
-      addRmPointToSeries(list, 0, 42); // 同场更差：忽略
-      expect(list.length, 1, reason: '同一场只留一个点（旧 bug 会叠成竖线）');
-      expect(list.single.y, 45.6);
-      expect(list.single.x, 0);
-    });
-
-    test('跨场次：只记超过此前最佳的进步节点', () {
-      final list = <FlSpot>[];
-      addRmPointToSeries(list, 0, 45.6);
-      addRmPointToSeries(list, 1, 40); // 退步：不记
-      addRmPointToSeries(list, 1, 46); // 场内超过历史最佳：记第 2 点
-      addRmPointToSeries(list, 2, 30); // 大退步：不记
-      expect(list, hasLength(2));
-      expect(list[1].x, 1);
-      expect(list[1].y, 46);
-    });
-
-    test('首场即起点（空序列直接记点）', () {
-      final list = <FlSpot>[];
-      addRmPointToSeries(list, 3, 50);
-      expect(list.single, const FlSpot(3, 50));
-    });
   });
 }

@@ -163,6 +163,38 @@ const kExerciseLibrary = <ExerciseMeta>[
   ExerciseMeta('哑铃侧屈', MuscleGroups(main: '核心', secondary: []), false, 'both',
       '单手握哑铃站直，另一手扶头，向握铃一侧屈体，再靠对侧腹斜肌把身体拉直，全程骨盆稳定；身体只做侧向折叠，不前倾不后仰。常见错误：低头含胸用惯性晃动、重量太大变成耸肩。',
       '哑铃'),
+
+  // ============ 补库第二弹（2026-09-27，wger 动作库肌群映射事实精选） ============
+  // 肌群归属/器械分类参考 wger exercise database（CC BY-SA 数据的事实性映射），
+  // 名称与讲解为本项目中文名。重点补器械与绳索类常见动作的空缺。
+  // —— 胸 ——
+  ExerciseMeta('坐姿推胸（推胸机）', MuscleGroups(main: '胸', secondary: ['肩', '手臂']), true, 'gym', '', '固定器械'),
+  ExerciseMeta('史密斯机卧推', MuscleGroups(main: '胸', secondary: ['肩', '手臂']), true, 'gym', '', '杠铃'),
+  ExerciseMeta('哑铃地板卧推', MuscleGroups(main: '胸', secondary: ['手臂']), true, 'both', '', '哑铃'),
+  // —— 背 ——
+  ExerciseMeta('器械划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '', '固定器械'),
+  ExerciseMeta('单臂绳索划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '', '龙门架绳索'),
+  ExerciseMeta('引体向上（反手）', MuscleGroups(main: '背', secondary: ['手臂']), true, 'both', '', '自重'),
+  // —— 肩 ——
+  ExerciseMeta('绳索侧平举', MuscleGroups(main: '肩', secondary: []), false, 'gym', '', '龙门架绳索'),
+  ExerciseMeta('哑铃耸肩', MuscleGroups(main: '肩', secondary: []), false, 'both', '', '哑铃'),
+  // —— 手臂 ——
+  ExerciseMeta('曲杠弯举（EZ杠）', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '', '杠铃'),
+  ExerciseMeta('上斜哑铃弯举', MuscleGroups(main: '手臂', secondary: []), false, 'both', '', '哑铃'),
+  ExerciseMeta('绳索过顶臂屈伸', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '', '龙门架绳索'),
+  ExerciseMeta('仰卧杠铃臂屈伸', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '', '杠铃'),
+  ExerciseMeta('弹力带过顶臂屈伸', MuscleGroups(main: '手臂', secondary: []), false, 'home', '', '弹力带'),
+  // —— 腿 ——
+  ExerciseMeta('相扑硬拉', MuscleGroups(main: '腿', secondary: ['背', '核心']), true, 'gym', '', '杠铃'),
+  ExerciseMeta('史密斯机深蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'gym', '', '杠铃'),
+  ExerciseMeta('哑铃箭步蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'both', '', '哑铃'),
+  ExerciseMeta('腿外展（外展机）', MuscleGroups(main: '腿', secondary: []), false, 'gym', '', '固定器械'),
+  ExerciseMeta('腿内收（内收机）', MuscleGroups(main: '腿', secondary: []), false, 'gym', '', '固定器械'),
+  ExerciseMeta('弹力带侧向走', MuscleGroups(main: '腿', secondary: []), false, 'home', '', '弹力带'),
+  // —— 核心 / 体能 ——
+  ExerciseMeta('仰卧举腿', MuscleGroups(main: '核心', secondary: ['腿']), false, 'home', '', '自重'),
+  ExerciseMeta('空中蹬车', MuscleGroups(main: '核心', secondary: []), false, 'home', '', '自重'),
+  ExerciseMeta('跳绳', MuscleGroups(main: '腿', secondary: ['核心']), false, 'both', '', '其他器械'),
 ];
 
 /// 兼容旧引用：薄肌计划内置词表 = 大库子集。
