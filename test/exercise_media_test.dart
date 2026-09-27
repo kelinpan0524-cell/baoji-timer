@@ -10,6 +10,7 @@ import 'package:baoji_timer/l10n/lang.dart';
 import 'package:baoji_timer/l10n/names.dart';
 import 'package:baoji_timer/presets/exercise_library.dart';
 import 'package:baoji_timer/presets/exercise_media.dart';
+import 'package:baoji_timer/presets/exercise_video.dart';
 import 'package:baoji_timer/ui/exercise_detail_sheet.dart';
 
 void main() {
@@ -32,6 +33,28 @@ void main() {
     expect(unknown, isEmpty, reason: '映射表里有动作库外的名字：$unknown');
     // 复用是合法的（如 上斜杠铃卧推（轻） 复用 上斜卧推），只要求键都有效
     expect(kExerciseImageIdMap.length, greaterThan(100));
+  });
+
+  test('视频完整性：映射键 ∈ 动作库；14 个视频资产全部打进 assets', () async {
+    final names = {for (final m in kExerciseLibrary) m.name};
+    final unknown = kExerciseVideoMap.keys
+        .where((k) => !names.contains(k))
+        .toList();
+    expect(unknown, isEmpty, reason: '视频映射里有动作库外的名字：$unknown');
+    expect(kExerciseVideoMap.length, 14);
+    final missing = <String>[];
+    for (final v in kExerciseVideoMap.values) {
+      try {
+        await rootBundle.load(v.file);
+      } on Exception {
+        missing.add(v.file);
+      }
+    }
+    expect(missing, isEmpty, reason: '缺失视频资产（重跑下载转码脚本）：$missing');
+    // 署名字段非空（CC BY-SA 的硬性要求）
+    for (final v in kExerciseVideoMap.values) {
+      expect(v.author.trim().isNotEmpty, isTrue);
+    }
   });
 
   test('英译完整性：全部动作名与要点在英文界面不回落中文（2026-09-27 Arono 要求）',
