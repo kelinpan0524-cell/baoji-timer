@@ -6,6 +6,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:baoji_timer/l10n/lang.dart';
+import 'package:baoji_timer/l10n/names.dart';
 import 'package:baoji_timer/presets/exercise_library.dart';
 import 'package:baoji_timer/presets/exercise_media.dart';
 import 'package:baoji_timer/ui/exercise_detail_sheet.dart';
@@ -30,6 +32,22 @@ void main() {
     expect(unknown, isEmpty, reason: '映射表里有动作库外的名字：$unknown');
     // 复用是合法的（如 上斜杠铃卧推（轻） 复用 上斜卧推），只要求键都有效
     expect(kExerciseImageIdMap.length, greaterThan(100));
+  });
+
+  test('英译完整性：全部动作名与要点在英文界面不回落中文（2026-09-27 Arono 要求）',
+      () {
+    Lang.setResolved(true);
+    addTearDown(() => Lang.setResolved(false));
+    final badNames = <String>[];
+    final badCues = <String>[];
+    for (final m in kExerciseLibrary) {
+      // 英文名回落 = 仍是中文原串
+      if (exname(m.name) == m.name) badNames.add(m.name);
+      // 要点英译回落 = cuen 返回中文原文
+      if (cuen(m.name, m.cue) == m.cue) badCues.add(m.name);
+    }
+    expect(badNames, isEmpty, reason: '缺动作名英译：$badNames');
+    expect(badCues, isEmpty, reason: '缺要点英译：$badCues');
   });
 
   test('资产完整性：映射到的图片文件全部打进 assets', () async {
