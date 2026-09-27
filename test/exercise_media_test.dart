@@ -6,8 +6,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:baoji_timer/l10n/lang.dart';
+import 'package:baoji_timer/l10n/names.dart';
 import 'package:baoji_timer/presets/exercise_library.dart';
 import 'package:baoji_timer/presets/exercise_media.dart';
+import 'package:baoji_timer/presets/exercise_video.dart';
 import 'package:baoji_timer/ui/exercise_detail_sheet.dart';
 
 void main() {
@@ -32,6 +35,44 @@ void main() {
     expect(kExerciseImageIdMap.length, greaterThan(100));
   });
 
+  test('视频完整性：映射键 ∈ 动作库；14 个视频资产全部打进 assets', () async {
+    final names = {for (final m in kExerciseLibrary) m.name};
+    final unknown = kExerciseVideoMap.keys
+        .where((k) => !names.contains(k))
+        .toList();
+    expect(unknown, isEmpty, reason: '视频映射里有动作库外的名字：$unknown');
+    expect(kExerciseVideoMap.length, 14);
+    final missing = <String>[];
+    for (final v in kExerciseVideoMap.values) {
+      try {
+        await rootBundle.load(v.file);
+      } on Exception {
+        missing.add(v.file);
+      }
+    }
+    expect(missing, isEmpty, reason: '缺失视频资产（重跑下载转码脚本）：$missing');
+    // 署名字段非空（CC BY-SA 的硬性要求）
+    for (final v in kExerciseVideoMap.values) {
+      expect(v.author.trim().isNotEmpty, isTrue);
+    }
+  });
+
+  test('英译完整性：全部动作名与要点在英文界面不回落中文（2026-09-27 Arono 要求）',
+      () {
+    Lang.setResolved(true);
+    addTearDown(() => Lang.setResolved(false));
+    final badNames = <String>[];
+    final badCues = <String>[];
+    for (final m in kExerciseLibrary) {
+      // 英文名回落 = 仍是中文原串
+      if (exname(m.name) == m.name) badNames.add(m.name);
+      // 要点英译回落 = cuen 返回中文原文
+      if (cuen(m.name, m.cue) == m.cue) badCues.add(m.name);
+    }
+    expect(badNames, isEmpty, reason: '缺动作名英译：$badNames');
+    expect(badCues, isEmpty, reason: '缺要点英译：$badCues');
+  });
+
   test('资产完整性：映射到的图片文件全部打进 assets', () async {
     // flutter test 的资产包里没有 AssetManifest.json，直接逐张加载验证
     // （共 216 张、约 3.4MB，秒级完成；改了映射忘跑转换脚本会被抓住）
@@ -47,7 +88,7 @@ void main() {
         }
       }
     }
-    expect(seen.length, 218, reason: '唯一资产数应为 109 动作 × 2 张');
+    expect(seen.length, 290, reason: '唯一资产数应为 145 动作 × 2 张');
     expect(missing, isEmpty, reason: '以下图片资产缺失（重跑转换脚本）：$missing');
   });
 

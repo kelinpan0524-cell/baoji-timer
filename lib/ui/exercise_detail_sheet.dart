@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:video_player/video_player.dart';
 
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
@@ -6,6 +7,7 @@ import '../l10n/names.dart';
 import '../models/models.dart';
 import '../presets/exercise_library.dart';
 import '../presets/exercise_media.dart';
+import '../presets/exercise_video.dart';
 import 'theme.dart';
 
 /// 动作解析弹层（2026-09-27 Arono 需求：图文并茂、训练中也能看）。
@@ -51,10 +53,108 @@ Future<void> showExerciseDetailSheet(
             ),
           ],
           ...exerciseMediaSection(name, m),
+          ...exerciseVideoSection(name),
         ],
       ),
     ),
   );
+}
+
+/// 示范视频段（2026-09-27，wger.de 社区 CC BY-SA 4.0）：
+/// 无声短视频，点按播放/暂停，循环；无视频的动作不渲染本段。
+List<Widget> exerciseVideoSection(String name) {
+  final v = exerciseVideoOf(name);
+  if (v == null) return const [];
+  return [
+    const SizedBox(height: 14),
+    Text(tx('动作演示', en: 'Demo Video'),
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+    const SizedBox(height: 6),
+    ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: _DemoVideoPlayer(asset: v.file),
+      ),
+    ),
+    const SizedBox(height: 4),
+    Text(
+      tx('视频来自 wger.de 社区（CC BY-SA 4.0，作者 ${v.author}）· 已转码为无声 480p',
+          en: 'Video from the wger.de community (CC BY-SA 4.0, by ${v.author}) · re-encoded silent 480p'),
+      style: const TextStyle(color: AppTheme.textDim, fontSize: 11),
+    ),
+  ];
+}
+
+/// 内嵌视频播放器：asset 播放、静音循环、点按切换播放/暂停。
+/// 播放器初始化失败（解码兼容等）时降级为一行提示，不阻塞弹层。
+class _DemoVideoPlayer extends StatefulWidget {
+  const _DemoVideoPlayer({required this.asset});
+
+  final String asset;
+
+  @override
+  State<_DemoVideoPlayer> createState() => _DemoVideoPlayerState();
+}
+
+class _DemoVideoPlayerState extends State<_DemoVideoPlayer> {
+  VideoPlayerController? _controller;
+  bool _failed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final c = VideoPlayerController.asset(widget.asset);
+    _controller = c;
+    c.initialize().then((_) {
+      if (!mounted) return;
+      c.setLooping(true);
+      setState(() {});
+      c.play();
+    }).catchError((Object _) {
+      if (mounted) setState(() => _failed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = _controller;
+    if (_failed || c == null || !c.value.isInitialized) {
+      return Container(
+        color: AppTheme.cardHi,
+        alignment: Alignment.center,
+        child: _failed
+            ? Text(tx('该设备无法播放此视频', en: 'This device cannot play this video'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 12))
+            : const SizedBox(
+                width: 24,
+                height: 24,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+      );
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() => c.value.isPlaying ? c.pause() : c.play());
+      },
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Center(child: VideoPlayer(c)),
+          // 播放中不显示按钮；暂停时给个轻提示（无声视频，点画面即恢复）
+          if (!c.value.isPlaying)
+            const Icon(Icons.play_circle_outline,
+                size: 44, color: Colors.white70),
+        ],
+      ),
+    );
+  }
 }
 
 /// 示意图 + 要点段（动作库详情弹层与训练中解析弹层共用）。
