@@ -514,4 +514,45 @@ void main() {
       expect(sets.last.rir, 2, reason: '未填时按计划默认 RIR 2 记');
     });
   });
+
+  group('大字体缩放：休息页数字与按钮永不折行（2026-09-27 截图反馈）', () {
+    /// 1.5 倍系统字体下「01:59」五个字符超出屏宽曾被软换行挤成两行；
+    /// ±30 秒/暂停/撤销小按钮同理。回归口径：倒计时数字和按钮文字
+    /// maxLines == 1 且倒计时包在 FittedBox 里兜底缩小。
+    testWidgets('1.5 倍缩放下倒计时单行 + FittedBox 兜底，按钮文字单行', (tester) async {
+      tester.platformDispatcher.textScaleFactorTestValue = 1.5;
+      addTearDown(tester.platformDispatcher.clearAllTestValues);
+      setSurface(tester, const Size(360, 800));
+      await startLifting(tester);
+      await pumpWorkout(tester);
+      // 1.5 倍缩放下「完成组」大按钮在 800 高度可能被推出可视区，
+      // tap 会落空：绕开坐标点击，直接驱动控制器完成一组进休息态
+      // （与「已有记录时不经过起始页」用例同一手法）。
+      await tester.runAsync(() async {
+        await container.session
+            .completeSet(weight: 60, reps: 8, rir: 2, kind: SetKind.working);
+        await Future<void>.delayed(const Duration(milliseconds: 150));
+      });
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('组间休息'), findsOneWidget, reason: '到达休息页');
+      expectNoLayoutError(tester);
+
+      // 倒计时数字（mm:ss，随秒走动不锁具体值）：单行 + FittedBox 兜底
+      final countdownFinder = find.byWidgetPredicate((w) =>
+          w is Text && RegExp(r'^\d{2}:\d{2}$').hasMatch(w.data ?? ''));
+      expect(countdownFinder, findsOneWidget, reason: '休息页有倒计时数字');
+      expect(tester.widget<Text>(countdownFinder).maxLines, 1,
+          reason: '倒计时数字永不折行');
+      expect(
+          find.ancestor(of: countdownFinder, matching: find.byType(FittedBox)),
+          findsAtLeastNWidgets(1),
+          reason: '放不下时整体等比缩小而不是折行');
+
+      // 底部小按钮排：文字单行（截图里「-30 秒」折行被看成「-3 / +3」）
+      for (final label in ['-30 秒', '+30 秒', '暂停', '撤销']) {
+        final t = tester.widget<Text>(find.text(label));
+        expect(t.maxLines, 1, reason: '$label 不折行');
+      }
+    });
+  });
 }
