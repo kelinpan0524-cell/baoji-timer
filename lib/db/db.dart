@@ -50,7 +50,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 7,
+          version: 8,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -119,6 +119,9 @@ class Db {
     if (oldV < 7) {
       await upgradeV6to7(db);
     }
+    if (oldV < 8) {
+      await upgradeV7to8(db);
+    }
   }
 
   /// v6：计划模板目标参数快照进训练记录（调研条目 14）。
@@ -149,6 +152,17 @@ class Db {
         snapshot TEXT NOT NULL,
         deleted_at TEXT NOT NULL
       )''');
+  }
+
+  /// v8：wger 借鉴两条（2026-09-27）——
+  /// ① 组行「当时处方」快照：sets 加 target_weight_kg / target_reps（可空，
+  ///   老记录 null = 无快照，消费端不展示目标对比）；
+  /// ② 会话主观自评：sessions 加 impression（1=差/2=一般/3=好，null=未评）。
+  @visibleForTesting
+  Future<void> upgradeV7to8(Database db) async {
+    await db.execute('ALTER TABLE sets ADD COLUMN target_weight_kg REAL');
+    await db.execute('ALTER TABLE sets ADD COLUMN target_reps INTEGER');
+    await db.execute('ALTER TABLE sessions ADD COLUMN impression INTEGER');
   }
 
   /// 建表（onCreate 与单元测试共用）。
@@ -208,7 +222,8 @@ class Db {
         status TEXT NOT NULL DEFAULT 'active',
         notes TEXT NOT NULL DEFAULT '',
         rest_ms INTEGER NOT NULL DEFAULT 0,
-        active_ms INTEGER NOT NULL DEFAULT 0
+        active_ms INTEGER NOT NULL DEFAULT 0,
+        impression INTEGER
       )''');
     await db.execute('''
       CREATE TABLE session_exercises(
@@ -234,7 +249,9 @@ class Db {
         rir INTEGER NOT NULL DEFAULT 2,
         kind TEXT NOT NULL DEFAULT 'working',
         done_at INTEGER NOT NULL,
-        note TEXT NOT NULL DEFAULT ''
+        note TEXT NOT NULL DEFAULT '',
+        target_weight_kg REAL,
+        target_reps INTEGER
       )''');
     await db.execute(
         'CREATE INDEX idx_sets_se ON sets(session_exercise_id)');

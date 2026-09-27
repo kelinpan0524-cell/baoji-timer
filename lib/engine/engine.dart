@@ -8,6 +8,7 @@ export 'plates.dart';
 export 'progression_chain.dart';
 export 'recovery.dart';
 export 'rest_rules.dart';
+export 'trends.dart';
 export 'volume.dart';
 export 'workout_flow.dart';
 

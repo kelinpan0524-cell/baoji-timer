@@ -625,6 +625,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
         final sum = _summary;
         if (sum == null) return null;
         return _SummaryPage(
+          s: s,
           stats: sum.stats,
           verdicts: sum.verdicts,
           title: sum.title,
@@ -2745,6 +2746,7 @@ class TrainingSummary {
 
 class _SummaryPage extends StatelessWidget {
   const _SummaryPage({
+    required this.s,
     required this.stats,
     required this.verdicts,
     required this.title,
@@ -2754,6 +2756,7 @@ class _SummaryPage extends StatelessWidget {
     required this.restMin,
   });
 
+  final SessionController s;
   final SessionStats stats;
   final List<String> verdicts;
   final String title;
@@ -2812,6 +2815,10 @@ class _SummaryPage extends StatelessWidget {
                 style: const TextStyle(color: AppTheme.textDim),
               ),
               const SizedBox(height: 24),
+              // 主观自评（wger 的 impression 三档）：总结页点选即存、可改选；
+              // 不弹窗不打断——出现在训练结束之后，收工前顺手一击。
+              _ImpressionSelector(s: s),
+              const SizedBox(height: 16),
               if (prNames.isNotEmpty) ...[
                 Container(
                   padding: const EdgeInsets.all(16),
@@ -2878,6 +2885,79 @@ class _SummaryPage extends StatelessWidget {
           Text(label, style: const TextStyle(color: AppTheme.textDim)),
         ],
       ),
+    );
+  }
+}
+
+/// 总结页三档自评（wger impression：差/一般/好）。
+/// 本地持选态 + 落库；未选不强迫（收工跳过 = null 未评）。
+class _ImpressionSelector extends StatefulWidget {
+  const _ImpressionSelector({required this.s});
+
+  final SessionController s;
+
+  @override
+  State<_ImpressionSelector> createState() => _ImpressionSelectorState();
+}
+
+class _ImpressionSelectorState extends State<_ImpressionSelector> {
+  int? _sel;
+
+  @override
+  void initState() {
+    super.initState();
+    _sel = widget.s.session?.impression;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          tx('这次练得怎么样？', en: 'How did it feel?'),
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 15, color: AppTheme.textDim),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (final (v, label, icon) in [
+              (1, tx('差', en: 'Rough'), Icons.sentiment_dissatisfied),
+              (2, tx('一般', en: 'Okay'), Icons.sentiment_neutral),
+              (3, tx('好', en: 'Great'), Icons.sentiment_satisfied_alt),
+            ])
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(left: v == 1 ? 0 : 6),
+                  child: ChoiceChip(
+                    key: Key('impression_$v'),
+                    avatar: Icon(icon,
+                        size: 18,
+                        color: _sel == v
+                            ? const Color(0xFF06220F)
+                            : AppTheme.textDim),
+                    label: Text(label),
+                    selected: _sel == v,
+                    onSelected: (_) {
+                      HapticFeedback.selectionClick();
+                      setState(() => _sel = v);
+                      widget.s.setImpression(v);
+                    },
+                    selectedColor: AppTheme.primary,
+                    backgroundColor: AppTheme.cardHi,
+                    side: BorderSide.none,
+                    labelStyle: TextStyle(
+                      color: _sel == v
+                          ? const Color(0xFF06220F)
+                          : AppTheme.text,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

@@ -17,6 +17,18 @@ const _weekdayEn = {
   '日': 'Sun',
 };
 
+IconData _impressionIcon(int v) => switch (v) {
+      1 => Icons.sentiment_dissatisfied,
+      3 => Icons.sentiment_satisfied_alt,
+      _ => Icons.sentiment_neutral,
+    };
+
+Color _impressionColor(int v) => switch (v) {
+      1 => AppTheme.warn,
+      3 => AppTheme.primary,
+      _ => AppTheme.textDim,
+    };
+
 /// 历史页：月历 + 当日训练明细。
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -228,11 +240,24 @@ class _HistoryPageState extends State<HistoryPage> {
           // 标题只放日期（定长不折行）：日期+计划题拆两行后，
           // 长标题不会再把「2026-09-26」从中间折断（2026-09-26 Arono）
           title: s.date,
-          trailing: Text(
-            s.status == 'quit'
-                ? tx('已中断', en: 'Interrupted')
-                : tx('${s.durationMin} 分钟', en: '${s.durationMin} min'),
-            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 主观自评（v8 起总结页可选填）：一眼看出那天的状态
+              if (s.impression != null)
+                Icon(
+                  _impressionIcon(s.impression!),
+                  size: 16,
+                  color: _impressionColor(s.impression!),
+                ),
+              if (s.impression != null) const SizedBox(width: 4),
+              Text(
+                s.status == 'quit'
+                    ? tx('已中断', en: 'Interrupted')
+                    : tx('${s.durationMin} 分钟', en: '${s.durationMin} min'),
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
+            ],
           ),
           // 长按删除误开的训练（配合训练页"放弃本次"，P1-12）；
           // 读屏语义：标签完整朗读 + "双击并按住"提示作为长按的替代路径
@@ -343,6 +368,40 @@ List<Widget> buildSessionDetailRows(
                   const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),
             const SizedBox(height: 4),
+            // 「目标 vs 实际」行（wger 的 target 快照思路）：
+            // 新记录（v8+）显示完成当时引擎给的处方（推荐重量 × 链目标次数），
+            // 老记录回退显示动作行上的模板目标快照（v6 起有），再老回退规则参数。
+            Builder(builder: (_) {
+              final snap = sets
+                  .where((x) => x.targetWeightKg != null || x.targetReps != null)
+                  .toList();
+              final String line;
+              if (snap.isNotEmpty) {
+                final t = snap.first;
+                final w = t.targetWeightKg;
+                line = tx(
+                  '目标 ${w == null ? '' : '${fmtKg(w)}kg × '}${t.targetReps} 次',
+                  en: 'Target ${w == null ? '' : '${fmtKg(w)}kg × '}${t.targetReps} reps',
+                );
+              } else {
+                final tSets =
+                    se.targetSets > 0 ? se.targetSets : se.rule.workingSets;
+                final tMin =
+                    se.targetRepsMin > 0 ? se.targetRepsMin : se.rule.repsMin;
+                final tMax =
+                    se.targetRepsMax > 0 ? se.targetRepsMax : se.rule.repsMax;
+                line = tx('计划目标 $tSets 组 × $tMin-$tMax 次',
+                    en: 'Target $tSets sets × $tMin-$tMax reps');
+              }
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  line,
+                  style:
+                      const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
+              );
+            }),
             Table(
               border: const TableBorder(
                 horizontalInside: BorderSide(color: AppTheme.cardHi, width: 1),
