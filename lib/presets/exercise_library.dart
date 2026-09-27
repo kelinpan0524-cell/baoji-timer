@@ -195,6 +195,53 @@ const kExerciseLibrary = <ExerciseMeta>[
   ExerciseMeta('仰卧举腿', MuscleGroups(main: '核心', secondary: ['腿']), false, 'home', '仰卧双腿并拢伸直，下腹发力把腿抬至接近垂直再缓慢下放至将触地。常见错误：腰部拱起离地、自由落体式下放。', '自重'),
   ExerciseMeta('空中蹬车', MuscleGroups(main: '核心', secondary: []), false, 'home', '仰卧对侧肘碰膝交替进行，另一腿伸直悬空，重点在转体幅度而不是卷起高度。常见错误：抱头拉颈、伸直腿放太低压腰。', '自重'),
   ExerciseMeta('跳绳', MuscleGroups(main: '腿', secondary: ['核心']), false, 'both', '手腕摇绳、前脚掌轻点小跳，膝盖微屈缓冲，节奏比跳的高度重要。常见错误：大臂抡绳、跳得过高总绊脚。', '其他器械'),
+
+  // ============ 补库第三弹（2026-09-27 深夜，Arono 拍板从 free-exercise-db 再扩一批） ============
+  // 同第二弹口径：肌群/复合单关节取 free-exercise-db（Unlicense）事实映射，
+  // 名称与要点原创；全部有对应示意图（见 exercise_media.dart）。
+  // —— 胸 ——
+  ExerciseMeta('下斜杠铃卧推', MuscleGroups(main: '胸', secondary: ['肩', '手臂']), true, 'gym', '下斜凳勾住双脚固定，杠铃落胸口中下沿再沿略向后上的轨迹推起，主打胸下沿。常见错误：身体向头部方向滑动、杠铃漂向颈部。', '杠铃'),
+  ExerciseMeta('哑铃上斜飞鸟', MuscleGroups(main: '胸', secondary: []), false, 'both', '上斜凳仰卧，肘部微屈角度固定，哑铃沿弧线打开至胸上沿充分拉伸再合拢。常见错误：肘角变化变成推、下放过深压肩。', '哑铃'),
+  ExerciseMeta('史密斯机上斜卧推', MuscleGroups(main: '胸', secondary: ['肩', '手臂']), true, 'gym', '上斜姿势下沿史密斯机轨道推起，肩胛全程收紧；轨道已固定平衡，更要主动放慢离心。常见错误：臀部滑动离凳、底部借反弹。', '杠铃'),
+  ExerciseMeta('绳索上斜夹胸', MuscleGroups(main: '胸', secondary: []), false, 'gym', '龙门架滑轮调低位，仰卧上斜凳，绳索从身体两侧向上向内夹拢至胸前上方。常见错误：屈肘变成推、肩胛跟着上抬。', '龙门架绳索'),
+  ExerciseMeta('哑铃窄距卧推', MuscleGroups(main: '胸', secondary: ['手臂']), true, 'both', '哑铃并拢悬于胸口中线上方窄距推起，胸内侧与三头参与更多。常见错误：肘过度外展、顶端哑铃相撞失稳。', '哑铃'),
+  // —— 背 ——
+  ExerciseMeta('早安式', MuscleGroups(main: '背', secondary: ['腿']), true, 'gym', '杠铃压上背，屈髋俯身至上背接近平行地面再伸髋站直，腘绳与下背全程绷住。重量保守，这是练后链不是练极限。常见错误：屈膝变深蹲、弓背、贪重。', '杠铃'),
+  ExerciseMeta('V把下拉', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '窄距 V 把下拉至锁骨位置，肘部贴身垂直向下，背阔下部与外侧刺激多。常见错误：身体过度后仰变成划船。', '龙门架绳索'),
+  ExerciseMeta('窄距高位下拉', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '窄距把杠拉向上胸，肘沿身体两侧走，行程比宽距更长。常见错误：幅度只做一半、二头代偿。', '龙门架绳索'),
+  ExerciseMeta('反握杠铃划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '俯身约 45 度反握杠铃贴身拉向下腹，对背阔下部刺激好。常见错误：弓腰、靠爆发甩杠。', '杠铃'),
+  ExerciseMeta('哑铃双臂俯身划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'both', '俯身双哑铃同时拉向髋部两侧，肘贴身向后顶，顶峰夹背。常见错误：耸肩、躯干起伏借力。', '哑铃'),
+  ExerciseMeta('仰卧杠铃上拉', MuscleGroups(main: '背', secondary: ['胸', '手臂']), false, 'gym', '横凳仰卧，屈臂固定角度把杠铃从头顶后方沿弧线拉回胸口上方，练背阔与胸。常见错误：肘角失控变成臂屈伸、臀部下坠。', '杠铃'),
+  ExerciseMeta('反手高位下拉', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '反握与肩同宽把杠拉到锁骨上方，肱二头参与多、对新手友好。常见错误：身体后仰过度、半程。', '龙门架绳索'),
+  // —— 肩 ——
+  ExerciseMeta('坐姿杠铃推举', MuscleGroups(main: '肩', secondary: ['手臂']), true, 'gym', '坐姿从锁骨位把杠推过头顶至耳侧，核心绷紧腰不塌。常见错误：过度挺腰、肘部外飘。', '杠铃'),
+  ExerciseMeta('直立划船', MuscleGroups(main: '肩', secondary: ['手臂']), false, 'gym', '窄握把杠贴身拉至下颌高度，肘始终高于手；练肩中束与斜方。肩部不适者改用绳索宽握或跳过。常见错误：杠离身体、耸肩代偿、拉得过高。', '杠铃'),
+  ExerciseMeta('绳索反向飞鸟', MuscleGroups(main: '肩', secondary: ['背']), false, 'gym', '龙门架两滑轮对穿，双手交叉握对侧把手反向展开，肩后束持续张力。常见错误：用背阔代偿、重量过大。', '龙门架绳索'),
+  ExerciseMeta('单臂哑铃推举', MuscleGroups(main: '肩', secondary: ['手臂']), true, 'both', '单侧哑铃推举，核心抗侧屈保持骨盆端正，两侧对称着练。常见错误：躯干歪斜借力。', '哑铃'),
+  // —— 手臂 ——
+  ExerciseMeta('集中弯举', MuscleGroups(main: '手臂', secondary: []), false, 'both', '坐姿肘抵大腿内侧单独弯举，另一手可扶腿稳定，顶端充分挤压二头。常见错误：甩臂借力、身体后仰。', '哑铃'),
+  ExerciseMeta('反握杠铃弯举', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '掌心朝下反握杠铃弯举，练前臂伸肌与肱肌，握力短板的补课动作，重量宜轻。常见错误：贪重导致腕痛、甩杠。', '杠铃'),
+  ExerciseMeta('绳索锤式弯举', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '绳索把手对握做锤式弯举，肱肌与前臂全程张力，顶端不像哑铃会失压。常见错误：肘部前移。', '龙门架绳索'),
+  ExerciseMeta('V把下压', MuscleGroups(main: '手臂', secondary: []), false, 'gym', 'V 把下压至手臂完全伸直，主打三头外侧头，顶端挤压一秒。常见错误：肘外张、身体下压借力。', '龙门架绳索'),
+  ExerciseMeta('仰卧哑铃臂屈伸', MuscleGroups(main: '手臂', secondary: []), false, 'both', '仰卧持哑铃于额头上方，上臂垂直固定，屈肘向头顶后方下放再伸直。常见错误：上臂跟着摆动、下放过猛。', '哑铃'),
+  ExerciseMeta('哑铃后踢', MuscleGroups(main: '手臂', secondary: []), false, 'both', '俯身肘部固定向上向后踢伸三头，顶端挤压一秒慢回。常见错误：甩动借力、幅度不足。', '哑铃'),
+  ExerciseMeta('上斜哑铃锤式弯举', MuscleGroups(main: '手臂', secondary: []), false, 'both', '靠在上斜凳上手臂垂向后方，对握弯举从拉伸位开始，肱肌刺激深。常见错误：肘往前送、肩部代偿。', '哑铃'),
+  // —— 腿 ——
+  ExerciseMeta('直腿硬拉', MuscleGroups(main: '腿', secondary: ['背']), true, 'gym', '膝盖几乎锁直微屈，屈髋让杠贴腿下放至腘绳极限再伸髋站起；比罗马尼亚硬拉膝角更严格，重量更轻。常见错误：弓背、杠离腿。', '杠铃'),
+  ExerciseMeta('相扑哑铃深蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'both', '宽站距脚尖外展，双手持一只哑铃垂于体前垂直下蹲，大腿内侧与臀参与多。常见错误：膝内扣、脚跟离地。', '哑铃'),
+  ExerciseMeta('杠铃箭步蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'gym', '杠铃压上背做箭步蹲，配重稳定适合渐进加重。常见错误：跨步过小挤膝、躯干前扑。', '杠铃'),
+  ExerciseMeta('坐姿腿弯举', MuscleGroups(main: '腿', secondary: []), false, 'gym', '坐姿器械腿弯举，与俯卧腿弯举的髋角互补，腘绳不同段刺激。常见错误：抬臀离垫、幅度减半。', '固定器械'),
+  ExerciseMeta('驴式提踵', MuscleGroups(main: '腿', secondary: []), false, 'gym', '屈髋俯身让小腿在拉伸位发力提踵，需要器械挡板或伙伴压住腰背。常见错误：弹跳式快做、行程不足。', '其他器械'),
+  ExerciseMeta('箱式深蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'gym', '蹲到稳固的箱子顶面停一拍再站起，强化伸髋力量与底部信心。常见错误：坐上箱子就放松弓腰。', '其他器械'),
+  // —— 核心 ——
+  ExerciseMeta('仰卧起坐', MuscleGroups(main: '核心', secondary: []), false, 'home', '屈膝仰卧，腹肌发力把上半身卷起至胸口贴近大腿再缓慢回放。下背不适者改练卷腹。常见错误：抱头拽颈、脚被压死全靠髋甩。', '自重'),
+  ExerciseMeta('侧卷腹', MuscleGroups(main: '核心', secondary: []), false, 'home', '仰卧屈膝倒向一侧，腹斜肌收缩把同侧肋骨拉向髋部卷起，两侧对称。常见错误：拉脖子、靠转体惯性。', '自重'),
+  ExerciseMeta('健身球卷腹', MuscleGroups(main: '核心', secondary: []), false, 'both', '仰卧于健身球上做卷腹，不稳定平面额外激活核心稳定肌。常见错误：球上打滑、颈部代偿发力。', '其他器械'),
+  ExerciseMeta('V字两头起', MuscleGroups(main: '核心', secondary: []), false, 'home', '上下肢同时抬起手脚相触成 V 字再缓慢下放，整个腹直肌参与。常见错误：只甩腿、下放时腰砸地。', '自重'),
+  ExerciseMeta('器械卷腹', MuscleGroups(main: '核心', secondary: []), false, 'gym', '坐姿卷腹器械，胸椎发力把上身卷向骨盆方向，回放要慢。常见错误：髋部前后晃代偿、重量过大靠惯性。', '固定器械'),
+  // —— 功能 ——
+  ExerciseMeta('借力推', MuscleGroups(main: '肩', secondary: ['手臂', '腿']), true, 'gym', '屈膝微蹲借腿部蹬伸把杠铃一次性推过头顶，练全身爆发力；蹬伸与上推同步完成。常见错误：分成先蹲后推两段、推起时脚跟离地。', '杠铃'),
+  ExerciseMeta('壶铃单臂划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'both', '俯身单手持壶铃贴身拉向髋侧，肘贴肋走。常见错误：扭转躯干借力、拉向胸口。', '壶铃'),
 ];
 
 /// 兼容旧引用：薄肌计划内置词表 = 大库子集。

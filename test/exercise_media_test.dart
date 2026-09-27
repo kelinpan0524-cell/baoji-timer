@@ -47,7 +47,7 @@ void main() {
         }
       }
     }
-    expect(seen.length, 218, reason: '唯一资产数应为 109 动作 × 2 张');
+    expect(seen.length, 290, reason: '唯一资产数应为 145 动作 × 2 张');
     expect(missing, isEmpty, reason: '以下图片资产缺失（重跑转换脚本）：$missing');
   });
 
