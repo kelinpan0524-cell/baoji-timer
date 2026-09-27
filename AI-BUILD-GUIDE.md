@@ -41,7 +41,7 @@ android/       Android 原生：MainActivity.kt（308 行，原生通道实现�
 
 适用：用户只是想用 Android 版，不想碰代码。
 
-1. 打开 https://github.com/kelinpan0524-cell/baoji-timer/releases
+1. 打开 https://github.com/kelinpan0524-cell/leanlift/releases
 2. 下载最新 tag（形如 `b17`）下的 `app-release.apk`
 3. 手机上直接安装。Android 8+ 会提示「未知来源应用」，按引导允许即可
 4. 装好即用：内置薄肌计划，不注册不登录
@@ -67,8 +67,8 @@ android/       Android 原生：MainActivity.kt（308 行，原生通道实现�
 ### 步骤
 
 ```bash
-git clone https://github.com/kelinpan0524-cell/baoji-timer.git
-cd baoji-timer
+git clone https://github.com/kelinpan0524-cell/leanlift.git
+cd leanlift
 flutter pub get
 flutter analyze          # 必须输出 "No issues found!"
 flutter test             # 必须全过
@@ -98,14 +98,14 @@ flutter build apk --release
 
 ```bash
 # 在 GitHub 网页上点 Fork（默认公开，够用；fork 成私有仓则见任务 A 之外的令牌说明）
-git clone https://github.com/<你的用户名>/baoji-timer.git
-cd baoji-timer
+git clone https://github.com/<你的用户名>/leanlift.git
+cd leanlift
 ```
 
 ### 要改的两个地方
 
 1. **更新源指向自己的仓库**：`lib/services/update_service.dart` 里的
-   `static const _repo = 'kelinpan0524-cell/baoji-timer'` 改成你的 `<用户名>/<仓库名>`。
+   `static const _repo = 'kelinpan0524-cell/leanlift'` 改成你的 `<用户名>/<仓库名>`。
    公开 fork 免令牌；私有 fork 需在 App 设置页贴一个只读令牌（详见
    [docs/update-setup.md](docs/update-setup.md) 文末）。
 2. **CI 签名（可选）**：`.github/workflows/ci.yml` 的 release 依赖原仓库的
@@ -137,7 +137,7 @@ cd baoji-timer
 ### D1. 生成 iOS 工程
 
 ```bash
-cd baoji-timer
+cd leanlift
 flutter create --platforms=ios .
 flutter pub get
 ```
