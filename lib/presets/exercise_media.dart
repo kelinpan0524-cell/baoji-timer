@@ -1,0 +1,142 @@
+/// 动作示意图映射（2026-09-27，Arono 需求「图文并茂的动作解析」）。
+///
+/// 素材来自 free-exercise-db（github.com/yuhonas/free-exercise-db，
+/// 上游 pin commit f00c92c），**The Unlicense = 公有领域**，可自由打包
+/// 修改、无署名义务；App 内「动作库」页脚仍保留一行致谢以示尊重。
+/// 每个动作两张图：0 = 起始姿势，1 = 结束姿势（850x567 真人示范照，
+/// 打包时已统一缩放转 WebP）。
+///
+/// 映射为人工逐条定稿：同名变体共用一图（如「上斜杠铃卧推（轻）」复用
+/// 上斜卧推）；free-exercise-db 无对应动作或风格不匹配的（弹力带系、
+/// 波比跳、熊爬、鸟狗式、靠墙静蹲、派克俯卧撑、反向雪天使、弹力带下拉、
+/// 弹力带坐姿划船、弹力带弯举、弹力带过顶臂屈伸）不配图——详情卡只显示
+/// 要点文本，不显示占位图。
+const kFedbUpstreamCommit = 'f00c92c';
+
+/// 中文名 → free-exercise-db 动作 id。
+const kExerciseImageIdMap = <String, String>{
+  // —— 胸 ——
+  '杠铃卧推': 'Barbell_Bench_Press_-_Medium_Grip',
+  '上斜杠铃卧推': 'Barbell_Incline_Bench_Press_-_Medium_Grip',
+  '上斜杠铃卧推（轻）': 'Barbell_Incline_Bench_Press_-_Medium_Grip',
+  '上斜哑铃卧推': 'Incline_Dumbbell_Press',
+  '哑铃卧推': 'Dumbbell_Bench_Press',
+  '坐姿夹胸（蝴蝶机）': 'Butterfly',
+  '绳索夹胸': 'Cable_Crossover',
+  '双杠臂屈伸（挺胸）': 'Dips_-_Chest_Version',
+  '俯卧撑': 'Pushups',
+  '上斜俯卧撑': 'Incline_Push-Up_Medium',
+  '下斜俯卧撑（脚垫高）': 'Push-Ups_With_Feet_Elevated',
+  '哑铃飞鸟': 'Dumbbell_Flyes',
+  '弹力带夹胸': 'Cross_Over_-_With_Bands',
+  '坐姿推胸（推胸机）': 'Leverage_Chest_Press',
+  '史密斯机卧推': 'Smith_Machine_Bench_Press',
+  '哑铃地板卧推': 'Dumbbell_Floor_Press',
+  '哑铃仰卧上拉': 'Bent-Arm_Dumbbell_Pullover',
+  // —— 背 ——
+  '引体向上': 'Pullups',
+  '负重引体向上': 'Weighted_Pull_Ups',
+  '引体向上（反手）': 'Chin-Up',
+  '高位下拉': 'Wide-Grip_Lat_Pulldown',
+  '杠铃划船': 'Bent_Over_Barbell_Row',
+  '坐姿划船': 'Seated_Cable_Rows',
+  '杠铃硬拉': 'Barbell_Deadlift',
+  '相扑硬拉': 'Sumo_Deadlift',
+  '直臂下压': 'Straight-Arm_Pulldown',
+  'T杠划船': 'T-Bar_Row_with_Handle',
+  '山羊挺身': 'Hyperextensions_Back_Extensions',
+  '反向划船': 'Inverted_Row',
+  '哑铃单臂划船': 'One-Arm_Dumbbell_Row',
+  '器械划船': 'Leverage_Iso_Row',
+  '单臂绳索划船': 'Seated_One-arm_Cable_Pulley_Rows',
+  // —— 肩 ——
+  '站姿推举': 'Standing_Military_Press',
+  '坐姿哑铃推举': 'Seated_Dumbbell_Press',
+  '史密斯机推肩': 'Smith_Machine_Overhead_Shoulder_Press',
+  '哑铃侧平举': 'Side_Lateral_Raise',
+  '俯身飞鸟（后束）': 'Reverse_Flyes',
+  '面拉': 'Face_Pull',
+  '弹力带面拉': 'Back_Flyes_-_With_Bands',
+  '哑铃前平举': 'Front_Dumbbell_Raise',
+  '杠铃耸肩': 'Barbell_Shrug',
+  '哑铃耸肩': 'Dumbbell_Shrug',
+  '弹力带侧平举': 'Lateral_Raise_-_With_Bands',
+  '阿诺德推举': 'Arnold_Dumbbell_Press',
+  '弹力带肩外旋': 'External_Rotation_with_Band',
+  '蝴蝶机反向飞鸟（后束）': 'Reverse_Machine_Flyes',
+  '绳索侧平举': 'Cable_Seated_Lateral_Raise',
+  // —— 手臂 ——
+  '杠铃弯举': 'Barbell_Curl',
+  '哑铃锤式弯举': 'Hammer_Curls',
+  '哑铃弯举': 'Dumbbell_Bicep_Curl',
+  '绳索下压': 'Triceps_Pushdown',
+  '哑铃颈后臂屈伸': 'Standing_Dumbbell_Triceps_Extension',
+  '窄距卧推': 'Close-Grip_Barbell_Bench_Press',
+  '凳上臂屈伸': 'Bench_Dips',
+  '双杠臂屈伸': 'Dips_-_Triceps_Version',
+  '牧师凳弯举': 'Preacher_Curl',
+  '曲杠弯举（EZ杠）': 'EZ-Bar_Curl',
+  '上斜哑铃弯举': 'Incline_Dumbbell_Curl',
+  '绳索过顶臂屈伸': 'Cable_Rope_Overhead_Triceps_Extension',
+  '仰卧杠铃臂屈伸': 'Lying_Triceps_Press',
+  // —— 腿 ——
+  '杠铃深蹲': 'Barbell_Squat',
+  '腿举（倒蹬机）': 'Leg_Press',
+  '保加利亚分腿蹲': 'Split_Squats',
+  '哈克深蹲': 'Hack_Squat',
+  '罗马尼亚硬拉': 'Romanian_Deadlift',
+  '哑铃罗马尼亚硬拉': 'Stiff-Legged_Dumbbell_Deadlift',
+  '腿屈伸（股四头）': 'Leg_Extensions',
+  '腿弯举（腘绳肌）': 'Lying_Leg_Curls',
+  '站姿提踵': 'Standing_Calf_Raises',
+  '坐姿提踵': 'Seated_Calf_Raise',
+  '杠铃臀桥': 'Barbell_Glute_Bridge',
+  '杠铃臀推': 'Barbell_Hip_Thrust',
+  '臀桥': 'Butt_Lift_Bridge',
+  '单腿臀桥': 'Single_Leg_Glute_Bridge',
+  '徒手深蹲': 'Bodyweight_Squat',
+  '哑铃高脚杯深蹲': 'Goblet_Squat',
+  '箭步蹲': 'Bodyweight_Walking_Lunge',
+  '哑铃箭步蹲': 'Dumbbell_Lunges',
+  '史密斯机深蹲': 'Smith_Machine_Squat',
+  '颈前深蹲': 'Front_Barbell_Squat',
+  '腿外展（外展机）': 'Thigh_Abductor',
+  '腿内收（内收机）': 'Thigh_Adductor',
+  '弹力带侧向走': 'Monster_Walk',
+  '北欧腿弯举': 'Natural_Glute_Ham_Raise',
+  '登阶': 'Dumbbell_Step_Ups',
+  // —— 核心 ——
+  '平板支撑': 'Plank',
+  '侧平板支撑': 'Side_Bridge',
+  '卷腹': 'Crunches',
+  '悬垂举腿': 'Hanging_Leg_Raise',
+  '俄罗斯转体': 'Russian_Twist',
+  '健腹轮': 'Ab_Roller',
+  '绳索卷腹': 'Rope_Crunch',
+  '帕洛夫推举': 'Pallof_Press',
+  '反向卷腹': 'Reverse_Crunch',
+  '哑铃侧屈': 'Dumbbell_Side_Bend',
+  '仰卧举腿': 'Leg_Lift',
+  '空中蹬车': 'Air_Bike',
+  // —— 功能性 ——
+  '壶铃摆荡': 'One-Arm_Kettlebell_Swings',
+  '哑铃农夫行走': 'Farmers_Walk',
+  '箱跳': 'Front_Box_Jump',
+  '深蹲跳': 'Freehand_Jump_Squat',
+  '登山跑': 'Mountain_Climbers',
+  '死虫式': 'Dead_Bug',
+  '哑铃单腿硬拉': 'Kettlebell_One-Legged_Deadlift',
+  '药球砸地': 'Overhead_Slam',
+  '战绳（双甩）': 'Battling_Ropes',
+  '弹力带伐木': 'Standing_Cable_Wood_Chop',
+  '雪橇推': 'Sled_Push',
+  '土耳其起立': 'Kettlebell_Turkish_Get-Up_Squat_style',
+  '跳绳': 'Rope_Jumping',
+};
+
+/// 该动作的示意图片资产路径（0 = 起始 / 1 = 结束姿势）；未映射返回空。
+List<String> exerciseImageAssets(String name) {
+  final id = kExerciseImageIdMap[name];
+  if (id == null) return const [];
+  return ['assets/exercises/${id}_0.webp', 'assets/exercises/${id}_1.webp'];
+}

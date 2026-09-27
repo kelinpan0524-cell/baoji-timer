@@ -8,6 +8,7 @@ import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import '../presets/exercise_library.dart' show libraryMetaByName;
 import '../services/session_controller.dart';
+import 'exercise_detail_sheet.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -805,17 +806,21 @@ class _StartPage extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           for (var i = 0; i < s.exercises.length; i++)
-            Container(
-              margin: const EdgeInsets.only(bottom: 10),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 12,
-              ),
-              decoration: BoxDecoration(
-                color: AppTheme.card,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Row(
+            GestureDetector(
+              // 开练前先过一眼图文解析（2026-09-27）：点动作行打开
+              onTap: () =>
+                  showExerciseDetailSheet(context, name: s.exercises[i].name),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: AppTheme.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
                 children: [
                   Text(
                     '${i + 1}.',
@@ -852,8 +857,15 @@ class _StartPage extends StatelessWidget {
                   ),
                 ],
               ),
+              ),
             ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 8),
+          Text(
+            tx('点动作可先看图文解析', en: 'Tap an exercise for the illustrated guide'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
+          ),
+          const SizedBox(height: 8),
           // 冻结基线：主操作按钮高度 ≥88dp，拇指可达区
           BigButton(
               label: tx('开始训练', en: 'Start Workout'),
@@ -1393,6 +1405,26 @@ class _ExerciseInfo extends StatelessWidget {
         Text(
           lastText,
           style: const TextStyle(color: AppTheme.textDim, fontSize: 15),
+        ),
+        // 动作解析入口（2026-09-27）：图文解析收在这个主动点按的入口后，
+        // 不占三要素空间；弹层随时划掉，计时不受影响。
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () =>
+                showExerciseDetailSheet(context, name: ex.name),
+            child: Semantics(
+              button: true,
+              label: tx('查看 ${exname(ex.name)} 的动作解析',
+                  en: 'View form guide for ${exname(ex.name)}'),
+              child: Text(
+                tx('📖 动作解析', en: '📖 Form Guide'),
+                style:
+                    const TextStyle(color: AppTheme.textDim, fontSize: 13),
+              ),
+            ),
+          ),
         ),
         if (s.currentSets.isNotEmpty)
           Padding(

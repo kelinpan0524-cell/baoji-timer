@@ -4,6 +4,7 @@ import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import '../presets/exercise_library.dart';
+import 'exercise_detail_sheet.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
@@ -136,7 +137,7 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                 Expanded(
                   child: ListView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                    itemCount: _filtered.isEmpty ? 1 : _filtered.length,
+                    itemCount: _filtered.isEmpty ? 1 : _filtered.length + 1,
                     itemBuilder: (ctx, i) {
                       if (_filtered.isEmpty) {
                         return Padding(
@@ -147,6 +148,21 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                               textAlign: TextAlign.center,
                               style:
                                   const TextStyle(color: AppTheme.textDim)),
+                        );
+                      }
+                      // 列表尾：素材来源致谢（free-exercise-db 为 Unlicense
+                      // 公有领域、本无署名义务，此处为对上游的尊重与溯源）
+                      if (i == _filtered.length) {
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Text(
+                            tx(
+                                '动作示意图来自 free-exercise-db（Unlicense 公有领域）；动作要点为本项目原创。',
+                                en: 'Exercise photos from free-exercise-db (Unlicense, public domain); form cues written for this project.'),
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: AppTheme.textDim, fontSize: 11),
+                          ),
                         );
                       }
                       final m = _filtered[i];
@@ -286,15 +302,8 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
               ),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
             ),
-            if (m.cue.isNotEmpty) ...[
-              const SizedBox(height: 14),
-              Text(tx('动作要点', en: 'Form Cues'),
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 6),
-              Text(cuen(m.name, m.cue),
-                  style: const TextStyle(fontSize: 14, height: 1.5)),
-            ],
+            // 图文解析段（示意图 + 要点）与训练中共用同一组件
+            ...exerciseMediaSection(m.name, m),
             const SizedBox(height: 14),
             if (dates.isEmpty)
               Text(
