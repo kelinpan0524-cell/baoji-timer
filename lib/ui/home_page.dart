@@ -287,6 +287,45 @@ class _HomePageState extends State<HomePage> {
         ),
       );
     }
+    // 今天该练的内容今天已经练完：不再摆「开始训练」引导重练同一份
+    // 计划（2026-09-27 Arono 反馈），换成完成态 + 加练入口。
+    final todayStr = fmtDate(DateTime.now());
+    final trainedToday = _doneThisWeek.any(
+        (s) => s.date == todayStr && s.planDayTitle == day.title);
+    if (trainedToday) {
+      return SectionCard(
+        title: tx('今天已练完', en: 'Done for Today'),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.check_circle,
+                    color: AppTheme.primary, size: 26),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(dname(day.title),
+                      style: const TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.w800)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+                tx('今天的训练已完成，好好休息。还想动一动可以加练：',
+                    en: 'Today is in the books. Rest up — or add an extra session if you still feel fresh:'),
+                style: const TextStyle(color: AppTheme.textDim)),
+            const SizedBox(height: 16),
+            BigButton(
+              label: tx('今天加练', en: 'Extra Workout Today'),
+              height: 64,
+              onPressed:
+                  _starting ? null : () => _pickExtraDay(context),
+            ),
+          ],
+        ),
+      );
+    }
     final exs = c.planRepo.exercisesByDayId[day.id] ?? [];
     return SectionCard(
       title: tx('今天该练', en: "Today's Workout"),
