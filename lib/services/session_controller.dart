@@ -1038,7 +1038,7 @@ class SessionController extends ChangeNotifier {
       final tMax = ex.targetRepsMax > 0 ? ex.targetRepsMax : ex.rule.repsMax;
       out.add(tx(
         '${ex.name}（计划目标 $tSets×$tMin-$tMax 次）：${v.reason}',
-        en: '${ex.name} (target $tSets×$tMin-$tMax reps): ${v.reason}',
+        en: '${exname(ex.name)} (target $tSets×$tMin-$tMax reps): ${v.reason}',
       ));
     }
     return out;

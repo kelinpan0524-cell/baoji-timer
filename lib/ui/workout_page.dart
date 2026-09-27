@@ -39,6 +39,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
   /// 总结页数据（收尾流程采集；null = 尚未收尾）。
   TrainingSummary? _summary;
   bool _finishing = false;
+  bool _finishScheduled = false; // 占位页兜底收尾只调度一次
 
   /// 保存一组的"划线标记"确认窗口：窗口内冻结当前页并盖「已记录」章
   /// （划线展示刚存的组），窗口结束才应用状态机算出的下一页（自动翻页）。
@@ -479,6 +480,14 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
       builder: (context, _) {
         _syncPhaseSideEffects(s.phase);
         if (!s.hasActive && _summary == null && !_finishing) {
+          // 兜底收尾（2026-09-28 模拟器实测）：最后一组保存后控制器立即结束
+          // 会话，页面先重建成占位页、把记录面板从树上卸载——面板保存回调里的
+          // onSessionEnded 因 context 失效被跳过，总结页永远出不来。
+          // 这里从页面层补一枪：占位分支出现时自动调度收尾，下一帧进总结页。
+          if (!_finishScheduled) {
+            _finishScheduled = true;
+            Future.microtask(_finishFlow);
+          }
           return Scaffold(
             backgroundColor: AppTheme.bg,
             body: Center(child: Text(tx('本次训练已结束', en: 'Workout finished'))),
@@ -2728,7 +2737,9 @@ class _RestBriefState extends State<_RestBrief> {
                 const SizedBox(width: 6),
                 Text(
                   tx('本次战报 · ${stats.workingSets} 组',
-                      en: 'Session Report · ${stats.workingSets} sets'),
+                      en: stats.workingSets == 1
+                          ? 'Session Report · 1 set'
+                          : 'Session Report · ${stats.workingSets} sets'),
                   style: const TextStyle(
                       color: AppTheme.textDim, fontSize: 13),
                 ),

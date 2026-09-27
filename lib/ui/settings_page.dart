@@ -126,7 +126,8 @@ class SettingsPage extends StatelessWidget {
             children: [
               Text(
                 snap.hasData
-                    ? '薄肌训练计时器 v${snap.data!.version}'
+                    ? tx('薄肌训练计时器 v${snap.data!.version}',
+                        en: 'Baoji Workout Timer v${snap.data!.version}')
                     : tx('薄肌训练计时器', en: 'Baoji Workout Timer'),
                 style: const TextStyle(
                     color: AppTheme.textDim,
