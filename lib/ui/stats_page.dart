@@ -141,66 +141,33 @@ class _OverviewTabState extends State<_OverviewTab> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
           children: [
+            // 数据页重设计（2026-09-27 Arono：手机端"乱七八糟"反馈）：
+            // 筛选控件从 SegmentedButton + ChoiceChip 混排（窄屏挤成竖排、
+            // M3 蓝胶囊与绿色主题违和）统一为贴主题的下拉；粒度放卡片
+            // 标题行右侧，指标单独一行，图表补左轴刻度与触摸提示。
             SectionCard(
-              // 统计维度升级（wger 借鉴）：周/月粒度 × 容量/组数/强度一图切换
-              title: tx(
-                  _granularity == 'week' ? '训练趋势（周）' : '训练趋势（月）',
-                  en: _granularity == 'week'
-                      ? 'Training Trend (weekly)'
-                      : 'Training Trend (monthly)'),
+              title: tx('训练趋势', en: 'Training Trend'),
+              trailing: _StatDropdown<String>(
+                value: _granularity,
+                entries: [
+                  ('week', tx('按周', en: 'Weekly')),
+                  ('month', tx('按月', en: 'Monthly')),
+                ],
+                onChanged: (v) => setState(() => _granularity = v),
+              ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      SegmentedButton<String>(
-                        segments: [
-                          ButtonSegment(
-                              value: 'week', label: Text(tx('周', en: 'Week'))),
-                          ButtonSegment(
-                              value: 'month',
-                              label: Text(tx('月', en: 'Month'))),
-                        ],
-                        selected: {_granularity},
-                        onSelectionChanged: (sel) =>
-                            setState(() => _granularity = sel.first),
-                        showSelectedIcon: false,
-                        style: const ButtonStyle(
-                          visualDensity: VisualDensity.compact,
-                          side: WidgetStatePropertyAll(
-                              BorderSide(color: Colors.transparent)),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Wrap(
-                          spacing: 6,
-                          children: [
-                            for (final (m, label) in [
-                              ('volume', tx('容量', en: 'Volume')),
-                              ('sets', tx('组数', en: 'Sets')),
-                              ('intensity', tx('强度', en: 'Intensity')),
-                            ])
-                              ChoiceChip(
-                                label: Text(label,
-                                    style: const TextStyle(fontSize: 12)),
-                                selected: _metric == m,
-                                onSelected: (_) =>
-                                    setState(() => _metric = m),
-                                selectedColor: AppTheme.primary,
-                                backgroundColor: AppTheme.cardHi,
-                                side: BorderSide.none,
-                                labelStyle: TextStyle(
-                                    fontSize: 12,
-                                    color: _metric == m
-                                        ? const Color(0xFF06220F)
-                                        : AppTheme.text),
-                              ),
-                          ],
-                        ),
-                      ),
+                  _StatDropdown<String>(
+                    value: _metric,
+                    entries: [
+                      ('volume', tx('容量', en: 'Volume')),
+                      ('sets', tx('组数', en: 'Sets')),
+                      ('intensity', tx('强度', en: 'Intensity')),
                     ],
+                    onChanged: (v) => setState(() => _metric = v),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   Text(
                     tx(
                         _metric == 'volume'
@@ -217,76 +184,25 @@ class _OverviewTabState extends State<_OverviewTab> {
                         const TextStyle(color: AppTheme.textDim, fontSize: 12),
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    height: 200,
-                    child: _trendPoints(d).length < 2
-                        ? Center(
-                            child: Text(
-                                tx('数据还少，再练几次就能看到趋势',
-                                    en: 'Not enough data yet — a few more workouts will show the trend'),
-                                style: TextStyle(color: AppTheme.textDim)))
-                        : LineChart(
-                            LineChartData(
-                              gridData: const FlGridData(show: false),
-                              borderData: FlBorderData(show: false),
-                              titlesData: FlTitlesData(
-                                bottomTitles: AxisTitles(
-                                  sideTitles: SideTitles(
-                                    showTitles: true,
-                                    reservedSize: 22,
-                                    getTitlesWidget: (v, _) =>
-                                        _trendLabel(d, v.toInt()),
-                                  ),
-                                ),
-                              ),
-                              lineBarsData: [
-                                LineChartBarData(
-                                  spots: _trendPoints(d),
-                                  isCurved: true,
-                                  color: AppTheme.primary,
-                                  barWidth: 3,
-                                  dotData: const FlDotData(show: true),
-                                ),
-                              ],
-                            ),
-                          ),
-                  ),
+                  _buildTrendChart(d),
                 ],
               ),
             ),
             const SizedBox(height: 12),
             SectionCard(
-              // 标题收短（2026-09-26 Arono：原标题带括号说明折成四行），
-              // 说明降级为卡内小字
               title: tx('主力动作 1RM', en: 'Top Lifts 1RM'),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // 动作改下拉选（原 4 个 chip 窄屏折成 1+2+1 三行不齐）；
+                  // 打开带搜索的底部弹层——动作库全量 150+，必须可搜
+                  _liftButton(d),
+                  const SizedBox(height: 8),
                   Text(
-                    tx('按训练容量自动选前 4 · 纵轴 kg · 横轴训练日期 · 每天取当日最佳',
-                        en: 'Top 4 by volume · y-axis kg · x-axis date · daily best'),
+                    tx('每天取当日最佳 1RM（kg）· 前 4 为自动选出的主力动作',
+                        en: 'Daily best 1RM (kg) · top 4 picked automatically'),
                     style: const TextStyle(
                         color: AppTheme.textDim, fontSize: 12),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final lift in d.topLifts)
-                        ChoiceChip(
-                          label: Text(exname(lift)),
-                          selected: _selectedLift == lift,
-                          onSelected: (_) =>
-                              setState(() => _selectedLift = lift),
-                          labelStyle: TextStyle(
-                              color: _selectedLift == lift
-                                  ? const Color(0xFF06220F)
-                                  : AppTheme.text),
-                          selectedColor: AppTheme.primary,
-                          backgroundColor: AppTheme.cardHi,
-                          side: BorderSide.none,
-                        ),
-                    ],
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -298,41 +214,26 @@ class _OverviewTabState extends State<_OverviewTab> {
             ),
             const SizedBox(height: 12),
             SectionCard(
-              title: tx('组间休息趋势（分钟 / 次）',
-                  en: 'Rest Between Sets Trend (min / session)'),
-              child: SizedBox(
-                height: 180,
-                child: d.restMinutes.length < 2
-                    ? Center(
-                        child: Text(
-                            tx('完成几次训练后，这里显示每次训练的休息总时长趋势',
-                                en: 'Rest time per workout appears here after a few workouts'),
-                            style: const TextStyle(color: AppTheme.textDim)))
-                    : LineChart(
-                        LineChartData(
-                          gridData: const FlGridData(show: false),
-                          borderData: FlBorderData(show: false),
-                          titlesData: FlTitlesData(
-                            bottomTitles: AxisTitles(
-                              sideTitles: SideTitles(
-                                showTitles: true,
-                                reservedSize: 22,
-                                getTitlesWidget: (v, _) =>
-                                    _restLabel(d, v.toInt()),
-                              ),
-                            ),
-                          ),
-                          lineBarsData: [
-                            LineChartBarData(
-                              spots: d.restMinutes,
-                              isCurved: true,
-                              color: AppTheme.warn,
-                              barWidth: 3,
-                              dotData: const FlDotData(show: true),
-                            ),
-                          ],
-                        ),
-                      ),
+              title: tx('组间休息趋势', en: 'Rest Between Sets Trend'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(tx('每次训练的休息净时长 · 分钟',
+                      en: 'Net rest time per workout · min'),
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 12)),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 180,
+                    child: d.restMinutes.length < 2
+                        ? Center(
+                            child: Text(
+                                tx('完成几次训练后，这里显示每次训练的休息总时长趋势',
+                                    en: 'Rest time per workout appears here after a few workouts'),
+                                style: const TextStyle(color: AppTheme.textDim)))
+                        : _buildRestChart(d),
+                  ),
+                ],
               ),
             ),
             if (insights.isNotEmpty) ...[
@@ -359,7 +260,7 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
-  bool _selectedLiftIn(_OverviewData d) => d.topLifts.contains(_selectedLift);
+  bool _selectedLiftIn(_OverviewData d) => d.allLifts.contains(_selectedLift);
 
   /// 当前粒度的桶键（升序）
   List<int> _trendKeys(_OverviewData d) {
@@ -417,6 +318,241 @@ class _OverviewTabState extends State<_OverviewTab> {
     );
   }
 
+  /// 当前指标数值的短格式（左轴刻度与触摸提示共用，避免长数字叠字）
+  String _fmtMetric(double v) => switch (_metric) {
+        'sets' => v.round().toString(),
+        'intensity' => '${(v * 100).round()}%',
+        _ => v >= 1000
+            ? '${(v / 1000).toStringAsFixed(1)}k'
+            : v.round().toString(),
+      };
+
+  /// 左轴刻度间隔取 1/2/5×10^n 的"好看"步长（0.25 专给强度百分比）
+  double? _niceStep(double maxY) {
+    if (maxY <= 0) return null;
+    if (_metric == 'intensity') return 0.25;
+    if (_metric == 'sets') return math.max(1, (maxY / 3).roundToDouble());
+    var step = (maxY / 3).ceilToDouble();
+    final mag = math.pow(10, (math.log(step) / math.ln10).floor()).toDouble();
+    final unit = step / mag;
+    step = (unit <= 1 ? 1 : unit <= 2 ? 2 : unit <= 5 ? 5 : 10) * mag;
+    return step;
+  }
+
+  /// 训练趋势图：左轴刻度 + 触摸提示（日期 + 指标值）。
+  /// 数据不足时收成一行紧凑提示，不再撑 200 高的空图。
+  Widget _buildTrendChart(_OverviewData d) {
+    final pts = _trendPoints(d);
+    if (pts.length < 2) {
+      return SizedBox(
+        height: 64,
+        child: Center(
+          child: Text(
+              tx('数据还少，再练几次就能看到趋势',
+                  en: 'Not enough data yet — a few more workouts will show the trend'),
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppTheme.textDim)),
+        ),
+      );
+    }
+    final keys = _trendKeys(d);
+    final maxY = pts.map((p) => p.y).reduce(math.max);
+    final step = (keys.length / 5).ceil().clamp(1, keys.length);
+    return SizedBox(
+      height: 200,
+      child: LineChart(
+        LineChartData(
+          minY: 0,
+          gridData: const FlGridData(show: false),
+          borderData: FlBorderData(show: false),
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => AppTheme.cardHi,
+              tooltipPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              getTooltipItems: (spots) => [
+                for (final s in spots)
+                  LineTooltipItem(
+                      _trendTip(keys, s),
+                      const TextStyle(
+                          color: AppTheme.text,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          titlesData: FlTitlesData(
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 22,
+                interval: step.toDouble(),
+                getTitlesWidget: (v, _) => _trendLabel(d, v.toInt()),
+              ),
+            ),
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 40,
+                interval: _niceStep(maxY),
+                getTitlesWidget: (v, _) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Text(_fmtMetric(v),
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                          color: AppTheme.textDim, fontSize: 10)),
+                ),
+              ),
+            ),
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: pts,
+              isCurved: true,
+              color: AppTheme.primary,
+              barWidth: 3,
+              dotData: const FlDotData(show: true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _trendTip(List<int> keys, FlSpot s) {
+    final i = s.x.toInt();
+    final dt = (i >= 0 && i < keys.length)
+        ? DateTime.fromMillisecondsSinceEpoch(keys[i] * 86400000)
+        : null;
+    return '${dt == null ? '' : '${dt.month}/${dt.day}'}\n${_fmtMetric(s.y)}';
+  }
+
+  /// 组间休息图（2026-09-27 截图反馈坐标轴数字重叠）：
+  /// x 轴显式 interval 抽稀（一天多练也不重复堆叠），
+  /// y 轴整数分钟刻度 + 触摸提示「日期 · N 分钟」。
+  Widget _buildRestChart(_OverviewData d) {
+    final maxY = d.restMinutes.map((p) => p.y).reduce(math.max);
+    final step = (d.restDates.length / 5).ceil().clamp(1, d.restDates.length);
+    return LineChart(
+      LineChartData(
+        minY: 0,
+        gridData: const FlGridData(show: false),
+        borderData: FlBorderData(show: false),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => AppTheme.cardHi,
+            tooltipPadding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            getTooltipItems: (spots) => [
+              for (final s in spots)
+                LineTooltipItem(
+                    _restTip(d, s),
+                    const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+        titlesData: FlTitlesData(
+          bottomTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 22,
+              interval: step.toDouble(),
+              getTitlesWidget: (v, _) => _restLabel(d, v.toInt()),
+            ),
+          ),
+          leftTitles: AxisTitles(
+            sideTitles: SideTitles(
+              showTitles: true,
+              reservedSize: 34,
+              interval: math.max(1, (maxY / 3).roundToDouble()),
+              getTitlesWidget: (v, _) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Text(v.round().toString(),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 10)),
+              ),
+            ),
+          ),
+        ),
+        lineBarsData: [
+          LineChartBarData(
+            spots: d.restMinutes,
+            isCurved: true,
+            color: AppTheme.warn,
+            barWidth: 3,
+            dotData: const FlDotData(show: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _restTip(_OverviewData d, FlSpot s) {
+    final i = s.x.toInt();
+    final dt = (i >= 0 && i < d.restDates.length)
+        ? parseDate(d.restDates[i])
+        : null;
+    return '${dt == null ? '' : '${dt.month}/${dt.day}'} · ${s.y.round()}${tx(' 分钟', en: ' min')}';
+  }
+
+  /// 1RM 动作下拉按钮（替代原 4 个 chip）：全宽、点开带搜索的弹层
+  Widget _liftButton(_OverviewData d) {
+    final empty = d.allLifts.isEmpty;
+    return InkWell(
+      onTap: empty ? null : () => _pickLift(d),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+            color: AppTheme.cardHi, borderRadius: BorderRadius.circular(10)),
+        child: Row(
+          children: [
+            Icon(Icons.fitness_center,
+                size: 18, color: empty ? AppTheme.textDim : AppTheme.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    empty
+                        ? tx('练几次后自动选出主力动作',
+                            en: 'Top lifts appear after a few workouts')
+                        : exname(_selectedLift ?? ''),
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                        fontSize: 15, fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.expand_more, size: 18, color: AppTheme.textDim),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickLift(_OverviewData d) async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => _LiftPickerSheet(
+          all: d.allLifts, top: d.topLifts, current: _selectedLift),
+    );
+    if (picked != null && mounted) {
+      setState(() => _selectedLift = picked);
+    }
+  }
+
   /// 主力动作 1RM 图（wger 每日最佳口径）：x 轴日期（训练日），
   /// y = 该动作当天的最高 1RM 估值—— dips 也能诚实显示。
   /// 不足两天时给友好空态：告诉用户已经记了几天、当前 1RM 多少。
@@ -462,6 +598,22 @@ class _OverviewTabState extends State<_OverviewTab> {
       LineChartData(
         gridData: const FlGridData(show: false),
         borderData: FlBorderData(show: false),
+        lineTouchData: LineTouchData(
+          touchTooltipData: LineTouchTooltipData(
+            getTooltipColor: (_) => AppTheme.cardHi,
+            tooltipPadding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            getTooltipItems: (spots) => [
+              for (final s in spots)
+                LineTooltipItem(
+                    _rmTip(keys, s),
+                    const TextStyle(
+                        color: AppTheme.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
         titlesData: FlTitlesData(
           bottomTitles: AxisTitles(
             sideTitles: SideTitles(
@@ -510,6 +662,14 @@ class _OverviewTabState extends State<_OverviewTab> {
         ],
       ),
     );
+  }
+
+  String _rmTip(List<int> keys, FlSpot s) {
+    final i = s.x.toInt();
+    final dt = (i >= 0 && i < keys.length)
+        ? DateTime.fromMillisecondsSinceEpoch(keys[i] * 86400000)
+        : null;
+    return '${dt == null ? '' : '${dt.month}/${dt.day}'} · ${fmtKg(s.y)} kg';
   }
 
   /// 单次 JOIN 拉全部明细后内存聚合，避免逐 session 查询的 N+1。
@@ -587,6 +747,7 @@ class _OverviewTabState extends State<_OverviewTab> {
     return _OverviewData(
       weekTrend: weekT,
       monthTrend: monthT,
+      allLifts: topLifts,
       topLifts: topLifts.take(4).toList(),
       restMinutes: restMinutes,
       restDates: restDates,
@@ -600,6 +761,10 @@ class _OverviewData {
   /// 周/月粒度的趋势桶（key 见 trendKeyOf）
   final Map<int, TrendAcc> weekTrend;
   final Map<int, TrendAcc> monthTrend;
+
+  /// 近一年有正式组容量的全部动作（容量降序）——下拉选单的数据源，
+  /// 不再只能看前 4
+  final List<String> allLifts;
 
   /// 近一年正式组容量前 4 的动作名（动态"四大项"）
   final List<String> topLifts;
@@ -615,6 +780,7 @@ class _OverviewData {
   _OverviewData({
     required this.weekTrend,
     required this.monthTrend,
+    required this.allLifts,
     required this.topLifts,
     required this.restMinutes,
     required this.restDates,
@@ -672,62 +838,28 @@ class _MuscleTabState extends State<_MuscleTab> {
             // （2026-09-25 从计划页挪到数据页，计划页只管"练什么"）
             const MuscleRecoveryCard(),
             SectionCard(
-              title: tx(
-                  _period == 'week' ? '本周肌群容量占比' : '本月肌群容量占比',
-                  en: _period == 'week'
-                      ? "This Week's Muscle Volume Share"
-                      : "This Month's Muscle Volume Share"),
+              title: tx('肌群容量占比', en: 'Muscle Volume Share'),
+              trailing: _StatDropdown<String>(
+                value: _period,
+                entries: [
+                  ('week', tx('本周', en: 'This week')),
+                  ('month', tx('本月', en: 'This month')),
+                ],
+                onChanged: (v) {
+                  setState(() => _period = v);
+                  _future = _load(app(context));
+                },
+              ),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SegmentedButton<String>(
-                    segments: [
-                      ButtonSegment(
-                          value: 'week', label: Text(tx('本周', en: 'Week'))),
-                      ButtonSegment(
-                          value: 'month', label: Text(tx('本月', en: 'Month'))),
+                  _StatDropdown<bool>(
+                    value: _front,
+                    entries: [
+                      (true, tx('正面视图', en: 'Front view')),
+                      (false, tx('背面视图', en: 'Back view')),
                     ],
-                    selected: {_period},
-                    onSelectionChanged: (sel) {
-                      setState(() => _period = sel.first);
-                      _future = _load(app(context));
-                    },
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                      side: WidgetStatePropertyAll(
-                          BorderSide(color: Colors.transparent)),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  SegmentedButton<bool>(
-                    segments: [
-                      ButtonSegment(
-                          value: true, label: Text(tx('正面', en: 'Front'))),
-                      ButtonSegment(
-                          value: false, label: Text(tx('背面', en: 'Back'))),
-                    ],
-                    selected: {_front},
-                    onSelectionChanged: (sel) =>
-                        setState(() => _front = sel.first),
-                    showSelectedIcon: false,
-                    style: ButtonStyle(
-                      backgroundColor:
-                          WidgetStateProperty.resolveWith((states) =>
-                              states.contains(WidgetState.selected)
-                                  ? AppTheme.primary
-                                  : AppTheme.cardHi),
-                      foregroundColor:
-                          WidgetStateProperty.resolveWith((states) =>
-                              states.contains(WidgetState.selected)
-                                  ? const Color(0xFF06220F)
-                                  : AppTheme.textDim),
-                      side: const WidgetStatePropertyAll(
-                          BorderSide(color: Colors.transparent)),
-                      shape: const WidgetStatePropertyAll(
-                          RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.all(Radius.circular(10)))),
-                    ),
+                    onChanged: (v) => setState(() => _front = v),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
@@ -805,11 +937,7 @@ class _MuscleTabState extends State<_MuscleTab> {
             // 上下肢分布（wger 的 upper/lower 口径）：七分区归并成
             // 上肢（胸肩背手臂）/ 下肢（腿）/ 核心+其他 三条，一眼看结构
             SectionCard(
-              title: tx(
-                  _period == 'week' ? '上下肢分布（本周）' : '上下肢分布（本月）',
-                  en: _period == 'week'
-                      ? 'Upper/Lower Split (this week)'
-                      : 'Upper/Lower Split (this month)'),
+              title: tx('上下肢分布', en: 'Upper/Lower Split'),
               child: Builder(builder: (_) {
                 final groups = regionGroupShare(share);
                 const order = ['上肢', '下肢', '核心'];
@@ -1069,6 +1197,210 @@ class _BodyTabState extends State<_BodyTab>
           ],
         );
       },
+    );
+  }
+}
+
+// ---------------- 数据页筛选组件（2026-09-27 重设计） ----------------
+
+/// 统计页统一筛选下拉：替代 SegmentedButton / ChoiceChip 混排——
+/// 窄屏上会挤成竖排、多行折行，M3 默认蓝色胶囊也与深底绿主题违和。
+/// 自绘按钮壳贴 AppTheme（cardHi 底、圆角），菜单项选中打绿勾。
+class _StatDropdown<T> extends StatelessWidget {
+  const _StatDropdown({
+    required this.value,
+    required this.entries,
+    required this.onChanged,
+  });
+
+  final T value;
+  final List<(T, String)> entries;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final match = entries.where((e) => e.$1 == value).toList();
+    final label = match.isEmpty ? entries.first.$2 : match.first.$2;
+    return PopupMenuButton<T>(
+      initialValue: value,
+      position: PopupMenuPosition.under,
+      color: AppTheme.card,
+      elevation: 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      constraints: const BoxConstraints(minWidth: 128),
+      onSelected: onChanged,
+      itemBuilder: (_) => [
+        for (final (v, text) in entries)
+          PopupMenuItem(
+            value: v,
+            height: 44,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  child: v == value
+                      ? const Icon(Icons.check,
+                          size: 16, color: AppTheme.primary)
+                      : null,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  text,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: v == value ? FontWeight.w700 : FontWeight.w500,
+                      color: v == value ? AppTheme.primary : AppTheme.text),
+                ),
+              ],
+            ),
+          ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+            color: AppTheme.cardHi, borderRadius: BorderRadius.circular(10)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(width: 4),
+            const Icon(Icons.expand_more, size: 16, color: AppTheme.textDim),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 1RM 动作选单（底部弹层）：动作库全量 150+，顶部搜索框过滤；
+/// 容量前 4 标「主力」徽标，当前选中打勾。
+class _LiftPickerSheet extends StatefulWidget {
+  const _LiftPickerSheet(
+      {required this.all, required this.top, this.current});
+
+  final List<String> all;
+  final List<String> top;
+  final String? current;
+
+  @override
+  State<_LiftPickerSheet> createState() => _LiftPickerSheetState();
+}
+
+class _LiftPickerSheetState extends State<_LiftPickerSheet> {
+  final _q = TextEditingController();
+
+  @override
+  void dispose() {
+    _q.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _q.text.trim().toLowerCase();
+    final list = [
+      for (final n in widget.all)
+        if (query.isEmpty ||
+            n.toLowerCase().contains(query) ||
+            exname(n).toLowerCase().contains(query))
+          n,
+    ];
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.72),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                margin: const EdgeInsets.only(top: 10, bottom: 10),
+                decoration: BoxDecoration(
+                    color: AppTheme.textDim,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(tx('选择动作', en: 'Pick an Exercise'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+              child: TextField(
+                controller: _q,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: tx('搜索动作', en: 'Search exercises'),
+                  prefixIcon:
+                      const Icon(Icons.search, size: 20),
+                  filled: true,
+                  fillColor: AppTheme.cardHi,
+                  isDense: true,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide.none),
+                ),
+              ),
+            ),
+            if (list.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: Center(
+                  child: Text(tx('没有匹配的动作', en: 'No matching exercises'),
+                      style: const TextStyle(color: AppTheme.textDim)),
+                ),
+              )
+            else
+              Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  padding: const EdgeInsets.only(bottom: 12),
+                  itemCount: list.length,
+                  itemBuilder: (_, i) {
+                    final n = list[i];
+                    final isTop = widget.top.contains(n);
+                    return ListTile(
+                      dense: true,
+                      title: Text(exname(n),
+                          style: const TextStyle(fontSize: 14)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isTop)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                  color: AppTheme.primary
+                                      .withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(6)),
+                              child: Text(tx('主力', en: 'Top'),
+                                  style: const TextStyle(
+                                      fontSize: 10,
+                                      color: AppTheme.primary,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          if (n == widget.current) ...[
+                            const SizedBox(width: 8),
+                            const Icon(Icons.check,
+                                size: 18, color: AppTheme.primary),
+                          ],
+                        ],
+                      ),
+                      onTap: () => Navigator.pop(context, n),
+                    );
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
