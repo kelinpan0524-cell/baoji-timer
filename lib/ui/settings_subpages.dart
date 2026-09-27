@@ -1071,7 +1071,7 @@ class _UpdateSettingsPageState extends State<UpdateSettingsPage>
 
   String _briefNotes(String notes) {
     // GitHub 的 alert 语法（> [!NOTE]）不是标准 Markdown，剥掉标记行保留内容
-    final cleaned = notes.replaceFirst('> [!NOTE]', '**ℹ️**');
+    final cleaned = cleanReleaseNotes(notes);
     final lines = cleaned.split('\n').take(8).join('\n');
     return lines.length > 240 ? '${lines.substring(0, 240)}…' : lines;
   }
@@ -1163,29 +1163,45 @@ class _UpdateSettingsPageState extends State<UpdateSettingsPage>
                         fontSize: 15,
                       ),
                     ),
-                    if (release.notes.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: MarkdownBody(
-                          data: _briefNotes(release.notes),
-                          styleSheet: MarkdownStyleSheet.fromTheme(
-                                  Theme.of(context))
-                              .copyWith(
-                            p: const TextStyle(
-                                color: AppTheme.textDim, fontSize: 12),
-                            h1: const TextStyle(
-                                color: AppTheme.text, fontSize: 14),
-                            h2: const TextStyle(
-                                color: AppTheme.text, fontSize: 14),
-                            h3: const TextStyle(
-                                color: AppTheme.text, fontSize: 13),
-                            listBullet: const TextStyle(
-                                color: AppTheme.textDim, fontSize: 12),
-                            blockquote: const TextStyle(
-                                color: AppTheme.textDim, fontSize: 12),
+                      if (release.notes.isNotEmpty) ...[
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: MarkdownBody(
+                            data: _briefNotes(release.notes),
+                            styleSheet: MarkdownStyleSheet.fromTheme(
+                                    Theme.of(context))
+                                .copyWith(
+                              p: const TextStyle(
+                                  color: AppTheme.textDim, fontSize: 12),
+                              h1: const TextStyle(
+                                  color: AppTheme.text, fontSize: 14),
+                              h2: const TextStyle(
+                                  color: AppTheme.text, fontSize: 14),
+                              h3: const TextStyle(
+                                  color: AppTheme.text, fontSize: 13),
+                              listBullet: const TextStyle(
+                                  color: AppTheme.textDim, fontSize: 12),
+                              blockquote: const TextStyle(
+                                  color: AppTheme.textDim, fontSize: 12),
+                            ),
                           ),
                         ),
-                      ),
+                        // 2026-09-27 Arono 报障：b93 起说明变长，卡片里只截 8 行
+                        // 又没有入口看全文。简短预览保持卡片紧凑，全文进
+                        // 独立可滚动页查看（设置页操作，无训练中弹窗顾虑）。
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute<void>(
+                                builder: (_) =>
+                                    ReleaseNotesPage(notes: release.notes),
+                              ),
+                            ),
+                            child: Text(tx('查看完整说明', en: 'View Full Notes')),
+                          ),
+                        ),
+                      ],
                     if (downloading) ...[
                       const SizedBox(height: 10),
                       LinearProgressIndicator(
@@ -1235,6 +1251,41 @@ class _UpdateSettingsPageState extends State<UpdateSettingsPage>
         ),
       ),
     ]);
+  }
+}
+
+// ============ 更新说明全文页 ============
+
+/// GitHub 的 alert 语法（> [!NOTE]）不是标准 Markdown，剥掉标记行保留内容。
+@visibleForTesting
+String cleanReleaseNotes(String notes) =>
+    notes.replaceFirst('> [!NOTE]', '**ℹ️**');
+
+/// 更新说明全文页（2026-09-27）：卡片里只放 8 行预览，全文在这里滚动查看。
+/// 顶层公开便于单测（同 buildSessionDetailRows 的直测思路）。
+class ReleaseNotesPage extends StatelessWidget {
+  const ReleaseNotesPage({super.key, required this.notes});
+
+  final String notes;
+
+  @override
+  Widget build(BuildContext context) {
+    final md = MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+      p: const TextStyle(fontSize: 14, height: 1.5),
+      h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+      h2: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+      h3: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+      listBullet: const TextStyle(fontSize: 14),
+      blockquote: const TextStyle(fontSize: 13),
+    );
+    return Scaffold(
+      backgroundColor: AppTheme.bg,
+      appBar: AppBar(title: Text(tx('更新说明', en: 'Release Notes'))),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        child: MarkdownBody(data: cleanReleaseNotes(notes), styleSheet: md),
+      ),
+    );
   }
 }
 
