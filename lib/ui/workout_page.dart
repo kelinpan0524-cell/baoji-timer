@@ -2287,16 +2287,28 @@ class _RestViewState extends State<_RestView> {
                           final color = frac > 0.2
                               ? AppTheme.primary
                               : (frac > 0 ? AppTheme.warn : AppTheme.danger);
-                          return Text(
-                            fmtDuration(remain),
-                            style: AppTheme.bigNum(
-                              // 下限 56（原 72）：横屏/矮屏下先给底部操作区
-                              // 留出空间，数字仍远大于页内其他文字（18/24 号），
-                              // 保持屏内最大元素。
-                              (MediaQuery.of(context).size.height *
-                                      (_isWide(context) ? 0.20 : 0.15))
-                                  .clamp(56.0, 260.0),
-                              color: color,
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: FittedBox(
+                              // 大字体缩放/窄屏下五个字符可能超出屏宽，
+                              // Text 会软换行把末位挤到第二行——
+                              // 永不换行，放不下就整体等比缩小，
+                              // 缩小后仍是屏内最大元素（红线不破）。
+                              fit: BoxFit.scaleDown,
+                              child: Text(
+                                fmtDuration(remain),
+                                maxLines: 1,
+                                softWrap: false,
+                                style: AppTheme.bigNum(
+                                  // 下限 56（原 72）：横屏/矮屏下先给底部操作区
+                                  // 留出空间，数字仍远大于页内其他文字（18/24 号），
+                                  // 保持屏内最大元素。
+                                  (MediaQuery.of(context).size.height *
+                                          (_isWide(context) ? 0.20 : 0.15))
+                                      .clamp(56.0, 260.0),
+                                  color: color,
+                                ),
+                              ),
                             ),
                           );
                         },
