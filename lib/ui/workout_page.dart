@@ -2429,23 +2429,40 @@ class _RestViewState extends State<_RestView> {
                           child: SizedBox(
                             width: double.infinity,
                             height: 48,
-                            child: OutlinedButton.icon(
+                            child: OutlinedButton(
                               onPressed: () {
                                 HapticFeedback.selectionClick();
                                 s.startExtraSet();
                               },
-                              icon: const Icon(
-                                Icons.replay,
-                                size: 18,
-                                color: AppTheme.primary,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: AppTheme.primary,
                               ),
-                              label: Text(
-                                tx('再来一组 · ${exname(s.extraSetExerciseName ?? '')}（继承上次重量）',
-                                    en: 'One More Set · ${exname(s.extraSetExerciseName ?? '')} (last weight)'),
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppTheme.primary,
+                              // 大字体缩放下长标签放不下：整行（图标+文字）
+                              // 等比缩小而不是折行裁切。
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.replay,
+                                      size: 18,
+                                      color: AppTheme.primary,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      tx(
+                                          '再来一组 · ${exname(s.extraSetExerciseName ?? '')}（继承上次重量）',
+                                          en: 'One More Set · ${exname(s.extraSetExerciseName ?? '')} (last weight)'),
+                                      maxLines: 1,
+                                      softWrap: false,
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -2453,106 +2470,45 @@ class _RestViewState extends State<_RestView> {
                         ),
                       Row(
                         children: [
-                          Expanded(
-                            child: SizedBox(
-                              height: 64,
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  HapticFeedback.selectionClick();
-                                  s.extendRest(-30);
-                                  // 精确闹钟由控制器 onRestAlarmChanged 回调随
-                                  // restEndAt 统一重排；训练卡由控制器心跳驱动
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: AppTheme.cardHi,
-                                  side: BorderSide.none,
-                                ),
-                                child: Text(
-                                  tx('-30 秒', en: '-30s'),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          // 精确闹钟由控制器 onRestAlarmChanged 回调随
+                          // restEndAt 统一重排；训练卡由控制器心跳驱动
+                          _RestActionBtn(
+                            label: tx('-30 秒', en: '-30s'),
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              s.extendRest(-30);
+                            },
                           ),
                           const SizedBox(width: 8),
-                          Expanded(
-                            child: SizedBox(
-                              height: 64,
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  HapticFeedback.selectionClick();
-                                  s.extendRest(30);
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: AppTheme.cardHi,
-                                  side: BorderSide.none,
-                                ),
-                                child: Text(
-                                  tx('+30 秒', en: '+30s'),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          _RestActionBtn(
+                            label: tx('+30 秒', en: '+30s'),
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              s.extendRest(30);
+                            },
                           ),
                           const SizedBox(width: 8),
-                          Expanded(
-                            child: SizedBox(
-                              height: 64,
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  HapticFeedback.selectionClick();
-                                  s.isRestPaused
-                                      ? s.resumeRest()
-                                      : s.pauseRest();
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: AppTheme.cardHi,
-                                  side: BorderSide.none,
-                                  foregroundColor: s.isRestPaused
-                                      ? AppTheme.primary
-                                      : AppTheme.text,
-                                ),
-                                child: Text(
-                                  s.isRestPaused
-                                      ? tx('继续', en: 'Resume')
-                                      : tx('暂停', en: 'Pause'),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          _RestActionBtn(
+                            label: s.isRestPaused
+                                ? tx('继续', en: 'Resume')
+                                : tx('暂停', en: 'Pause'),
+                            foreground: s.isRestPaused
+                                ? AppTheme.primary
+                                : AppTheme.text,
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              s.isRestPaused ? s.resumeRest() : s.pauseRest();
+                            },
                           ),
                           const SizedBox(width: 8),
-                          Expanded(
-                            child: SizedBox(
-                              height: 64,
-                              child: OutlinedButton(
-                                onPressed: () {
-                                  HapticFeedback.selectionClick();
-                                  s.undoLastSet();
-                                },
-                                style: OutlinedButton.styleFrom(
-                                  backgroundColor: AppTheme.cardHi,
-                                  side: BorderSide.none,
-                                  foregroundColor: AppTheme.textDim,
-                                ),
-                                child: Text(
-                                  tx('撤销', en: 'Undo'),
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ),
+                          _RestActionBtn(
+                            label: tx('撤销', en: 'Undo'),
+                            foreground: AppTheme.textDim,
+                            weight: FontWeight.w600,
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              s.undoLastSet();
+                            },
                           ),
                         ],
                       ),
@@ -2580,6 +2536,50 @@ class _RestViewState extends State<_RestView> {
 
   bool _isWide(BuildContext context) =>
       MediaQuery.of(context).size.width >= 840;
+}
+
+/// 休息页底部操作小按钮（±30 秒 / 暂停 / 撤销）。
+/// 四个按钮平分一排，宽度只有约屏宽 1/4：大字体缩放下
+/// 「-30 秒」这类标签放不下会折行——文字永不换行，
+/// 放不下整体等比缩小（与倒计时数字同一策略）。
+class _RestActionBtn extends StatelessWidget {
+  const _RestActionBtn({
+    required this.label,
+    required this.onPressed,
+    this.foreground,
+    this.weight = FontWeight.w700,
+  });
+
+  final String label;
+  final VoidCallback? onPressed;
+  final Color? foreground;
+  final FontWeight weight;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: SizedBox(
+        height: 64,
+        child: OutlinedButton(
+          onPressed: onPressed,
+          style: OutlinedButton.styleFrom(
+            backgroundColor: AppTheme.cardHi,
+            side: BorderSide.none,
+            foregroundColor: foreground,
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(fontSize: 16, fontWeight: weight),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// 休息页渐进主动提醒（2026-09-26 Arono）：刚完成的组若破纪录 → 🏆 横幅；

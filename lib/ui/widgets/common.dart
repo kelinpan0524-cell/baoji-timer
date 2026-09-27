@@ -112,9 +112,15 @@ class BigButton extends StatelessWidget {
               borderRadius: BorderRadius.circular(20),
             ),
           ),
-          child: Text(
-            label,
-            style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800),
+          child: FittedBox(
+            // 大字体缩放下长标签放不下：整体等比缩小而不是折行
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(fontSize: fontSize, fontWeight: FontWeight.w800),
+            ),
           ),
         ),
       ),
@@ -150,12 +156,18 @@ class WeightStepButton extends StatelessWidget {
               side: BorderSide.none,
               padding: EdgeInsets.zero,
             ),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: AppTheme.text,
+            child: FittedBox(
+              // 大字体缩放下标签放不下：整体等比缩小而不是折行
+              fit: BoxFit.scaleDown,
+              child: Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppTheme.text,
+                ),
               ),
             ),
           ),
