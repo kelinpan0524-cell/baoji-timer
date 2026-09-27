@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App 常驻深色底（lib/ui/theme.dart 的 AppTheme.bg）。开机画面与窗口底色
+         统一用它：App 恒为深色主题，原生层不再区分明暗模式，杜绝开屏白闪。 -->
+    <color name="launch_bg">#0E1116</color>
+</resources>
