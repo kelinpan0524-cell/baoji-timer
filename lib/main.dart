@@ -9,6 +9,7 @@ import 'l10n/lang.dart';
 import 'services/update_service.dart';
 import 'ui/onboarding_page.dart';
 import 'ui/shell.dart';
+import 'ui/splash_page.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -61,7 +62,10 @@ class BaojiApp extends StatelessWidget {
                 Lang.resolve(settings.langPref, settings.systemLocale) == 'en');
             return child!;
           },
-          home: onboarded ? const HomeShell() : const OnboardingPage(),
+          // 开机动画先行，播完交叉淡出到首页/引导页
+          home: SplashGate(
+            child: onboarded ? const HomeShell() : const OnboardingPage(),
+          ),
         );
       }),
     );
