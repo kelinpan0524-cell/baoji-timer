@@ -97,39 +97,68 @@ class UpdateService {
   }
 
   /// 下载 APK 到应用缓存目录，返回文件路径。
-  /// 走 Releases asset API（browser_download_url 带 token 恒 404）：
-  /// 第一跳 api.github.com（有令牌则带上）302 到签名 CDN，第二跳不能再带令牌。
+  /// 走 Releases asset API（browser_download_url 带 token 恒 404）。
+  ///
+  /// 重定向走完整循环（2026-09-27 修复「安装包损坏」）：
+  /// - 仓库改名后 api.github.com 会先回 301（改名跳转）再 302（签名 CDN），
+  ///   旧实现只处理一跳且第二跳丢了 Accept: octet-stream——GitHub 对不带
+  ///   该头的 asset 请求返回的是 1KB 的 JSON 元数据，被当 APK 存盘后
+  ///   安装器必然报「损坏」。
+  /// - 现在逐跳跟随（最多 5 跳）：api.github.com 域名上的跳转保留
+  ///   Accept 头（有令牌也只在 API 域携带），到 CDN 后裸请求。
+  /// - 下载完成后与 Release 元数据里的 apkSize 严格比对，不符即删重试。
+  ///
+  /// [tempDirPathOverride] 仅供单元测试注入临时目录。
   Future<String> downloadApk(AppRelease release,
-      {void Function(int received, int total)? onProgress}) async {
-    final assetApiUrl =
+      {void Function(int received, int total)? onProgress,
+      @visibleForTesting String? tempDirPathOverride}) async {
+    var url =
         'https://api.github.com/repos/$_repo/releases/assets/${release.assetId}';
-    final first = http.Request('GET', Uri.parse(assetApiUrl))
-      ..headers.addAll(_authHeaders('application/octet-stream'))
-      ..followRedirects = false;
-    final redirected = await _client.send(first).timeout(_timeout);
-    var url = assetApiUrl;
-    final status = redirected.statusCode;
-    if (status == 301 || status == 302) {
-      await redirected.stream.drain<void>();
-      url = redirected.headers['location'] ?? '';
-    } else if (status != 200) {
-      throw UpdateException(
-          tx('下载失败（HTTP $status）', en: 'Download failed (HTTP $status)'));
-    }
-    final urlError = downloadUrlError(url);
-    if (urlError != null) throw UpdateException(urlError);
-
-    // CDN 签名地址不需要（也不能）带令牌
-    final stream = await _client
-        .send(http.Request('GET', Uri.parse(url)))
-        .timeout(_timeout);
-    if (stream.statusCode != 200) {
-      throw UpdateException(tx('下载失败（HTTP ${stream.statusCode}）',
-          en: 'Download failed (HTTP ${stream.statusCode})'));
+    http.StreamedResponse stream;
+    var hops = 0;
+    while (true) {
+      final isApiHost = Uri.parse(url).host == 'api.github.com';
+      final req = http.Request('GET', Uri.parse(url))
+        ..followRedirects = false;
+      if (isApiHost) {
+        // Accept: octet-stream 是「要文件本体而不是 JSON 元数据」的关键；
+        // 令牌同样只在 API 域携带，跳到 CDN 后不再带。
+        req.headers.addAll(_authHeaders('application/octet-stream'));
+      }
+      final resp = await _client.send(req).timeout(_timeout);
+      final status = resp.statusCode;
+      if (status == 301 || status == 302 || status == 303 || status == 307) {
+        await resp.stream.drain<void>();
+        final next = resp.headers['location'] ?? '';
+        if (next.isEmpty) {
+          throw UpdateException(
+              tx('下载地址跳转异常', en: 'Download redirect missing location'));
+        }
+        final urlError = downloadUrlError(next);
+        if (urlError != null) throw UpdateException(urlError);
+        url = next;
+        if (++hops > 5) {
+          throw UpdateException(
+              tx('下载跳转次数过多', en: 'Too many download redirects'));
+        }
+        continue;
+      }
+      if (status != 200) {
+        throw UpdateException(
+            tx('下载失败（HTTP $status）', en: 'Download failed (HTTP $status)'));
+      }
+      stream = resp;
+      break;
     }
     final total = stream.contentLength ?? release.apkSize;
-    final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/baoji_update.apk');
+    final String dirPath;
+    if (tempDirPathOverride != null) {
+      dirPath = tempDirPathOverride;
+    } else {
+      final dir = await getTemporaryDirectory();
+      dirPath = dir.path;
+    }
+    final file = File('$dirPath/baoji_update.apk');
     final sink = file.openWrite();
     var received = 0;
     try {
@@ -142,14 +171,17 @@ class UpdateService {
     } finally {
       await sink.close();
     }
-    if (total > 0 && received < total) {
+    // 完整性双保险：长度对不上（含「JSON 元数据冒充 APK」类问题）一律拒绝
+    final expected = release.apkSize > 0 ? release.apkSize : total;
+    if (expected > 0 && received != expected) {
       try {
         await file.delete();
       } on FileSystemException {
         // 缓存文件，残留无碍
       }
       throw UpdateException(
-          tx('下载不完整，请重试', en: 'Download incomplete, please try again'));
+          tx('下载不完整（$received / $expected 字节），请重试',
+              en: 'Download incomplete ($received / $expected bytes), please try again'));
     }
     return file.path;
   }
