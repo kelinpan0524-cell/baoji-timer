@@ -141,47 +141,71 @@ class _ScheduleViewsState extends State<ScheduleViews> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // 分段按钮独占一行：和前后翻页挤在一行时，窄屏/系统大字下
+        // 「三天/一周/一月」会被压成两行折字（2026-09-28 Arono 反馈）
+        SegmentedButton<_Mode>(
+          segments: [
+            // FittedBox：系统特大字号（1.6+）下标签等比缩小而不是溢出/折行
+            ButtonSegment(
+                value: _Mode.d3,
+                label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(tx('三天', en: '3 Days'),
+                        maxLines: 1, softWrap: false))),
+            ButtonSegment(
+                value: _Mode.week,
+                label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(tx('一周', en: 'Week'),
+                        maxLines: 1, softWrap: false))),
+            ButtonSegment(
+                value: _Mode.month,
+                label: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(tx('一月', en: 'Month'),
+                        maxLines: 1, softWrap: false))),
+          ],
+          selected: {_mode},
+          onSelectionChanged: (s) {
+            setState(() {
+              _mode = s.first;
+              _cells = null;
+            });
+            _reload();
+          },
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            visualDensity: VisualDensity.compact,
+            backgroundColor: WidgetStateProperty.resolveWith((st) =>
+                st.contains(WidgetState.selected)
+                    ? AppTheme.primary
+                    : AppTheme.cardHi),
+            foregroundColor: WidgetStateProperty.resolveWith((st) =>
+                st.contains(WidgetState.selected)
+                    ? const Color(0xFF06220F)
+                    : AppTheme.textDim),
+            side: const WidgetStatePropertyAll(
+                BorderSide(color: Colors.transparent)),
+          ),
+        ),
+        const SizedBox(height: 6),
+        // 窗口标签与翻页/回今天一行：标签 Expanded 让位（极端大字号下
+        // 省略号兜底），按钮固定宽靠右，整行任何字号都不会溢出
         Row(
           children: [
             Expanded(
-              child: SegmentedButton<_Mode>(
-                segments: [
-                  ButtonSegment(
-                      value: _Mode.d3, label: Text(tx('3 日', en: '3 Days'))),
-                  ButtonSegment(
-                      value: _Mode.week, label: Text(tx('一周', en: 'Week'))),
-                  ButtonSegment(
-                      value: _Mode.month, label: Text(tx('一月', en: 'Month'))),
-                ],
-                selected: {_mode},
-                onSelectionChanged: (s) {
-                  setState(() {
-                    _mode = s.first;
-                    _cells = null;
-                  });
-                  _reload();
-                },
-                showSelectedIcon: false,
-                style: ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  backgroundColor: WidgetStateProperty.resolveWith((st) =>
-                      st.contains(WidgetState.selected)
-                          ? AppTheme.primary
-                          : AppTheme.cardHi),
-                  foregroundColor: WidgetStateProperty.resolveWith((st) =>
-                      st.contains(WidgetState.selected)
-                          ? const Color(0xFF06220F)
-                          : AppTheme.textDim),
-                  side: const WidgetStatePropertyAll(
-                      BorderSide(color: Colors.transparent)),
-                ),
+              child: Text(
+                _windowLabel(),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
               ),
             ),
-            const SizedBox(width: 8),
             IconButton(
               onPressed: () => _shift(_mode == _Mode.month ? -1 : -_step),
               icon: const Icon(Icons.chevron_left),
               tooltip: tx('往前', en: 'Back'),
+              visualDensity: VisualDensity.compact,
             ),
             TextButton(
               onPressed: _goToday,
@@ -192,13 +216,9 @@ class _ScheduleViewsState extends State<ScheduleViews> {
               onPressed: () => _shift(_mode == _Mode.month ? 1 : _step),
               icon: const Icon(Icons.chevron_right),
               tooltip: tx('往后', en: 'Forward'),
+              visualDensity: VisualDensity.compact,
             ),
           ],
-        ),
-        const SizedBox(height: 6),
-        Text(
-          _windowLabel(),
-          style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
         ),
         const SizedBox(height: 6),
         if (cells == null)

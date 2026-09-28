@@ -883,9 +883,11 @@ class _MuscleTabState extends State<_MuscleTab> {
                       child: Row(
                         children: [
                           // FittedBox：大字号/窄屏下名称与百分比整体缩放，
-                          // 数字绝不被折行（如"30"拆成两行）
+                          // 数字绝不被折行（如"30"拆成两行）。列宽 76 =
+                          // 最长英文名 Shoulders @14px 的自然宽度——44 会让
+                          // 英文标签被 FittedBox 缩小、和相邻行字号不一致
                           SizedBox(
-                            width: 44,
+                            width: 76,
                             child: FittedBox(
                               fit: BoxFit.scaleDown,
                               child: Text(mname(r),
@@ -950,7 +952,7 @@ class _MuscleTabState extends State<_MuscleTab> {
                         child: Row(
                           children: [
                             SizedBox(
-                              width: 44,
+                              width: 76,
                               child: FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(

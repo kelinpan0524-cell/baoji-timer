@@ -234,8 +234,8 @@ class _PlanPageState extends State<PlanPage> {
         FilledButton.tonalIcon(
           onPressed: () => _showTemplatePicker(),
           icon: const Icon(Icons.library_books, size: 18),
-          label: Text(tx('从模板添加（三分化 / 五分化 / 功能性 / 居家）',
-              en: 'Add from template (3-day / 5-day split / Functional / Home)')),
+          label: Text(tx('从模板添加计划',
+              en: 'Add from template')),
           style: FilledButton.styleFrom(
             backgroundColor: AppTheme.cardHi,
             foregroundColor: AppTheme.text,

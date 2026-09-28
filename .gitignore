@@ -76,3 +76,4 @@ android/.mimosa/
 # Playwright MCP snapshots
 .playwright-mcp/
 test/goldens_en/
+test/goldens_zh/

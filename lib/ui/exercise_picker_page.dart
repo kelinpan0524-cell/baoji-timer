@@ -137,7 +137,9 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
           // 场景筛选
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-            child: Row(children: [
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
               for (final e in _equipments)
                 Padding(
                   padding: const EdgeInsets.only(right: 6),
@@ -162,9 +164,9 @@ class _ExercisePickerPageState extends State<ExercisePickerPage> {
                             : AppTheme.text),
                   ),
                 ),
-              const Spacer(),
-              // 大字号下三个 chips + 计数挤同一行：Flexible 让计数缩省略号
-              // 而不是把 Row 撑到溢出裁字。
+              // spaceBetween 而非 Spacer+Flexible：后者两个弹性子项平分
+              // 剩余空间，会把计数硬限在一半宽度提前出省略号；
+              // spaceBetween 让计数靠右、真挤了才由 Flexible 缩省略号
               Flexible(
                 child: Text(tx('共 ${list.length} 个', en: '${list.length} total'),
                     overflow: TextOverflow.ellipsis,
