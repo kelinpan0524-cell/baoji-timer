@@ -1291,9 +1291,19 @@ class ReleaseNotesPage extends StatelessWidget {
 
 // ============ 数据与备份 ============
 
+String _lastExportSummary(int lastMs) {
+  if (lastMs <= 0) {
+    return tx('还没有导出过 JSON 存档，建议每周一次',
+        en: 'No JSON archive yet — weekly export recommended');
+  }
+  final d = DateTime.fromMillisecondsSinceEpoch(lastMs);
+  final day =
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+  return '${tx('上次导出', en: 'Last export')}: $day';
+}
+
 /// 数据与备份：导出 CSV/JSON、剪贴板恢复、AI 分析包、清空全部。
-class DataBackupPage extends StatelessWidget {
-  const DataBackupPage({super.key});
+class DataBackupPage extends StatelessWidget {  const DataBackupPage({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -1308,6 +1318,11 @@ class DataBackupPage extends StatelessWidget {
               tx('手机本地存储是唯一数据源，建议每周导出存档。存档含训练记录、计划、身体数据与动作标注；换手机或误清数据时可用 JSON 存档一键恢复。',
                   en: 'Phone-local storage is the only data source. Export an archive weekly. It includes workout records, plans, body data, and exercise notes; if you switch phones or lose data, a JSON archive restores everything in one tap.'),
               style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _lastExportSummary(c.settings.lastExportJsonAt),
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 12),
             ),
             const SizedBox(height: 12),
             OutlinedButton(
@@ -1331,6 +1346,9 @@ class DataBackupPage extends StatelessWidget {
                   json,
                   filename: 'training_export.json',
                 );
+                c.settings.lastExportJsonAt =
+                    DateTime.now().millisecondsSinceEpoch;
+                await c.settings.save();
               },
               child: Text(tx('导出 JSON（存档）', en: 'Export JSON (archive)')),
             ),

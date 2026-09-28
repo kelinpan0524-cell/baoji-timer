@@ -125,6 +125,7 @@ class Settings extends ChangeNotifier {
     larkAccessToken = _prefs.getString('${_kprefix}larkAccess') ?? '';
     larkTokenExpiry = _prefs.getInt('${_kprefix}larkExpiry') ?? 0;
     aiChatHistoryJson = _prefs.getString('${_kprefix}aiChatHistory') ?? '[]';
+    lastExportJsonAt = _prefs.getInt('${_kprefix}lastExportJsonAt') ?? 0;
     langPref = switch (_prefs.getString('${_kprefix}lang')) {
       'zh' => LangPref.zh,
       'en' => LangPref.en,
@@ -141,6 +142,10 @@ class Settings extends ChangeNotifier {
   /// AI 教练对话历史（最近若干轮的 user/assistant 消息 JSON）。
   /// 退出 App 再进不丢（2026-09-26 Arono）；「清空对话」时一并清掉。
   String aiChatHistoryJson = '[]';
+
+  /// 上次成功导出 JSON 存档的时间（epoch ms，0=从未导出）。
+  /// 数据与备份行据此亮「建议备份」（2026-09-26 体检清单遗留项）。
+  int lastExportJsonAt = 0;
 
   void set(void Function() change, {bool persist = true}) {
     change();
@@ -178,12 +183,20 @@ class Settings extends ChangeNotifier {
     await _prefs.setString('${_kprefix}larkAccess', larkAccessToken);
     await _prefs.setInt('${_kprefix}larkExpiry', larkTokenExpiry);
     await _prefs.setString('${_kprefix}aiChatHistory', aiChatHistoryJson);
+    await _prefs.setInt('${_kprefix}lastExportJsonAt', lastExportJsonAt);
     await _prefs.setString('${_kprefix}lang', langPref.name);
     Lang.setResolved(resolvedLang == 'en');
     notifyListeners();
   }
 
   bool get aiConfigured => aiBaseUrl.isNotEmpty && aiApiKey.isNotEmpty;
+
+  /// 从未导出、或上次导出已超 7 天 → 数据与备份行亮「建议备份」。
+  static bool backupNeedsAttention(int lastExportJsonAtMs, {int? nowMs}) {
+    final now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    return lastExportJsonAtMs <= 0 ||
+        now - lastExportJsonAtMs > const Duration(days: 7).inMilliseconds;
+  }
 
   List<String> get distractingAppsList => distractingApps
       .split(',')
