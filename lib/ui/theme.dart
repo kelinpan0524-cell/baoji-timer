@@ -104,7 +104,10 @@ class AppTheme {
       style: FilledButton.styleFrom(
         backgroundColor: primary,
         foregroundColor: const Color(0xFF06220F),
-        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+        // 显式指定字体家族：styleFrom 的 textStyle 会整体替换 M3 默认样式，
+        // 不写家族会让按钮文字脱离主题字体链（测试环境渲染成方框，排版扫描没法核验）
+        textStyle: const TextStyle(
+            fontSize: 18, fontWeight: FontWeight.w700, fontFamily: 'Roboto'),
         minimumSize: const Size.fromHeight(56),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),

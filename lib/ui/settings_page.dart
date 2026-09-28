@@ -114,8 +114,6 @@ class SettingsPage extends StatelessWidget {
             title: tx('数据与备份', en: 'Data & Backup'),
             subtitle: tx('导出 CSV/JSON · 恢复 · 清空',
                 en: 'Export CSV/JSON · Restore · Delete'),
-            badge: Settings.backupNeedsAttention(s.lastExportJsonAt),
-            badgeLabel: tx('建议备份', en: 'Backup'),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const DataBackupPage()),
             ),
@@ -336,7 +334,9 @@ class _SettingsRow extends StatelessWidget {
                           fontSize: 15.5,
                           fontWeight: FontWeight.w600)),
                   const SizedBox(height: 1),
-                  DefaultTextStyle(
+                  // merge 而非裸替换：裸 DefaultTextStyle 会把字体家族一并清空
+                  // （子文本脱离主题字体链），merge 只叠加颜色/字号，家族照常继承
+                  DefaultTextStyle.merge(
                     style: const TextStyle(
                         color: AppTheme.textDim,
                         fontSize: 12,
@@ -347,13 +347,13 @@ class _SettingsRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
+            // 裸 Text 不用 Flexible：Flexible 会和左边的 Expanded 平分宽度，
+            // 把标题/副标题挤到一半宽折行（「Feishu Calendar」窄屏折两行）
             if (value != null)
-              Flexible(
-                child: Text(value!,
-                    textAlign: TextAlign.end,
-                    style: TextStyle(
-                        color: valueColor ?? AppTheme.textDim, fontSize: 13)),
-              ),
+              Text(value!,
+                  textAlign: TextAlign.end,
+                  style: TextStyle(
+                      color: valueColor ?? AppTheme.textDim, fontSize: 13)),
             const SizedBox(width: 4),
             Badge(
               isLabelVisible: badge,

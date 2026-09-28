@@ -358,7 +358,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 20));
       expect(container.session.phase, WorkoutPhase.resting);
 
-      await tester.tap(find.textContaining('点击可改重量'));
+      await tester.tap(find.textContaining('下一组'));
       await tester.pump(const Duration(milliseconds: 50));
       final inputBtn = find.text('直接输入重量');
       expect(inputBtn, findsOneWidget);
