@@ -233,10 +233,25 @@ class _AiCoachPageState extends State<AiCoachPage> {
     unawaited(s.save());
   }
 
+  void _exportRecap(AiMessage recap) {
+    final c = app(context);
+    final now = DateTime.now();
+    final title = tx('LeanLift 阶段复盘', en: 'LeanLift Phase Review');
+    final stamp =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    unawaited(c.export.shareText(
+      '$title $stamp',
+      AiService.buildRecapMarkdown(now, title, recap.content),
+      filename: 'leanlift-recap-'
+          '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}.md',
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = app(context);
     final configured = c.settings.aiConfigured;
+    final recap = AiService.lastRecapReply(_turns);
     return Scaffold(
       backgroundColor: AppTheme.bg,
       appBar: AppBar(
@@ -248,6 +263,12 @@ class _AiCoachPageState extends State<AiCoachPage> {
             onPressed:
                 configured ? () => _send(AiService.kAnalysisInstruction) : null,
             icon: const Icon(Icons.bolt),
+          ),
+          IconButton(
+            tooltip: tx('导出复盘存档', en: 'Export recap'),
+            onPressed:
+                recap == null || _sending ? null : () => _exportRecap(recap),
+            icon: const Icon(Icons.ios_share),
           ),
           IconButton(
             tooltip: tx('清空对话', en: 'Clear chat'),

@@ -114,6 +114,8 @@ class SettingsPage extends StatelessWidget {
             title: tx('数据与备份', en: 'Data & Backup'),
             subtitle: tx('导出 CSV/JSON · 恢复 · 清空',
                 en: 'Export CSV/JSON · Restore · Delete'),
+            badge: Settings.backupNeedsAttention(s.lastExportJsonAt),
+            badgeLabel: tx('建议备份', en: 'Backup'),
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(builder: (_) => const DataBackupPage()),
             ),

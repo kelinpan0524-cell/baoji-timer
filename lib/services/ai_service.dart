@@ -55,6 +55,26 @@ class AiService {
       '5. 未来 2-4 周的 3-5 条具体调整建议。\n'
       '总长控制在 600 字以内。';
 
+  /// 最近一次「一键阶段复盘」的 AI 回复（复盘指令后紧跟的 assistant 轮）。
+  /// 没发过复盘、或复盘指令是最后一轮（回复未回）时返回 null。
+  static AiMessage? lastRecapReply(List<AiMessage> turns) {
+    for (var i = turns.length - 2; i >= 0; i--) {
+      final u = turns[i];
+      if (u.role == 'user' && u.content == kAnalysisInstruction) {
+        final r = turns[i + 1];
+        return r.role == 'assistant' ? r : null;
+      }
+    }
+    return null;
+  }
+
+  /// 复盘回复拼成 Markdown 存档：标题带绝对日期，正文保持 AI 原文。
+  static String buildRecapMarkdown(DateTime now, String title, String reply) {
+    final date =
+        '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    return '# $title $date\n\n$reply\n';
+  }
+
   /// 组装教练对话消息：人设 + 排计划契约（合并为首个 system 段）+
   /// 数据上下文 + 历史 + 本轮用户输入。数据包作独立 system 段注入；
   /// chat/completions 无状态，历史每轮重发。
