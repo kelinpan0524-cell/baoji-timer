@@ -166,11 +166,18 @@ void main() {
   }
 
   Future<void> golden(WidgetTester tester, String name) async {
+    // 金图问题（缺失/不匹配）永不判布局失败：mismatch 除走 expectLater 的
+    // future 外还会上报 FlutterError.onError，被 _IssueCollector 误收成
+    // 布局异常——期间换 no-op handler 把这条上报通路断掉
+    final prev = FlutterError.onError;
+    FlutterError.onError = (details) {};
     try {
       await expectLater(
           find.byType(MaterialApp), matchesGoldenFile('goldens_zh/$name.png'));
     } catch (_) {
-      // 无基线（CI / 未带 --update-goldens）：仅提示，不算失败
+      // 无基线（CI / 未带 --update-goldens）或画面变化：仅提示，不算失败
+    } finally {
+      FlutterError.onError = prev;
     }
   }
 
