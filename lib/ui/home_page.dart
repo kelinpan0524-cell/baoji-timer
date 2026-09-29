@@ -5,6 +5,7 @@ import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import 'ai_coach_page.dart';
+import 'settings_subpages.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 import 'workout_page.dart';
@@ -76,9 +77,12 @@ class _HomePageState extends State<HomePage> {
         children: [
           _weekDots(today),
           const SizedBox(height: 16),
-          // AI 教练唯一入口（2026-09-26 Arono 需求）：首页置顶一张卡，
-          // 不再散落在数据页顶栏 / 设置页里
-          _aiCoachCard(context),
+          // AI 教练唯一入口（2026-09-26 Arono 需求）：首页置顶，不再散落在
+          // 数据页顶栏 / 设置页里。已配置=紫光晕大卡；未配置=低调一行直达
+          // 配置页（2026-09-29：装好即用的首页不常驻死路大卡，配好自动升级）
+          c.settings.aiConfigured
+              ? _aiCoachCard(context)
+              : _aiCoachHint(context),
           if (repo.activePlan == null)
             _noPlanCard(c)
           else ...[
@@ -141,6 +145,41 @@ class _HomePageState extends State<HomePage> {
               ]),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  /// 未配置 AI 时的降级入口：去掉紫底与光晕，一行灰字直达 AI 配置页。
+  /// Settings.save 会 notifyListeners + shell 条件渲染切 tab 即重建，配置完成
+  /// 回到本页自动升级成紫卡；push 返回后手动 setState 覆盖同页返回的场景。
+  Widget _aiCoachHint(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () async {
+          await Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const AiSettingsPage()),
+          );
+          if (mounted) setState(() {});
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(children: [
+            const Icon(Icons.smart_toy_outlined,
+                size: 20, color: AppTheme.textDim),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                  tx('AI 教练 · 未配置，点此设置',
+                      en: 'AI Coach · not set up, tap to configure'),
+                  style: const TextStyle(
+                      color: AppTheme.textDim, fontSize: 14)),
+            ),
+            const Icon(Icons.chevron_right,
+                size: 20, color: AppTheme.textDim),
+          ]),
         ),
       ),
     );
