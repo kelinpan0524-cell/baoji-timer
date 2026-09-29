@@ -388,6 +388,45 @@ void main() {
     await db.close();
   });
 
+  test('v10 老库升级：exercise_meta 出现 gear 列、老行默认空、可写可删', () async {
+    final db = await databaseFactory.openDatabase(dbPath);
+    // 手写 v10 形状（无 gear 列）
+    await db.execute('''
+      CREATE TABLE exercise_meta(
+        name TEXT PRIMARY KEY,
+        main_muscle TEXT NOT NULL,
+        secondary TEXT NOT NULL DEFAULT '',
+        is_compound INTEGER NOT NULL DEFAULT 0,
+        equipment TEXT NOT NULL DEFAULT 'both'
+      )''');
+    await db.insert('exercise_meta',
+        {'name': '老动作', 'main_muscle': '胸', 'secondary': '', 'is_compound': 1, 'equipment': 'gym'});
+
+    await Db.instance.upgradeV10to11(db);
+
+    final cols = [
+      for (final c in await db.rawQuery('PRAGMA table_info(exercise_meta)'))
+        c['name'] as String
+    ];
+    expect(cols, contains('gear'));
+    // 老行默认空串
+    final old = ExerciseMeta.fromMap(
+        (await db.query('exercise_meta')).first);
+    expect(old.gear, '');
+
+    // 新行带 gear 落库读回；delete DAO 真删
+    final wrapper = Db.forTesting(db);
+    await wrapper.upsertExerciseMeta(const ExerciseMeta(
+        '我的弹力带动作', MuscleGroups(main: '背', secondary: []), false, 'home', '', '弹力带'));
+    final rows = await wrapper.allExerciseMeta();
+    final mine = rows.firstWhere((m) => m.name == '我的弹力带动作');
+    expect(mine.gear, '弹力带');
+    await wrapper.deleteExerciseMeta('我的弹力带动作');
+    expect((await wrapper.allExerciseMeta())
+        .where((m) => m.name == '我的弹力带动作'), isEmpty);
+    await db.close();
+  });
+
   test('统计过滤纪律：active 会话的组不进任何聚合查询', () async {
     final db = await databaseFactory.openDatabase(dbPath);
     await createV5Schema(db);

@@ -52,7 +52,7 @@ class Db {
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
           // v9=超级组（superset_tag），v10=全计划顺延（plans.shift_*）。
-          version: 10,
+          version: 11,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -130,6 +130,9 @@ class Db {
     if (oldV < 10) {
       await upgradeV9to10(db);
     }
+    if (oldV < 11) {
+      await upgradeV10to11(db);
+    }
   }
 
   /// v10：plans 加全计划顺延字段（shift_days / shift_from）。
@@ -139,6 +142,15 @@ class Db {
         'ALTER TABLE plans ADD COLUMN shift_days INTEGER NOT NULL DEFAULT 0');
     await db.execute(
         "ALTER TABLE plans ADD COLUMN shift_from TEXT NOT NULL DEFAULT ''");
+  }
+
+  /// v11：动作库自定义管理（2026-09-29）——exercise_meta 加 gear 列，
+  /// 自定义/沉淀动作可带器械分类（弹力带/哑铃/自重…），浏览页器械筛选
+  /// 与 AI 词表的器械标注由此取数。DEFAULT '' 兼容老行（未标注）。
+  @visibleForTesting
+  Future<void> upgradeV10to11(Database db) async {
+    await db.execute(
+        "ALTER TABLE exercise_meta ADD COLUMN gear TEXT NOT NULL DEFAULT ''");
   }
 
   /// v6：计划模板目标参数快照进训练记录（调研条目 14）。
@@ -240,7 +252,8 @@ class Db {
         main_muscle TEXT NOT NULL,
         secondary TEXT NOT NULL DEFAULT '',
         is_compound INTEGER NOT NULL DEFAULT 0,
-        equipment TEXT NOT NULL DEFAULT 'both'
+        equipment TEXT NOT NULL DEFAULT 'both',
+        gear TEXT NOT NULL DEFAULT ''
       )''');
     await db.execute('''
       CREATE TABLE sessions(
@@ -712,6 +725,13 @@ class Db {
     final db = await database;
     await db.insert('exercise_meta', meta.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// 删除动作库自定义动作（v11：动作库管理页用）。只对词表外沉淀行有意义
+  /// ——内置动作的行删了也会被 UI 的「内置优先合并」无视，调用方自行把关。
+  Future<void> deleteExerciseMeta(String name) async {
+    final db = await database;
+    await db.delete('exercise_meta', where: 'name = ?', whereArgs: [name]);
   }
 
   Future<ExerciseMeta?> exerciseMeta(String name) async {

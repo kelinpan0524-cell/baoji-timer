@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
@@ -65,7 +66,18 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.bg,
-      appBar: AppBar(title: Text(tx('动作库', en: 'Exercise Library'))),
+      appBar: AppBar(
+        title: Text(tx('动作库', en: 'Exercise Library')),
+        actions: [
+          // 自定义动作（2026-09-29）：手动添加进动作库（落 exercise_meta），
+          // AI 排计划时可引用（沉淀同步链路自动进词表）。
+          IconButton(
+            tooltip: tx('添加自定义动作', en: 'Add custom exercise'),
+            onPressed: () => _showCustomSheet(null),
+            icon: const Icon(Icons.add_circle_outline),
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : Column(
@@ -181,10 +193,38 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Text(exname(m.name),
-                                          style: const TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600)),
+                                      Wrap(
+                                        spacing: 6,
+                                        runSpacing: 2,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text(exname(m.name),
+                                              style: const TextStyle(
+                                                  fontSize: 15,
+                                                  fontWeight:
+                                                      FontWeight.w600)),
+                                          if (_isCustom(m))
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: AppTheme.violet
+                                                    .withValues(alpha: 0.15),
+                                                borderRadius:
+                                                    BorderRadius.circular(6),
+                                              ),
+                                              child: Text(
+                                                tx('自定义', en: 'Custom'),
+                                                style: const TextStyle(
+                                                    fontSize: 10,
+                                                    color: AppTheme.violet),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
                                       const SizedBox(height: 2),
                                       Text(
                                         tx(
@@ -217,6 +257,10 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
             ),
     );
   }
+
+  /// 是否自定义动作（词表外沉淀行）：内置 186 条来自静态词表不可删改，
+  /// 自定义动作可编辑标注/删除。
+  bool _isCustom(ExerciseMeta m) => libraryMetaByName(m.name) == null;
 
   Widget _equipmentTag(ExerciseMeta m) {
     final color = switch (m.equipment) {
@@ -335,11 +379,61 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                      tx('共 ${dates.length} 次练过，更多见历史页',
-                          en: 'Trained ${dates.length} times in total — see History for more'),
-                      style: const TextStyle(
-                          color: AppTheme.textDim, fontSize: 12)),
+                    tx('共 ${dates.length} 次练过，更多见历史页',
+                        en: 'Trained ${dates.length} times in total — see History for more'),
+                    style: const TextStyle(
+                        color: AppTheme.textDim, fontSize: 12)),
+                  ),
+            ],
+            // 自定义动作管理（2026-09-29）：编辑标注 / 从动作库删除。
+            // 内置动作不提供（静态词表为权威源，AI/筛选/详情都以内置为准）。
+            if (_isCustom(m)) ...[
+              const SizedBox(height: 14),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _showCustomSheet(m);
+                    },
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: Text(tx('编辑标注', en: 'Edit tags')),
+                  ),
                 ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                        foregroundColor: AppTheme.danger),
+                    onPressed: () async {
+                      final ok = await confirmDialog(
+                        ctx,
+                        tx('删除「${exname(m.name)}」？',
+                            en: 'Delete "${exname(m.name)}"?'),
+                        tx(
+                            '只从动作库移除这个自定义动作（AI 不再引用）；已写进计划与历史记录的训练不受影响。',
+                            en: 'Removes this custom exercise from the library only (AI will stop using it); plans and workout history that already use it are unaffected.'),
+                        okLabel: tx('删除', en: 'Delete'),
+                      );
+                      if (!ok) return;
+                      await c.db.deleteExerciseMeta(m.name);
+                      // 既有惯例：改 exercise_meta 后经 planRepo.reload 触发
+                      // AI 词表沉淀同步（AppContainer 监听）与提醒重排。
+                      await c.planRepo.reload();
+                      await _load();
+                      if (ctx.mounted) {
+                        Navigator.pop(ctx);
+                      }
+                      if (mounted) {
+                        toast(context,
+                            tx('已删除', en: 'Deleted'));
+                      }
+                    },
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: Text(tx('删除', en: 'Delete')),
+                  ),
+                ),
+              ]),
             ],
           ],
         ),
@@ -347,8 +441,35 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
     );
   }
 
-  Widget _bestCell(String label, String value) {
-    return Expanded(
+  /// 添加/编辑自定义动作（2026-09-29）：表单落 exercise_meta（词表外沉淀
+  /// 行），保存后经 planRepo.reload 触发 AI 词表同步——AI 排计划即可引用。
+  /// [initial] 非空 = 编辑既有自定义动作。
+  Future<void> _showCustomSheet(ExerciseMeta? initial) async {
+    final c = app(context);
+    final result = await showModalBottomSheet<ExerciseMeta>(
+      context: context,
+      backgroundColor: AppTheme.cardHi,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _CustomExerciseSheet(initial: initial),
+    );
+    if (result == null) return;
+    await c.db.upsertExerciseMeta(result);
+    await c.planRepo.reload();
+    await _load();
+    if (mounted) {
+      toast(
+        context,
+        initial == null
+            ? tx('已添加「${exname(result.name)}」，AI 排计划可引用',
+                en: 'Added "${exname(result.name)}" — AI can now use it in plans')
+            : tx('已更新「${exname(result.name)}」', en: 'Updated "${exname(result.name)}"'),
+      );
+    }
+  }
+
+  Widget _bestCell(String label, String value) {    return Expanded(
       child: Column(
         children: [
           FittedBox(
@@ -367,3 +488,184 @@ class _ExerciseLibraryPageState extends State<ExerciseLibraryPage> {
     );
   }
 }
+
+/// 自定义动作表单（添加/编辑，2026-09-29）：名称 + 主肌群 + 细分器械 +
+/// 复合/单关节 + 场景。保存返回 ExerciseMeta（由调用方落库并同步 AI 词表）。
+/// 与内置动作重名会被拦截——静态词表在各消费方优先，同名落库不生效。
+class _CustomExerciseSheet extends StatefulWidget {
+  const _CustomExerciseSheet({this.initial});
+
+  final ExerciseMeta? initial;
+
+  @override
+  State<_CustomExerciseSheet> createState() => _CustomExerciseSheetState();
+}
+
+class _CustomExerciseSheetState extends State<_CustomExerciseSheet> {
+  late final _nameCtrl =
+      TextEditingController(text: widget.initial?.name ?? '');
+  late String _muscle = widget.initial?.muscles.main ?? '胸';
+  late String _gear = _gears.contains(widget.initial?.gear) &&
+          (widget.initial?.gear ?? '').isNotEmpty
+      ? widget.initial!.gear
+      : '自重';
+  late bool _compound = widget.initial?.isCompound ?? true;
+  late String _equipment = widget.initial?.equipment ?? 'both';
+  String? _nameError;
+
+  static const _gears = [
+    '杠铃', '哑铃', '龙门架绳索', '固定器械', '弹力带', '自重', '壶铃', '其他器械',
+  ];
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+                widget.initial == null
+                    ? tx('添加自定义动作', en: 'Add custom exercise')
+                    : tx('编辑自定义动作', en: 'Edit custom exercise'),
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              tx('保存后进动作库，AI 排计划时可以引用它。',
+                  en: 'Saved into the library; AI can reference it when planning.'),
+              style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _nameCtrl,
+              autofocus: widget.initial == null,
+              decoration: InputDecoration(
+                labelText: tx('动作名', en: 'Exercise name'),
+                errorText: _nameError,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _label(tx('主肌群', en: 'Primary muscle')),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final m in kMuscleRegions)
+                  _chip(muscle: m, selected: _muscle == m, onTap: () => setState(() => _muscle = m), label: mname(m)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _label(tx('器械', en: 'Equipment')),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final g in _gears)
+                  _chip(muscle: g, selected: _gear == g, onTap: () => setState(() => _gear = g), label: gearname(g)),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _label(tx('类型', en: 'Type')),
+            Wrap(
+              spacing: 8,
+              children: [
+                _chip(muscle: 'compound', selected: _compound, onTap: () => setState(() => _compound = true), label: tx('复合动作', en: 'Compound')),
+                _chip(muscle: 'assistance', selected: !_compound, onTap: () => setState(() => _compound = false), label: tx('单关节动作', en: 'Isolation')),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _label(tx('场景', en: 'Setting')),
+            Wrap(
+              spacing: 8,
+              children: [
+                _chip(muscle: 'both', selected: _equipment == 'both', onTap: () => setState(() => _equipment = 'both'), label: tx('皆可', en: 'Both')),
+                _chip(muscle: 'gym', selected: _equipment == 'gym', onTap: () => setState(() => _equipment = 'gym'), label: tx('健身房', en: 'Gym')),
+                _chip(muscle: 'home', selected: _equipment == 'home', onTap: () => setState(() => _equipment = 'home'), label: tx('居家', en: 'Home')),
+              ],
+            ),
+            const SizedBox(height: 18),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                style: FilledButton.styleFrom(
+                    minimumSize: const Size.fromHeight(52)),
+                onPressed: _save,
+                child: Text(tx('保存', en: 'Save')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(text,
+            style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w600)),
+      );
+
+  Widget _chip(
+      {required String muscle,
+      required bool selected,
+      required VoidCallback onTap,
+      required String label}) {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.accent : AppTheme.card,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? const Color(0xFF06220F) : AppTheme.textDim)),
+      ),
+    );
+  }
+
+  void _save() {
+    final name = _nameCtrl.text.trim();
+    if (name.isEmpty) {
+      setState(() => _nameError = tx('给动作起个名字', en: 'Give it a name'));
+      return;
+    }
+    if (libraryMetaByName(name) != null) {
+      setState(() => _nameError =
+          tx('与内置动作重名，请换一个名字', en: 'Same name as a built-in exercise — pick another'));
+      return;
+    }
+    Navigator.pop(
+      context,
+      ExerciseMeta(
+        name,
+        MuscleGroups(main: _muscle, secondary: widget.initial?.muscles.secondary ?? const []),
+        _compound,
+        _equipment,
+        '',
+        _gear,
+      ),
+    );
+  }
+}
+

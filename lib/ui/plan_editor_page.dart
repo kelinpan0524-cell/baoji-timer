@@ -245,6 +245,8 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
             main: result.muscle, secondary: old?.muscles.secondary ?? []),
         result.kind == 'compound',
         result.equipment,
+        '',
+        old?.gear ?? '',
       );
       await c.db.upsertExerciseMeta(meta);
       _metaByName[result.name] = meta;

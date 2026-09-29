@@ -271,6 +271,18 @@ const kExerciseLibrary = <ExerciseMeta>[
   ExerciseMeta('坐姿臂屈伸机', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '坐姿臂屈伸器，上臂贴稳挡垫，前臂下压至完全伸直停一秒；对肘关节友好、三头孤立。常见错误：肘部离垫、身体下压借力。', '固定器械'),
   // —— 胸（器械） ——
   ExerciseMeta('上斜推胸机', MuscleGroups(main: '胸', secondary: ['肩']), true, 'gym', '上斜姿势的坐姿推胸器，背贴靠垫沿固定轨道向斜上方推起，主打胸上沿。常见错误：肩部耸起、顶端偷懒不伸直。', '固定器械'),
+  // ============ 补库第五弹（2026-09-29 晚，Arono 点名：居家/出差可练） ============
+  // 弹力带全家桶 + 自重/哑铃补位，全部 home 场景、有对应示意图。
+  ExerciseMeta('弹力带深蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'home', '双脚踩住弹力带两端，双手把带拉到肩侧，屈髋下蹲至大腿平行再站起；带的阻力越往下越大，全程躯干立直。常见错误：带从脚下打滑、膝盖内扣。', '弹力带'),
+  ExerciseMeta('弹力带早安式', MuscleGroups(main: '腿', secondary: ['核心']), true, 'home', '弹力带踩脚下、绕过肩背，屈髋俯身至上背接近平行地面再伸髋站直，练腘绳与臀。常见错误：弓背、屈膝变深蹲。', '弹力带'),
+  ExerciseMeta('弹力带卧推', MuscleGroups(main: '胸', secondary: ['肩', '手臂']), true, 'home', '弹力带固定在凳后（或绕背上），双手持带推起至手臂伸直再慢放；张力越推越大，与杠铃手感互补。常见错误：带松掉失去张力、肘部过度外展。', '弹力带'),
+  ExerciseMeta('弹力带推肩', MuscleGroups(main: '肩', secondary: ['手臂']), true, 'home', '踩住弹力带、双手拉到肩侧，垂直向上推起至手臂伸直；核心绷紧不塌腰。常见错误：耸肩借力、推起轨迹前后晃。', '弹力带'),
+  ExerciseMeta('弹力带臂屈伸', MuscleGroups(main: '手臂', secondary: []), false, 'home', '弹力带固定在高位（门框/单杠），双手抓带从头后向上伸直手臂，练三头；肘部位置固定只动小臂。常见错误：肘部外张、身体下沉借力。', '弹力带'),
+  ExerciseMeta('弹力带提踵', MuscleGroups(main: '腿', secondary: []), false, 'home', '前脚掌踩住弹力带（或踩一端、拉另一端到肩），脚跟下放到拉伸位再顶起到最高，慢下慢上。常见错误：行程过短、弹震式快做。', '弹力带'),
+  ExerciseMeta('弹力带臀桥', MuscleGroups(main: '腿', secondary: ['核心']), false, 'home', '弹力带套在膝上方、仰卧屈膝，臀发力把髋顶到肩髋膝一线，顶峰对抗带的外拉夹臀一秒。常见错误：塌腰顶过高、用脚蹬地借力。', '弹力带'),
+  ExerciseMeta('弹力带直立划船', MuscleGroups(main: '肩', secondary: ['手臂']), false, 'home', '踩住弹力带双手窄握，贴身拉至下颌高度、肘高于手再慢放。肩部不适者减小幅度或跳过。常见错误：杠（带）离身、耸肩代偿。', '弹力带'),
+  ExerciseMeta('俯卧背挺身', MuscleGroups(main: '腿', secondary: ['背', '核心']), true, 'home', '俯卧在地面（或床沿），双手轻扶耳侧，用臀与下背把上身抬起至自然高度再慢放；幅度小一点、控制优先。常见错误：抬头过度折颈、猛甩起身。', '自重'),
+  ExerciseMeta('哑铃交替平举', MuscleGroups(main: '肩', secondary: []), false, 'both', '双手持哑铃，一侧前平举至肩高回落的同时另一侧侧平举，交替进行；躯干稳定不晃。常见错误：借甩动、耸肩。', '哑铃'),
 ];
 
 /// 兼容旧引用：薄肌计划内置词表 = 大库子集。

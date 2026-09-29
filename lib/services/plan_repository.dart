@@ -404,6 +404,44 @@ class PlanRepository extends ChangeNotifier {
     // 全量 REPLACE 会把用户在编辑器改过的肌群/器械标注静默重置回内置默认。
   }
 
+  /// AiDaySpec 的单日动作 → PlanExercise 列表（**不落库**）：
+  /// AI 给的计划「作为今日临时训练直接开练」用（2026-09-29 出差场景），
+  /// 派生口径与 _writeSpecsIntoPlan 一致（kind 判定/休息默认/渐进规则）。
+  static List<PlanExercise> planExercisesFromDaySpec(
+    AiDaySpec spec,
+    Map<String, ExerciseMeta> metaMap, {
+    int compoundRest = 180,
+    int assistanceRest = 120,
+  }) {
+    return [
+      for (final (i, ex) in spec.exercises.indexed)
+        PlanExercise(
+          dayId: 0, // 占位：临时训练不挂模板日
+          name: ex.name,
+          orderIdx: i,
+          sets: ex.sets,
+          repsMin: ex.repsMin,
+          repsMax: ex.repsMax,
+          restSec: ex.restSec ??
+              (metaMap[ex.name]?.isCompound == true || ex.kind == 'compound'
+                  ? compoundRest
+                  : assistanceRest),
+          kind: metaMap[ex.name]?.isCompound == true
+              ? 'compound'
+              : (ex.kind ?? 'assistance'),
+          rule: ProgressionRule(
+            repsMin: ex.repsMin,
+            repsMax: ex.repsMax,
+            incrementKg:
+                (metaMap[ex.name]?.isCompound == true || ex.kind == 'compound')
+                    ? 2.5
+                    : 1.25,
+            workingSets: ex.sets,
+          ),
+        ),
+    ];
+  }
+
   /// 今天的 PlanDay（无则 null）。
   PlanDay? dayForWeekday(int weekday) {
     for (final d in days) {

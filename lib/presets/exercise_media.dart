@@ -191,6 +191,17 @@ const kExerciseImageIdMap = <String, String>{
   '坐姿臂屈伸机': 'Machine_Triceps_Extension',
   '上斜推胸机': 'Leverage_Incline_Chest_Press',
   '超人式': 'Superman',
+  // —— 补库第五弹（2026-09-29 居家/出差） ——
+  '弹力带深蹲': 'Squats_-_With_Bands',
+  '弹力带早安式': 'Band_Good_Morning',
+  '弹力带卧推': 'Bench_Press_-_With_Bands',
+  '弹力带推肩': 'Shoulder_Press_-_With_Bands',
+  '弹力带臂屈伸': 'Band_Skull_Crusher',
+  '弹力带提踵': 'Calf_Raises_-_With_Bands',
+  '弹力带臀桥': 'Hip_Lift_with_Band',
+  '弹力带直立划船': 'Upright_Row_-_With_Bands',
+  '俯卧背挺身': 'Hyperextensions_With_No_Hyperextension_Bench',
+  '哑铃交替平举': 'Alternating_Deltoid_Raise',
 };
 
 /// 该动作的示意图片资产路径（0 = 起始 / 1 = 结束姿势）；未映射返回空。
