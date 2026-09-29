@@ -154,6 +154,14 @@ class Plan {
   final int cycleTrain;
   final int cycleRest;
 
+  /// 全计划顺延天数（2026-09-29）：每次「这天休息，之后全部顺延一天」+1。
+  /// 推导时 [shiftFrom] 起（含）的日期先回退这么多天再走 循环/星期 规则，
+  /// 即明天排今天的内容、依此类推；覆盖行（手动改期）不受影响、仍按真实日期。
+  final int shiftDays;
+
+  /// 顺延生效起点（yyyy-MM-dd，多次顺延保留最早一次的日期；空 = 未顺延过）。
+  final String shiftFrom;
+
   const Plan({
     this.id,
     required this.name,
@@ -164,9 +172,21 @@ class Plan {
     this.patternStart = '',
     this.cycleTrain = 0,
     this.cycleRest = 0,
+    this.shiftDays = 0,
+    this.shiftFrom = '',
   });
 
   bool get isCycle => pattern == 'cycle';
+
+  /// 排程推导用的"有效日期"：shiftFrom 起的日期整体回退 shiftDays 天，
+  /// shiftFrom 之前的历史日期保持原推导不动。纯函数（测试对拍用）。
+  DateTime effectiveScheduleDate(DateTime d) {
+    if (shiftDays <= 0 || shiftFrom.isEmpty) return d;
+    final day = DateTime(d.year, d.month, d.day);
+    final from = DateTime.parse(shiftFrom);
+    if (day.isBefore(from)) return d;
+    return day.subtract(Duration(days: shiftDays));
+  }
 
   Map<String, dynamic> toMap() => {
         if (id != null) 'id': id,
@@ -178,6 +198,8 @@ class Plan {
         'pattern_start': patternStart,
         'cycle_train': cycleTrain,
         'cycle_rest': cycleRest,
+        'shift_days': shiftDays,
+        'shift_from': shiftFrom,
       };
 
   factory Plan.fromMap(Map<String, dynamic> m) => Plan(
@@ -190,6 +212,9 @@ class Plan {
         patternStart: (m['pattern_start'] as String?) ?? '',
         cycleTrain: (m['cycle_train'] as num?)?.toInt() ?? 0,
         cycleRest: (m['cycle_rest'] as num?)?.toInt() ?? 0,
+        // 老库存档/备份没有顺延列，缺键回落未顺延
+        shiftDays: (m['shift_days'] as num?)?.toInt() ?? 0,
+        shiftFrom: (m['shift_from'] as String?) ?? '',
       );
 
   Plan copyWith({
@@ -200,6 +225,8 @@ class Plan {
     String? patternStart,
     int? cycleTrain,
     int? cycleRest,
+    int? shiftDays,
+    String? shiftFrom,
   }) =>
       Plan(
         id: id ?? this.id,
@@ -211,6 +238,8 @@ class Plan {
         patternStart: patternStart ?? this.patternStart,
         cycleTrain: cycleTrain ?? this.cycleTrain,
         cycleRest: cycleRest ?? this.cycleRest,
+        shiftDays: shiftDays ?? this.shiftDays,
+        shiftFrom: shiftFrom ?? this.shiftFrom,
       );
 }
 

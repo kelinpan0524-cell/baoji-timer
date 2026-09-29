@@ -415,4 +415,42 @@ void main() {
     expect(between.first.status, 'done');
     await db.close();
   });
+
+  test('v10 老库升级：plans 增顺延两列，存量行默认未顺延', () async {
+    final db = await databaseFactory.openDatabase(dbPath);
+    // 模拟 v8/v9 老库：建全套新 schema 后，把 plans 换回没有顺延列的旧结构
+    await Db.instance.createSchema(db);
+    await db.execute('PRAGMA foreign_keys = OFF');
+    await db.execute('DROP TABLE plans');
+    await db.execute('''
+      CREATE TABLE plans(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        source TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        pattern TEXT NOT NULL DEFAULT 'weekly',
+        pattern_start TEXT NOT NULL DEFAULT '',
+        cycle_train INTEGER NOT NULL DEFAULT 0,
+        cycle_rest INTEGER NOT NULL DEFAULT 0
+      )''');
+    await db.execute('PRAGMA foreign_keys = ON');
+    final planId = await db.insert('plans', {
+      'name': '老计划',
+      'source': 'preset',
+      'created_at': '2026-09-01',
+    });
+
+    // 生产路径同款迁移
+    await Db.instance.upgradeV9to10(db);
+
+    final cols =
+        (await db.rawQuery('PRAGMA table_info(plans)')).map((c) => c['name']);
+    expect(cols, containsAll(['shift_days', 'shift_from']));
+    final row = await db.query('plans', where: 'id=?', whereArgs: [planId]);
+    final plan = Plan.fromMap(row.single);
+    expect(plan.shiftDays, 0, reason: '存量行默认未顺延');
+    expect(plan.shiftFrom, '');
+    await db.close();
+  });
 }

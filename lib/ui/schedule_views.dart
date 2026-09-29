@@ -625,6 +625,19 @@ class _ScheduleViewsState extends State<ScheduleViews> {
                   },
                 ),
             ],
+            // 全计划顺延：今天（或未来某天）休息，之后所有训练整体推一天。
+            // 只对今天及以后的日期提供（历史日期顺延无意义）。
+            if (!_isPastDate(d))
+              ListTile(
+                leading: const Icon(Icons.event_repeat, color: AppTheme.accent),
+                title: Text(tx('这天休息，之后全部顺延一天',
+                    en: 'Rest this day, shift all later by one')),
+                subtitle: Text(
+                    tx('明天排这天的内容，依此类推（长期有效）',
+                        en: 'Tomorrow gets this day\'s workout, and so on (stays in effect)'),
+                    style: const TextStyle(fontSize: 12)),
+                onTap: () => _shiftAll(ctx, d),
+              ),
             if (cell.overridden)
               ListTile(
                 leading: const Icon(Icons.settings_backup_restore),
@@ -643,6 +656,26 @@ class _ScheduleViewsState extends State<ScheduleViews> {
     );
   }
 
+  /// 今天 0 点之前 = 历史日期。
+  static bool _isPastDate(DateTime d) {
+    final now = DateTime.now();
+    return d.isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  /// 全计划顺延一天：确认 → 落库 → 撤销 SnackBar（照拖拽改期的模式）。
+  Future<void> _shiftAll(BuildContext sheetCtx, DateTime d) async {
+    Navigator.pop(sheetCtx);
+    await showShiftAllDayFlow(
+      context: context,
+      plan: widget.plan,
+      d: d,
+      onChanged: () async {
+        widget.onChanged();
+        await _reload();
+      },
+    );
+  }
+
   Future<void> _move(BuildContext sheetCtx, DateTime from, DateTime to) async {
     Navigator.pop(sheetCtx);
     final c = app(context);
@@ -655,4 +688,64 @@ class _ScheduleViewsState extends State<ScheduleViews> {
               en: '${to.isAfter(from) ? 'Postponed to' : 'Moved up to'} ${to.month}/${to.day}'));
     }
   }
+}
+
+/// 全计划顺延一天的完整交互流（确认弹窗 → 落库 → 带撤销的 SnackBar）。
+/// 计划页日期弹层与首页今日卡共用；[onChanged] 在落库与撤销后各调一次
+/// （调用方负责刷新页面与飞书同步）。
+Future<void> showShiftAllDayFlow({
+  required BuildContext context,
+  required Plan plan,
+  required DateTime d,
+  required Future<void> Function() onChanged,
+}) async {
+  final c = app(context);
+  final navigator = Navigator.of(context);
+  final messenger = ScaffoldMessenger.of(context);
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (dialogCtx) => AlertDialog(
+      backgroundColor: AppTheme.card,
+      title:
+          Text(tx('这天休息，之后全部顺延？', en: 'Rest this day and shift everything?')),
+      content: Text(
+        tx(
+            '这天会记为休息；从这天起每个训练都会比原来晚一天'
+            '（明天排这天的内容，依此类推）。手动改过的日期不受影响。',
+            en: 'This day becomes rest. Every workout from here on moves one day later '
+                '(tomorrow gets this day\'s plan, and so on). Manually adjusted dates are unaffected.'),
+        style: const TextStyle(height: 1.5),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => navigator.pop(false),
+          child: Text(tx('取消', en: 'Cancel')),
+        ),
+        FilledButton(
+          onPressed: () => navigator.pop(true),
+          child: Text(tx('顺延一天', en: 'Shift by One Day')),
+        ),
+      ],
+    ),
+  );
+  if (ok != true) return;
+  final snapshot = await c.planRepo.shiftScheduleOneDay(plan, d);
+  await onChanged();
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      content: Text(tx(
+          '已顺延：${d.month}/${d.day}休息，之后的训练整体推迟一天',
+          en: 'Shifted: ${d.month}/${d.day} is now rest, all later workouts move back one day')),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: tx('撤销', en: 'Undo'),
+        onPressed: () async {
+          messenger.hideCurrentSnackBar();
+          await c.planRepo.undoShiftScheduleOneDay(plan, d, snapshot);
+          await onChanged();
+        },
+      ),
+    ));
 }
