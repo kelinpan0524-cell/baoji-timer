@@ -22,9 +22,43 @@ class AiService {
   final Settings _settings;
   late final http.Client? _httpClient;
 
+  // ---------- 动作词表（内置 + 用户沉淀合并集，2026-09-29） ----------
+  // 用户沉淀动作 = exercise_meta 表里内置词表之外的新行（AI 生成保存、
+  // 编辑器手动添加沉淀而来）。词表与六级匹配此前只读内置静态清单，
+  // 沉淀动作永远进不了 AI 参考、名字也匹配不上——AI 会换名重造同一
+  // 动作、已确认过的还会再标「待确认」。合并后三处提示词、匹配级联
+  // 与 metaMap 全部与动作挑选页同口径。由 AppContainer 在计划仓库
+  // 加载/变化后灌入（测试可直接赋值）。
+  List<ExerciseMeta> _sedimentLibrary = const [];
+
+  set sedimentLibrary(List<ExerciseMeta> v) {
+    _sedimentLibrary = v;
+    _sortedMetaCache = null; // 匹配快照随词表失效，下次用时重建
+  }
+
+  /// 内置库在前（保持既有顺序）、沉淀追加在后。
+  List<ExerciseMeta> get mergedLibrary =>
+      [...kExerciseLibrary, ..._sedimentLibrary];
+
   Map<String, ExerciseMeta> metaMap() => {
-        for (final m in kExerciseLibrary) m.name: m,
+        for (final m in mergedLibrary) m.name: m,
       };
+
+  /// 参考词表（按肌群分组紧凑渲染，三处提示词共用）：
+  /// 「胸：卧推、…；腿：…」。比平铺好检索——180+ 条时模型能按目标肌群
+  /// 直接去对应分组挑动作；分组开销仅每肌群 2 个字符。
+  static String exerciseReference(List<ExerciseMeta> library) {
+    final buf = StringBuffer();
+    for (final region in kMuscleRegions) {
+      final names = [
+        for (final m in library)
+          if (m.muscles.main == region) m.name,
+      ];
+      if (names.isEmpty) continue;
+      buf.write('$region：${names.join('、')}；');
+    }
+    return buf.toString();
+  }
 
   /// AI 教练人设（system prompt）。身份设定三原则：
   /// ① 数据为准——只对训练数据说话，没有的不编造；
@@ -104,9 +138,10 @@ class AiService {
   /// 关键设计：用户想排/改计划时，每次输出**完整最新版**计划的严格 JSON
   /// （```json 围栏），App 端用 extractJsonPayload + parseResponse 提取清洗
   /// ——与计划页「描述生成」完全同一套 JSON 契约与容错，不另起炉灶。
-  static String planChatContract() {
-    final lib =
-        kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
+  /// 2026-09-29 起为实例方法：词表含用户沉淀动作（mergedLibrary），
+  /// 并按肌群分组渲染，模型按目标肌群直接去对应分组挑动作。
+  String planChatContract() {
+    final lib = exerciseReference(mergedLibrary);
     return '【排计划规则】当用户想让你安排或调整训练计划（排新计划、换动作、改组次、'
         '加减训练日、调下一阶段）时，规则：\n'
         '1. 信息不足时先用 1-2 个问题问清（每周练几天、健身房还是居家、有哪些器械、目标是增肌还是力量）；'
@@ -121,7 +156,8 @@ class AiService {
         '4. 每周 3-5 个训练日（用户明确指定则照办）；同一肌群两次训练至少间隔 48 小时；'
         '容量安排符合渐进超负荷原则；热身组不写入；rest_sec：复合动作 150-180、辅助动作 90-120。\n'
         '5. 可以参考训练数据里用户的水平与弱项安排，但计划本身仍按上面的 JSON 输出。\n'
-        '6. 动作名优先用参考词表：$lib\n'
+        '6. 动作必须优先从参考词表里选（按目标肌群去对应分组挑，名字照抄词表原文）；'
+        '词表确实没有合适的才用规范中文短名。参考词表（按肌群分组）：$lib\n'
         '7. 超级组：仅当用户提到"超级组/配对/交替练"时才用——配对的第一个动作加 "superset": true'
         '（与下一个动作配对，连标两个=三动作连组）；优先拮抗肌配对；配对动作组数一致；'
         '配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作正常休息。';
@@ -262,15 +298,14 @@ class AiService {
 
   /// 自然语言描述 → 教练设计一份计划（输出与原文导入相同的 JSON 契约）。
   String buildDesignerPrompt(String description) {
-    final lib =
-        kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
+    final lib = exerciseReference(mergedLibrary);
     return '''
 你是专业力量训练教练。根据用户的自然语言描述，设计一份每周力量训练计划，输出严格 JSON：
 1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
 2. 每个元素是一个训练日：{"weekday": 1-7(周一=1), "title": "训练日名称", "exercises": [...]}
 3. 每个 exercise：{"name": "规范中文动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "胸/肩/背/手臂/腿/核心 之一", "superset": true(可选)}
-4. 每周 3-5 个训练日；同一肌群两次训练至少间隔 48 小时；容量安排符合渐进超负荷原则；热身组不写入。
-5. rest_sec：复合动作 150-180，辅助动作 90-120。动作名尽量使用参考词表：$lib
+4. 每周 3-5 个训练日；同一肌群两次训练至少间隔 48 小时；容量安排符合渐进超负荷原则；热身组不写入；rest_sec：复合动作 150-180，辅助动作 90-120。
+5. 动作必须优先从参考词表里选（按目标肌群去对应分组挑，名字照抄词表原文）；词表确实没有合适的才用规范中文短名。参考词表（按肌群分组）：$lib
 6. 用户未说明的部分按增肌最佳实践补全；描述过简时按"每周 3 练、全身均衡"处理；用户明确指定的动作/器械/次数/每周训练天数都尊重用户（如"每周 6 练"或"只要 2 天"照办）。
 7. 超级组：仅当用户提到"超级组/配对/交替练"时才使用，不要主动加——在配对的第一个动作上加 "superset": true 表示与下一个动作配成超级组（连标两个=三动作连组）；优先拮抗肌配对（如二头弯举+三头臂屈伸、卧推+划船）；配对动作组数保持一致；配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作保持正常组间休息。
 
@@ -288,14 +323,14 @@ class AiService {
   }
 
   String _buildPrompt(String planText) {
-    final lib = kExerciseLibrary.map((m) => '${m.name}(${m.muscles.main})').join('、');
+    final lib = exerciseReference(mergedLibrary);
     return '''
 你是力量训练计划解析器。把下面的训练计划文本转换为严格 JSON。要求：
 1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
 2. 每个元素是一个训练日：{"weekday": 1-7(周一=1), "title": "训练日名称", "exercises": [...]}
 3. 每个 exercise：{"name": "动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "主发力肌群，从 胸/肩/背/手臂/腿/核心 里选一个", "superset": true(可选)}
 4. "3×5-8" 表示 sets=3, reps_min=5, reps_max=8；"3组8-12次" 同理。
-5. 动作名使用规范中文（参考词表：$lib）。次数字段缺失时用常见默认：复合动作 5-8、辅助动作 8-12；休息缺失时复合 180、辅助 120。
+5. 动作名使用规范中文，词表里有的动作优先用词表原文（参考词表按肌群分组：$lib）。次数字段缺失时用常见默认：复合动作 5-8、辅助动作 8-12；休息缺失时复合 180、辅助 120。
 6. 训练计划原文可能提到具体星期，如"周一"对应 weekday=1。
 7. 原文里的"超级组/配对/交替"（如"超级组：二头弯举+三头下压"或"A1 B1 A2 B2 交替"）：在配对的第一个动作上加 "superset": true 表示与下一个动作配对；配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作按原文或默认。
 
@@ -780,9 +815,12 @@ $planText
 
   /// 词表快照。长度降序仅影响同长度差的并列候选谁先命中
   /// （更具体的变体优先）；「卧推」等短泛称不再因降序被吸成长变体。
-  static final List<ExerciseMeta> _sortedMeta = [
-    ...kExerciseLibrary.toList()..sort((a, b) => b.name.length.compareTo(a.name.length)),
-  ];
+  /// 基于「内置 + 沉淀」合并集，沉淀词表更新时置 null 重建。
+  List<ExerciseMeta>? _sortedMetaCache;
+
+  List<ExerciseMeta> get _sortedMeta => _sortedMetaCache ??=([
+        ...mergedLibrary,
+      ]..sort((a, b) => b.name.length.compareTo(a.name.length)));
 }
 
 class AiException implements Exception {

@@ -170,6 +170,27 @@ const kExerciseImageIdMap = <String, String>{
   '器械卷腹': 'Ab_Crunch_Machine',
   '借力推': 'Push_Press',
   '壶铃单臂划船': 'One-Arm_Kettlebell_Row',
+  // —— 补库第四弹（2026-09-29 臀腿+商业健身房器械，19 新动作 + 超人式补图） ——
+  '绳索髋屈伸': 'Pull_Through',
+  '绳索单腿后踢': 'One-Legged_Cable_Kickback',
+  '跪姿后踢腿': 'Glute_Kickback',
+  '弹力带髋伸展': 'Hip_Extension_with_Bands',
+  '跪姿杠铃蹲': 'Kneeling_Squat',
+  '站姿腿弯举': 'Standing_Leg_Curl',
+  '单腿腿屈伸': 'Single-Leg_Leg_Extension',
+  '倒蹬机提踵': 'Calf_Press_On_The_Leg_Press_Machine',
+  '史密斯机提踵': 'Smith_Machine_Calf_Raise',
+  '框架硬拉机': 'Leverage_Deadlift',
+  '臀腘绳挺身（GHD）': 'Glute_Ham_Raise',
+  '反向山羊挺身': 'Reverse_Hyperextension',
+  '俯卧T杠划船': 'Lying_T-Bar_Row',
+  '高位划船机': 'Leverage_High_Row',
+  '坐姿推肩机': 'Leverage_Shoulder_Press',
+  '耸肩机': 'Leverage_Shrug',
+  '器械弯举': 'Machine_Bicep_Curl',
+  '坐姿臂屈伸机': 'Machine_Triceps_Extension',
+  '上斜推胸机': 'Leverage_Incline_Chest_Press',
+  '超人式': 'Superman',
 };
 
 /// 该动作的示意图片资产路径（0 = 起始 / 1 = 结束姿势）；未映射返回空。
