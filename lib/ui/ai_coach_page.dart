@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -13,6 +12,7 @@ import '../services/plan_repository.dart';
 import 'plan_preview_sheet.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
+import 'workout_page.dart';
 
 /// AI 教练：应用内对话 + 一键阶段复盘 + 对话式排计划（统一一条对话）。
 ///
@@ -44,6 +44,18 @@ class _AiCoachPageState extends State<AiCoachPage> {
   String? _error; // 最近一次请求的可读失败原因
   bool _sending = false;
 
+  // ---- 多对话（2026-09-29）：线程列表 + 当前线程 ----
+  // 出差期间可在一个线程里连续安排多日训练；「历史对话」里翻找/切换/删除。
+  List<AiChatThread> _threads = [];
+  String _currentThreadId = '';
+
+  AiChatThread _freshThread() => AiChatThread(
+        id: 't${DateTime.now().millisecondsSinceEpoch}',
+        title: '',
+        updatedAt: DateTime.now().millisecondsSinceEpoch,
+        messages: const [],
+      );
+
   @override
   void initState() {
     super.initState();
@@ -64,38 +76,132 @@ class _AiCoachPageState extends State<AiCoachPage> {
     super.dispose();
   }
 
-  /// 恢复上次对话：消息从本地设置读回，回复里的计划重新提取
-  /// （内容就在消息文本里，重建索引即可，不用额外存计划结构）。
+  /// 恢复对话（2026-09-29 起为多线程）：线程数组从本地设置读回，
+  /// 当前线程取最近更新的；旧版单会话平面数组由 parseAiChatThreads
+  /// 自动包成一个线程（无感迁移）。回复里的计划重新提取——内容就在
+  /// 消息文本里，重建索引即可，不用额外存计划结构。
   void _loadHistory() {
     final c = app(context);
-    try {
-      final list =
-          (jsonDecode(c.settings.aiChatHistoryJson) as List? ?? const []);
-      for (final m in list.cast<Map>()) {
-        _turns.add(AiMessage(m['role'] as String, m['content'] as String));
+    _threads = parseAiChatThreads(c.settings.aiChatHistoryJson);
+    AiChatThread cur;
+    if (_threads.isEmpty) {
+      cur = _freshThread();
+      _threads = [cur];
+    } else {
+      cur = _threads.first; // parse 返回已按 updatedAt 降序？不——按存储序
+      // 取最近更新的线程为当前
+      for (final t in _threads) {
+        if (t.updatedAt > cur.updatedAt) cur = t;
       }
-      for (var i = 0; i < _turns.length; i++) {
-        if (_turns[i].role != 'assistant') continue;
-        final plan = c.ai.tryExtractPlan(_turns[i].content);
-        if (plan != null) _planByIndex[i] = plan;
-      }
-    } catch (_) {
-      // 历史坏了就不恢复，别挡着新对话
-      _turns.clear();
-      _planByIndex.clear();
     }
+    _currentThreadId = cur.id;
+    _turns
+      ..clear()
+      ..addAll(cur.messages);
+    _rebuildPlanIndex();
     if (_turns.isNotEmpty) setState(() {});
   }
 
-  /// 对话落盘：只留最近 40 条（约 20 轮），避免无限膨胀。
-  void _persistHistory() {
-    final recent = _turns.length > 40
-        ? _turns.sublist(_turns.length - 40)
-        : _turns;
+  /// 当前线程消息 → 计划按钮索引（加载/切换线程后调用）。
+  void _rebuildPlanIndex() {
     final c = app(context);
-    c.settings.aiChatHistoryJson = jsonEncode(
-        [for (final m in recent) {'role': m.role, 'content': m.content}]);
+    _planByIndex.clear();
+    for (var i = 0; i < _turns.length; i++) {
+      if (_turns[i].role != 'assistant') continue;
+      final plan = c.ai.tryExtractPlan(_turns[i].content);
+      if (plan != null) _planByIndex[i] = plan;
+    }
+  }
+
+  /// 对话落盘（多线程版）：当前线程消息只留最近 60 条，线程列表按更新
+  /// 时间保留最近 20 个（encodeAiChatThreads 内 LRU 淘汰）。空线程不落盘。
+  void _persistHistory() {
+    final c = app(context);
+    final recent = _turns.length > 60
+        ? _turns.sublist(_turns.length - 60)
+        : _turns;
+    final title = _threadTitle(recent);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final updated = AiChatThread(
+      id: _currentThreadId,
+      title: title,
+      updatedAt: now,
+      messages: List.of(recent),
+    );
+    final others = _threads.where((t) => t.id != _currentThreadId).toList();
+    _threads = [updated, ...others];
+    // 空线程（还没发过消息）不写进持久层，避免列表里堆「新对话」
+    final toSave = updated.messages.isEmpty ? others : _threads;
+    c.settings.aiChatHistoryJson = encodeAiChatThreads(toSave);
     unawaited(c.settings.save());
+  }
+
+  /// 线程标题：优先沿用旧标题（保持稳定），新线程取首条用户消息前 16 字。
+  String _threadTitle(List<AiMessage> msgs) {
+    for (final t in _threads) {
+      if (t.id == _currentThreadId && t.title.isNotEmpty) return t.title;
+    }
+    for (final m in msgs) {
+      if (m.role == 'user' && m.content.trim().isNotEmpty) {
+        final s = m.content.trim().replaceAll('\n', ' ');
+        return s.length > 16 ? s.substring(0, 16) : s;
+      }
+    }
+    return '';
+  }
+
+  /// 切换线程：换当前线程 + 重建消息与计划索引。
+  void _switchThread(AiChatThread t) {
+    if (t.id == _currentThreadId) return;
+    setState(() {
+      _currentThreadId = t.id;
+      _turns
+        ..clear()
+        ..addAll(t.messages);
+      _planByIndex.clear();
+    });
+    _rebuildPlanIndex();
+    if (mounted) setState(() {});
+    _scrollToBottom();
+  }
+
+  /// 新建对话：当前空线程直接忽略，非空的留在列表里可随时切回。
+  void _newThread() {
+    final t = _freshThread();
+    _threads = [t, ..._threads.where((x) => x.id != t.id)];
+    setState(() {
+      _currentThreadId = t.id;
+      _turns.clear();
+      _planByIndex.clear();
+      _error = null;
+    });
+  }
+
+  /// 删除线程：当前线程被删则切到剩余里最新的（没有就新建）。
+  void _deleteThread(AiChatThread t) {
+    final rest = _threads.where((x) => x.id != t.id).toList();
+    final wasCurrent = t.id == _currentThreadId;
+    _threads = rest;
+    if (wasCurrent) {
+      if (rest.isEmpty) {
+        _newThread();
+      } else {
+        var newest = rest.first;
+        for (final x in rest) {
+          if (x.updatedAt > newest.updatedAt) newest = x;
+        }
+        _currentThreadId = newest.id;
+        _turns
+          ..clear()
+          ..addAll(newest.messages);
+        _planByIndex.clear();
+        _rebuildPlanIndex();
+      }
+    }
+    final s = app(context).settings;
+    s.aiChatHistoryJson = encodeAiChatThreads(rest);
+    unawaited(s.save());
+    if (mounted) setState(() {});
   }
 
   Future<void> _loadData() async {
@@ -176,7 +282,9 @@ class _AiCoachPageState extends State<AiCoachPage> {
   }
 
   /// 气泡「预览并保存为计划」：仍走逐动作确认弹层，确认才落库。
-  /// 保存目标可选：新建（原行为）或替换某个现有计划（2026-09-26 Arono）。
+  /// 保存目标可选：新建（原行为）或替换某个现有计划（2026-09-26 Arono）；
+  /// 第三出口「作为今日临时训练直接开练」（2026-09-29 出差场景）——
+  /// 不落计划模板，确认后的动作清单当天直接开一场临时会话。
   Future<void> _savePlanFromTurn(List<AiDaySpec> specs) async {
     final c = app(context);
     final plans = await c.db.allPlans();
@@ -184,6 +292,36 @@ class _AiCoachPageState extends State<AiCoachPage> {
     final picked = await showPlanPreviewSheet(context, specs,
         localMode: false, existingPlans: plans);
     if (picked == null || !mounted) return;
+
+    // 第三出口：临时开练
+    final dayIdx = picked.adhocDayIndex;
+    if (dayIdx != null) {
+      if (c.session.hasActive) {
+        toast(context,
+            tx('已有进行中的训练，先完成或结束它', en: 'A workout is already in progress — finish or end it first'));
+        return;
+      }
+      final spec = picked.specs[dayIdx];
+      final exs = PlanRepository.planExercisesFromDaySpec(
+        spec,
+        c.ai.metaMap(),
+        compoundRest: c.settings.restCompoundSec,
+        assistanceRest: c.settings.restAssistanceSec,
+      );
+      if (exs.isEmpty) return;
+      await c.planRepo.refreshRecommendations(exs.map((e) => e.name));
+      await c.session.startAdHoc(
+        title: spec.title.trim().isEmpty ? tx('临时训练', en: 'Ad-hoc workout') : spec.title.trim(),
+        planExercises: exs,
+      );
+      if (!mounted) return;
+      Navigator.of(context).push(MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => const WorkoutPage(),
+      ));
+      return;
+    }
+
     final plan = picked.replacePlanId != null
         ? await replacePlanAndSync(
             c,
@@ -221,16 +359,134 @@ class _AiCoachPageState extends State<AiCoachPage> {
     });
   }
 
+  /// 清空对话（多线程版 2026-09-29）：删除当前线程并切到新空线程；
+  /// 其他线程保留，可在「历史对话」里翻找。
   void _clearChat() {
-    if (_turns.isEmpty || _sending) return;
-    setState(() {
-      _turns.clear();
-      _planByIndex.clear();
-    });
-    // 清空对话连历史一起清（否则下次进来又恢复出来）
-    final s = app(context).settings;
-    s.aiChatHistoryJson = '[]';
-    unawaited(s.save());
+    if (_sending) return;
+    final cur = _threads.where((t) => t.id == _currentThreadId).firstOrNull;
+    if (cur != null && cur.messages.isEmpty) return; // 已是空对话
+    if (cur != null) {
+      _deleteThread(cur);
+    } else {
+      _newThread();
+    }
+  }
+
+  /// 历史对话列表（2026-09-29 多对话）：翻找/切换/删除线程 + 新建对话。
+  /// 出差场景：第一天问酒店器械排了计划，第二天回到同一线程接着安排，
+  /// AI 记得上下文（有什么器械、练了什么）。
+  Future<void> _showThreadsSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: AppTheme.card,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetCtx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(tx('历史对话', en: 'Chat history'),
+                      style: const TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w700)),
+                ),
+                TextButton.icon(
+                  onPressed: _sending
+                      ? null
+                      : () {
+                          Navigator.pop(sheetCtx);
+                          _newThread();
+                        },
+                  icon: const Icon(Icons.add, size: 18),
+                  label: Text(tx('新建对话', en: 'New chat')),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            for (final t in _sortedThreads()) ...[
+              ListTile(
+                dense: true,
+                title: Text(
+                  t.id == _currentThreadId
+                      ? tx('${t.displayTitle}（当前）',
+                          en: '${t.displayTitle} (current)')
+                      : t.displayTitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: t.id == _currentThreadId
+                        ? FontWeight.w700
+                        : FontWeight.w500,
+                    color: t.id == _currentThreadId
+                        ? AppTheme.primary
+                        : AppTheme.text,
+                  ),
+                ),
+                subtitle: Text(
+                  tx('${_threadTime(t.updatedAt)} · ${t.messages.length} 条消息',
+                      en: '${_threadTime(t.updatedAt)} · ${t.messages.length} msgs'),
+                  style:
+                      const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                ),
+                trailing: IconButton(
+                  tooltip: tx('删除', en: 'Delete'),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 20, color: AppTheme.danger),
+                  onPressed: _sending
+                      ? null
+                      : () async {
+                          final ok = await confirmDialog(
+                            sheetCtx,
+                            tx('删除这个对话？', en: 'Delete this chat?'),
+                            tx('「${t.displayTitle}」将被删除，不可恢复。',
+                                en: '"${t.displayTitle}" will be deleted permanently.'),
+                            okLabel: tx('删除', en: 'Delete'),
+                          );
+                          if (!ok) return;
+                          if (sheetCtx.mounted) Navigator.pop(sheetCtx);
+                          if (mounted) _deleteThread(t);
+                        },
+                ),
+                onTap: t.id == _currentThreadId
+                    ? null
+                    : () {
+                        Navigator.pop(sheetCtx);
+                        _switchThread(t);
+                      },
+              ),
+              const Divider(height: 1, color: AppTheme.cardHi),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 线程列表展示序：当前线程置顶，其余按更新时间降序。
+  List<AiChatThread> _sortedThreads() {
+    final cur =
+        _threads.where((t) => t.id == _currentThreadId).toList();
+    final rest = _threads.where((t) => t.id != _currentThreadId).toList()
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return [...cur, ...rest];
+  }
+
+  String _threadTime(int ms) {
+    final d = DateTime.fromMillisecondsSinceEpoch(ms);
+    final now = DateTime.now();
+    String two(int v) => v.toString().padLeft(2, '0');
+    if (fmtDate(d) == fmtDate(now)) {
+      return '${two(d.hour)}:${two(d.minute)}';
+    }
+    if (d.year == now.year) {
+      return tx('${d.month}月${d.day}日', en: '${d.month}/${d.day}');
+    }
+    return '${d.year}/${d.month}/${d.day}';
   }
 
   void _exportRecap(AiMessage recap) {
@@ -257,6 +513,12 @@ class _AiCoachPageState extends State<AiCoachPage> {
       appBar: AppBar(
         title: Text(tx('AI 教练', en: 'AI Coach')),
         actions: [
+          // 历史对话（2026-09-29 多对话）：翻找/切换/新建线程
+          IconButton(
+            tooltip: tx('历史对话', en: 'Chat history'),
+            onPressed: _sending ? null : _showThreadsSheet,
+            icon: const Icon(Icons.forum),
+          ),
           // 一键阶段复盘：数据包已注入，这里只发分析指令
           IconButton(
             tooltip: tx('一键阶段复盘', en: 'One-tap phase review'),

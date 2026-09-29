@@ -155,6 +155,53 @@ void main() {
     });
   });
 
+  group('多对话线程存储（2026-09-29）', () {
+    test('旧版单会话平面数组自动迁移为一个线程', () {
+      final threads = parseAiChatThreads(
+          '[{"role":"user","content":"帮我安排每周四练的计划"},{"role":"assistant","content":"好的"}]');
+      expect(threads.length, 1);
+      expect(threads.first.id, 'legacy');
+      expect(threads.first.messages.length, 2);
+      expect(threads.first.title, '帮我安排每周四练的计划');
+    });
+
+    test('新格式线程数组往返；坏数据返回空；空串返回空', () {
+      final t = AiChatThread(
+        id: 't1',
+        title: '出差北京',
+        updatedAt: 123,
+        messages: const [AiMessage('user', 'hi'), AiMessage('assistant', 'ok')],
+      );
+      final back = parseAiChatThreads(encodeAiChatThreads([t]));
+      expect(back.length, 1);
+      expect(back.first.id, 't1');
+      expect(back.first.title, '出差北京');
+      expect(back.first.messages.length, 2);
+      expect(parseAiChatThreads('not json'), isEmpty);
+      expect(parseAiChatThreads('[]'), isEmpty);
+    });
+
+    test('encode 按 updatedAt 降序 LRU 淘汰到上限', () {
+      final threads = [
+        AiChatThread(
+            id: 'old', title: 'a', updatedAt: 1, messages: const []),
+        AiChatThread(
+            id: 'new', title: 'b', updatedAt: 99, messages: const []),
+      ];
+      final out = parseAiChatThreads(encodeAiChatThreads(threads, maxThreads: 1));
+      expect(out.length, 1);
+      expect(out.first.id, 'new', reason: '只保留最近更新的');
+    });
+  });
+
+  test('词表带器械标注（出差场景 AI 按器械挑动作）', () {
+    final prompt = ai.buildDesignerPrompt('出差只有弹力带');
+    expect(prompt.contains('杠铃卧推(杠铃)'), isTrue);
+    expect(prompt.contains('弹力带深蹲(弹力带)'), isTrue);
+    expect(ai.planChatContract().contains('出差/旅行/酒店健身房'), isTrue,
+        reason: '出差场景规则进契约');
+  });
+
   group('超级组解析（v9）', () {
     test('"superset": true 标在第一个动作上 = 与下一个配对', () {
       final specs = ai.parseResponse(

@@ -1381,4 +1381,42 @@ void main() {
       expect(c2.exercises.map((e) => e.supersetTag), ['ss', 'ss']);
     });
   });
+
+  group('临时训练 startAdHoc（2026-09-29 出差场景）', () {
+    test('开临时会话：plan_day_id 落 null、标题带出、记组/自动结束全链路正常', () async {
+      final day = await makePlanDay('正课日');
+      final a = await addPlanEx(day, '动作甲', 0, workingSets: 1);
+
+      final c = makeController();
+      await c.startAdHoc(
+        title: '酒店全身练',
+        planExercises: [a.copyWith(supersetTag: '')],
+      );
+      expect(c.hasActive, isTrue);
+      expect(c.session!.planDayId, isNull, reason: '临时训练不挂模板日');
+      expect(c.session!.planDayTitle, '酒店全身练');
+      expect(c.exercises.length, 1);
+
+      // 记满自动结束（1 组计划）
+      await c.completeSet(weight: 40, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.hasActive, isFalse, reason: '临时训练照常自动结束');
+      final raw = await rawDb.rawQuery(
+          'SELECT plan_day_id, plan_day_title FROM sessions WHERE id = ?',
+          [c.session!.id]);
+      expect(raw.first['plan_day_id'], isNull);
+      expect(raw.first['plan_day_title'], '酒店全身练');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+
+    test('普通开练仍挂模板日（回归）', () async {
+      final day = await makePlanDay('普通日');
+      final a = await addPlanEx(day, '动作甲', 0, workingSets: 1);
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [a]);
+      expect(c.session!.planDayId, day.id, reason: '普通开练仍挂模板日');
+      await c.completeSet(weight: 40, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.hasActive, isFalse);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+  });
 }

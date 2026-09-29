@@ -199,6 +199,17 @@ const _kExerciseEn = <String, String>{
   '器械弯举': 'Machine Bicep Curl',
   '坐姿臂屈伸机': 'Machine Triceps Extension',
   '上斜推胸机': 'Leverage Incline Chest Press',
+  // 补库第五弹（2026-09-29 居家/出差）
+  '弹力带深蹲': 'Band Squat',
+  '弹力带早安式': 'Band Good Morning',
+  '弹力带卧推': 'Band Bench Press',
+  '弹力带推肩': 'Band Shoulder Press',
+  '弹力带臂屈伸': 'Band Skull Crusher',
+  '弹力带提踵': 'Band Calf Raise',
+  '弹力带臀桥': 'Band Hip Bridge',
+  '弹力带直立划船': 'Band Upright Row',
+  '俯卧背挺身': 'Floor Back Extension',
+  '哑铃交替平举': 'Alternating Deltoid Raise',
 };
 
 /// 训练日标题 / 计划模板名 / 模板介绍等随库内置的名词。
@@ -448,6 +459,17 @@ const _kCueEn = <String, String>{
   '器械弯举': 'On a bicep curl machine with arms locked on the pad, curl to the top and squeeze; the pad stops the elbows from drifting forward, making it highly isolated. Common mistakes: hips lifting off the seat, letting the weight stack slam down.',
   '坐姿臂屈伸机': 'On a seated triceps extension machine, keep the upper arms firmly on the pads and press the forearms down to full lockout, pausing one second; elbow-friendly and very isolated. Common mistakes: elbows lifting off the pads, pressing the body down instead of the arms.',
   '上斜推胸机': 'An incline chest press machine: back on the pad, press the handles up and together along the fixed track, focusing on the upper chest. Common mistakes: shoulders shrugging up, lazily stopping short of the top.',
+
+  '弹力带深蹲': 'Stand on both ends of a band and bring it up to your shoulders; squat until thighs are near parallel, then drive up. Band tension grows as you descend - keep the torso tall throughout. Common mistakes: the band slipping under the feet, knees caving in.',
+  '弹力带早安式': 'Step on the band and loop it over your shoulders and upper back; hinge at the hips until your torso nears parallel, then drive the hips to stand tall - hits hamstrings and glutes. Common mistakes: rounding the back, bending the knees into a squat.',
+  '弹力带卧推': 'Anchor the band behind a bench (or loop it across your back), press both ends to full arm extension and lower slowly; tension rises through the press, a nice complement to barbell pressing. Common mistakes: letting the band slack off, elbows flaring.',
+  '弹力带推肩': 'Stand on the band, pull the ends to shoulder height, and press straight overhead to lockout; brace the core, no lower-back arch. Common mistakes: shrugging to cheat, the pressing path wandering back and forth.',
+  '弹力带臂屈伸': 'Anchor a band high (door frame or pull-up bar), grip both ends behind your head and extend the arms straight up - an overhead triceps move; keep the elbows fixed and let only the forearms move. Common mistakes: elbows flaring, sinking the body to cheat.',
+  '弹力带提踵': 'Stand with the balls of your feet on the band (or stand on one end and pull the other to your shoulders); lower the heels to a full stretch, then rise to the very top, slow both ways. Common mistakes: short range, bouncing reps.',
+  '弹力带臀桥': "Loop a band just above your knees and lie back with feet flat. Drive the hips up until shoulders-hips-knees line up, actively squeezing against the band's outward pull for one second at the top. Common mistakes: arching too high, pushing through the feet instead of the glutes.",
+  '弹力带直立划船': 'Stand on the band with a narrow grip and pull it up your body to chin height, elbows leading above the hands, lower slowly. Shrink the range or skip it if shoulders complain. Common mistakes: the band drifting away from the body, shrugging to compensate.',
+  '俯卧背挺身': 'Lie face down on the floor (or with hips on a bed edge), hands lightly at the ears, and raise the torso using the glutes and lower back to a natural height before lowering slowly - small range, full control. Common mistakes: craning the neck up, snapping up with momentum.',
+  '哑铃交替平举': 'With a dumbbell in each hand, raise one arm forward to shoulder height while the other goes out to the side, alternating; keep the torso still. Common mistakes: swinging the weights up, shrugging.',
 };
 
 /// 动作名显示（动作库/训练/历史/统计等处）。

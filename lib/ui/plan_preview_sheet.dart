@@ -8,12 +8,14 @@ import 'theme.dart';
 import 'widgets/common.dart';
 
 /// 预览确认结果：确认后的 specs + 保存目标（2026-09-26 Arono：
-/// AI 生成的计划可新建，也可替换某个现有计划的内容）。
+/// AI 生成的计划可新建，也可替换某个现有计划的内容；
+/// 2026-09-29 再加第三出口——作为今日临时训练直接开练，不落计划模板）。
 class PlanPreviewResult {
   const PlanPreviewResult({
     required this.name,
     required this.specs,
     this.replacePlanId,
+    this.adhocDayIndex,
   });
 
   /// 计划名（新建=新计划名；替换=非空则作为改名，留空保持原名）。
@@ -22,6 +24,10 @@ class PlanPreviewResult {
 
   /// null=新建计划；非空=替换该现有计划的内容。
   final int? replacePlanId;
+
+  /// 非空=第三出口：作为今日临时训练直接开练，值是所选日的下标
+  ///（多日计划先选练哪天；单日直接 0）。与 [replacePlanId] 互斥。
+  final int? adhocDayIndex;
 }
 
 /// AI 计划预览确认弹层（计划页「AI 拆解导入」与 AI 教练共用）。
@@ -225,47 +231,90 @@ Future<PlanPreviewResult?> showPlanPreviewSheet(
               SafeArea(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: OutlinedButton(
+                      // 第三出口（2026-09-29 出差场景）：不落计划模板，
+                      // 确认后的动作清单直接作为今天的临时训练开练。
+                      // 多日计划先选练哪天。
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.tonal(
                           onPressed: () async {
-                            final ok = await confirmDialog(
-                              ctx,
-                              tx('丢弃刚生成的计划？', en: 'Discard the generated plan?'),
-                              tx('放弃后需要重新生成一遍。', en: 'You will need to generate it again.'),
-                            );
-                            if (ok && ctx.mounted) Navigator.pop(ctx);
+                            final confirmed = [
+                              for (var i = 0; i < specs.length; i++)
+                                AiDaySpec(specs[i].weekday, specs[i].title,
+                                    edited[i]),
+                            ];
+                            var dayIdx = 0;
+                            if (confirmed.length > 1) {
+                              dayIdx = await _pickAdhocDay(ctx, confirmed);
+                              if (dayIdx < 0) return; // 取消
+                            }
+                            if (ctx.mounted) {
+                              Navigator.pop(
+                                ctx,
+                                PlanPreviewResult(
+                                  name: nameCtrl.text.trim(),
+                                  specs: confirmed,
+                                  adhocDayIndex: dayIdx,
+                                ),
+                              );
+                            }
                           },
-                          child: Text(tx('放弃', en: 'Discard')),
+                          child: Text(
+                              tx('作为今日临时训练直接开练',
+                                  en: 'Start as today\'s ad-hoc workout'),
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600)),
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: (replaceMode && targetPlan == null)
-                              ? null
-                              : () {
-                                  final confirmed = [
-                                    for (var i = 0; i < specs.length; i++)
-                                      AiDaySpec(specs[i].weekday,
-                                          specs[i].title, edited[i]),
-                                  ];
-                                  Navigator.pop(
-                                    ctx,
-                                    PlanPreviewResult(
-                                      name: nameCtrl.text.trim(),
-                                      specs: confirmed,
-                                      replacePlanId: replaceMode
-                                          ? targetPlan!.id
-                                          : null,
-                                    ),
-                                  );
-                                },
-                          child: Text(replaceMode
-                              ? tx('替换该计划', en: 'Replace Plan')
-                              : tx('保存为计划', en: 'Save as Plan')),
-                        ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () async {
+                                final ok = await confirmDialog(
+                                  ctx,
+                                  tx('丢弃刚生成的计划？',
+                                      en: 'Discard the generated plan?'),
+                                  tx('放弃后需要重新生成一遍。',
+                                      en: 'You will need to generate it again.'),
+                                );
+                                if (ok && ctx.mounted) Navigator.pop(ctx);
+                              },
+                              child: Text(tx('放弃', en: 'Discard')),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: (replaceMode && targetPlan == null)
+                                  ? null
+                                  : () {
+                                      final confirmed = [
+                                        for (var i = 0; i < specs.length; i++)
+                                          AiDaySpec(specs[i].weekday,
+                                              specs[i].title, edited[i]),
+                                      ];
+                                      Navigator.pop(
+                                        ctx,
+                                        PlanPreviewResult(
+                                          name: nameCtrl.text.trim(),
+                                          specs: confirmed,
+                                          replacePlanId: replaceMode
+                                              ? targetPlan!.id
+                                              : null,
+                                        ),
+                                      );
+                                    },
+                              child: Text(replaceMode
+                                  ? tx('替换该计划', en: 'Replace Plan')
+                                  : tx('保存为计划', en: 'Save as Plan')),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -277,6 +326,45 @@ Future<PlanPreviewResult?> showPlanPreviewSheet(
       ),
     ),
   );
+}
+
+/// 多日计划「临时开练」前选练哪天：返回所选日下标，取消返回 -1。
+Future<int> _pickAdhocDay(
+    BuildContext ctx, List<AiDaySpec> confirmed) async {
+  const wdLabels = ['一', '二', '三', '四', '五', '六', '日'];
+  return await showModalBottomSheet<int>(
+        context: ctx,
+        backgroundColor: AppTheme.card,
+        shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        builder: (sheetCtx) => SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            children: [
+              Text(tx('今天练哪一天的内容？', en: 'Which day to train now?'),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              for (var i = 0; i < confirmed.length; i++)
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.fitness_center,
+                      size: 20, color: AppTheme.primary),
+                  title: Text(dname(confirmed[i].title)),
+                  subtitle: Text(
+                    tx('周${wdLabels[confirmed[i].weekday - 1]} · ${confirmed[i].exercises.length} 个动作',
+                        en: '${confirmed[i].exercises.length} exercises'),
+                    style:
+                        const TextStyle(color: AppTheme.textDim, fontSize: 12),
+                  ),
+                  onTap: () => Navigator.pop(sheetCtx, i),
+                ),
+            ],
+          ),
+        ),
+      ) ??
+      -1;
 }
 
 /// AI 失败原因摘要：截断到 40 字，空值给兜底文案（预览页副标题用）。

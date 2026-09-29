@@ -45,14 +45,17 @@ class AiService {
       };
 
   /// 参考词表（按肌群分组紧凑渲染，三处提示词共用）：
-  /// 「胸：卧推、…；腿：…」。比平铺好检索——180+ 条时模型能按目标肌群
-  /// 直接去对应分组挑动作；分组开销仅每肌群 2 个字符。
+  /// 「胸：卧推(杠铃)、…；腿：…」。比平铺好检索——180+ 条时模型能按目标肌群
+  /// 直接去对应分组挑动作；分组开销仅每肌群 2 个字符。2026-09-29 起名字后
+  /// 带器械标注（gear 为空的沉淀动作不带括号）——出差/器械受限场景 AI 能按
+  /// 「可用器械」挑动作（弹力带/自重/哑铃…）。
   static String exerciseReference(List<ExerciseMeta> library) {
     final buf = StringBuffer();
     for (final region in kMuscleRegions) {
       final names = [
         for (final m in library)
-          if (m.muscles.main == region) m.name,
+          if (m.muscles.main == region)
+            m.gear.isEmpty ? m.name : '${m.name}(${m.gear})',
       ];
       if (names.isEmpty) continue;
       buf.write('$region：${names.join('、')}；');
@@ -160,7 +163,12 @@ class AiService {
         '词表确实没有合适的才用规范中文短名。参考词表（按肌群分组）：$lib\n'
         '7. 超级组：仅当用户提到"超级组/配对/交替练"时才用——配对的第一个动作加 "superset": true'
         '（与下一个动作配对，连标两个=三动作连组）；优先拮抗肌配对；配对动作组数一致；'
-        '配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作正常休息。';
+        '配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作正常休息。\n'
+        '8. 出差/旅行/酒店健身房/器械受限（2026-09-29）：先问清当地有什么器械'
+        '（哑铃？弹力带？可调杠铃？只有自重？），再按实际条件给计划——动作按词表括号里的'
+        '器械标注挑（弹力带/自重/哑铃优先），不要给当地做不了的动作；'
+        '当天就想练的话提醒用户：计划气泡下点「作为今日临时训练直接开练」即可，'
+        '不动长期计划。多天出差可继续在本对话里按天安排，你记得前面聊过的器械条件。';
   }
 
   /// 连接测试：发一条最小请求，返回 (耗时 ms, 模型回复)。
@@ -835,6 +843,104 @@ class AiMessage {
   final String role;
   final String content;
   const AiMessage(this.role, this.content);
+}
+
+/// AI 教练对话线程（2026-09-29 多对话支持：出差期间可在一个线程里连续
+/// 安排多日训练，需要翻旧计划时切换回旧线程）。
+class AiChatThread {
+  AiChatThread({
+    required this.id,
+    required this.title,
+    required this.updatedAt,
+    required this.messages,
+  });
+
+  final String id;
+  final String title;
+  final int updatedAt; // epoch ms
+  final List<AiMessage> messages;
+
+  /// 标题兜底：还没发过消息的线程显示「新对话」。
+  String get displayTitle =>
+      title.isEmpty ? '新对话' : title;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'title': title,
+        'updatedAt': updatedAt,
+        'messages': [
+          for (final m in messages) {'role': m.role, 'content': m.content},
+        ],
+      };
+
+  static AiChatThread fromJson(Map<String, dynamic> j) => AiChatThread(
+        id: (j['id'] as String?) ?? '',
+        title: (j['title'] as String?) ?? '',
+        updatedAt: (j['updatedAt'] as num?)?.toInt() ?? 0,
+        messages: [
+          for (final m in (j['messages'] as List? ?? const []))
+            AiMessage((m as Map)['role'] as String? ?? 'user',
+                m['content'] as String? ?? ''),
+        ],
+      );
+}
+
+/// 解析持久化的线程数组（Settings.aiChatHistoryJson）。
+/// **兼容旧格式**：2026-09-29 之前是单会话平面数组
+/// `[{'role':..,'content':..},..]`——检测到旧格式自动包成一个「历史对话」
+/// 线程（id 固定 legacy），老用户无感迁移；解码异常整体丢弃返回空。
+List<AiChatThread> parseAiChatThreads(String raw) {
+  try {
+    final decoded = jsonDecode(raw);
+    if (decoded is! List) return const [];
+    if (decoded.isEmpty) return const [];
+    final first = decoded.first;
+    if (first is Map && first.containsKey('messages')) {
+      // 新格式：线程数组
+      return [
+        for (final t in decoded)
+          AiChatThread.fromJson(Map<String, dynamic>.from(t as Map)),
+      ];
+    }
+    // 旧格式：平面消息数组 → 包成一个线程
+    final msgs = [
+      for (final m in decoded)
+        if (m is Map)
+          AiMessage(m['role'] as String? ?? 'user', m['content'] as String? ?? ''),
+    ];
+    if (msgs.isEmpty) return const [];
+    return [
+      AiChatThread(
+        id: 'legacy',
+        title: _threadTitleOf(msgs),
+        updatedAt: 0,
+        messages: msgs,
+      ),
+    ];
+  } catch (_) {
+    return const [];
+  }
+}
+
+/// 由首条用户消息生成线程标题（前 16 字，去换行）。
+String _threadTitleOf(List<AiMessage> msgs) {
+  for (final m in msgs) {
+    if (m.role == 'user' && m.content.trim().isNotEmpty) {
+      final t = m.content.trim().replaceAll('\n', ' ');
+      return t.length > 16 ? t.substring(0, 16) : t;
+    }
+  }
+  return '';
+}
+
+/// 线程序列化（写回 Settings.aiChatHistoryJson）：
+/// 按 updatedAt 降序保留最近 [maxThreads] 个（LRU 淘汰）。
+String encodeAiChatThreads(List<AiChatThread> threads, {int maxThreads = 20}) {
+  final sorted = [...threads]
+    ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return jsonEncode([
+    for (final t in sorted.take(maxThreads)) t.toJson(),
+  ]);
 }
 
 /// 一条动作名的匹配结果（六级级联，见 matchExerciseNames 注释）。

@@ -443,6 +443,7 @@ class ExerciseMeta {
         'secondary': muscles.secondary.join(','),
         'is_compound': isCompound ? 1 : 0,
         'equipment': equipment,
+        'gear': gear,
       };
 
   factory ExerciseMeta.fromMap(Map<String, dynamic> m) => ExerciseMeta(
@@ -456,6 +457,8 @@ class ExerciseMeta {
         ),
         (m['is_compound'] as int?) == 1,
         (m['equipment'] as String?) ?? 'both',
+        '',
+        (m['gear'] as String?) ?? '',
       );
 }
 

@@ -463,6 +463,24 @@ class SessionController extends ChangeNotifier {
     await _enterFocus();
   }
 
+  /// 临时训练（2026-09-29 出差/酒店场景）：AI 给的动作清单直接开练——
+  /// 不落计划模板（sessions.plan_day_id=null）、不同步飞书日历、不影响
+  /// 首页「今天已练完」判定（按计划日标题匹配，临时标题不撞）。
+  /// 复用 startFromDay 全链路（防双击/事务落库/被杀恢复/周历点亮）。
+  Future<void> startAdHoc({
+    required String title,
+    required List<PlanExercise> planExercises,
+  }) async {
+    await startFromDay(
+      day: PlanDay(
+        planId: 0, // 不入库的占位：id 为 null → 会话行 plan_day_id=null
+        weekday: DateTime.now().weekday,
+        title: title,
+      ),
+      planExercises: planExercises,
+    );
+  }
+
   // ---------- 记录 ----------
 
   /// 完成一组（kind: warmup/working/failure）。返回是否触发 PR。

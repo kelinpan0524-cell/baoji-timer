@@ -77,3 +77,6 @@ android/.mimosa/
 .playwright-mcp/
 test/goldens_en/
 test/goldens_zh/
+
+# 金图对比测试的输出产物（lang sweep 失败时生成，不进仓库）
+test/failures/
