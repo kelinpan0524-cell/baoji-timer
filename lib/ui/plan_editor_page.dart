@@ -4,17 +4,22 @@ import 'package:flutter/services.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
+import '../services/plan_repository.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
 
 /// 训练日编辑器：改标题/星期、动作增删改、拖拽排序、复制、肌群标注。
 /// 所有修改即时保存；返回值 = 是否有过修改（调用方据此刷新与重同步飞书）。
+/// [isCycle] = 所属计划为循环模式：此时「星期」只是槽位排序键，界面改以
+/// 轮转序号「第N练」呈现（空槽位显示「空」），调整位置即调整轮转顺序。
 class PlanEditorPage extends StatefulWidget {
-  const PlanEditorPage({super.key, required this.day, this.planName});
+  const PlanEditorPage(
+      {super.key, required this.day, this.planName, this.isCycle = false});
 
   final PlanDay day;
   final String? planName;
+  final bool isCycle;
 
   @override
   State<PlanEditorPage> createState() => _PlanEditorPageState();
@@ -26,6 +31,10 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
   Map<String, ExerciseMeta> _metaByName = {};
   bool _loading = true;
   bool _dirty = false; // 本次进入是否改过内容
+  // 循环模式的轮转编号（与 plan_page 模板日列表同口径）：
+  // _rotation: dayId → 第几练；_slotRotation: 槽位(weekday) → 第几练（仅非空日）。
+  Map<int, int> _rotation = {};
+  Map<int, int> _slotRotation = {};
   late final TextEditingController _titleCtrl =
       TextEditingController(text: widget.day.title);
 
@@ -47,8 +56,26 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     _exercises = await c.db.dayExercises(_day.id!);
     final metas = await c.db.allExerciseMeta();
     _metaByName = {for (final m in metas) m.name: m};
+    await _loadRotation();
     if (!mounted) return;
     setState(() => _loading = false);
+  }
+
+  /// 重算循环轮转编号：动作增删会让某天从「未排内容」变「第N练」（或反之），
+  /// 槽位对调后编号也会变，所以编辑与移动后都要刷新。
+  Future<void> _loadRotation() async {
+    if (!widget.isCycle) return;
+    final c = app(context);
+    final all = await c.db.planDays(_day.planId);
+    final exMap = await c.db.daysExercisesMap(all.map((d) => d.id!).toList());
+    if (!mounted) return;
+    setState(() {
+      _rotation = cycleRotationIndex(all, exMap);
+      _slotRotation = {
+        for (final d in all)
+          if (_rotation.containsKey(d.id)) d.weekday: _rotation[d.id]!,
+      };
+    });
   }
 
   Future<void> _saveTitle() async {
@@ -61,7 +88,8 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     _dirty = true;
   }
 
-  /// 切星期：目标日空闲则移动；被占则确认后两日内容对调。
+  /// 切星期/槽位：目标空闲则移动；被占则确认后两日内容对调。
+  /// weekly = 换到周几；cycle = 换到轮转第几位（底层同是 weekday 槽位互换）。
   Future<void> _moveToWeekday(int weekday) async {
     if (weekday == _day.weekday) return;
     final c = app(context);
@@ -70,18 +98,35 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     if (!mounted) return;
     final occupant =
         all.where((d) => d.weekday == weekday && d.id != _day.id).firstOrNull;
+    // 循环模式下对调方的轮转编号（移动前口径，弹窗与提示用）
+    final occN = occupant == null ? null : _rotation[occupant.id];
     if (occupant != null) {
-      final ok = await confirmDialog(
-          context,
-          tx('与周${'一二三四五六日'[weekday - 1]}对调？',
-              en: 'Swap with ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}?'),
-          tx('「${dname(occupant.title)}」已安排在周${'一二三四五六日'[weekday - 1]}，确认后两天的内容将互相交换。',
-              en: '"${dname(occupant.title)}" is already on ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}; confirming will swap the contents of the two days.'));
+      final bool ok;
+      if (widget.isCycle) {
+        ok = occN != null
+            ? await confirmDialog(
+                context,
+                tx('与第$occN练对调？', en: 'Swap with Workout $occN?'),
+                tx('「${dname(occupant.title)}」在轮转第 $occN 位，确认后两练的内容将互相交换。',
+                    en: '"${dname(occupant.title)}" is at rotation position $occN; confirming will swap the contents of the two workouts.'))
+            : await confirmDialog(
+                context,
+                tx('移到这个空位？', en: 'Move to this empty slot?'),
+                tx('「${dname(occupant.title)}」未排内容、不参与轮转；确认后本练移到该位置。',
+                    en: '"${dname(occupant.title)}" has no exercises and is not in the rotation; confirming moves this workout to that slot.'));
+      } else {
+        ok = await confirmDialog(
+            context,
+            tx('与周${'一二三四五六日'[weekday - 1]}对调？',
+                en: 'Swap with ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}?'),
+            tx('「${dname(occupant.title)}」已安排在周${'一二三四五六日'[weekday - 1]}，确认后两天的内容将互相交换。',
+                en: '"${dname(occupant.title)}" is already on ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}; confirming will swap the contents of the two days.'));
+      }
       if (!ok || !mounted) return;
     }
     if (occupant == null) {
       if (!mounted) return;
-      // setState 让 AppBar 标题与星期 chips 选中态即时刷新
+      // setState 让 AppBar 标题与槽位 chips 选中态即时刷新
       setState(() {
         _day = PlanDay(
             id: _day.id,
@@ -102,12 +147,19 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
       });
     }
     _dirty = true;
+    await _loadRotation(); // 对调/移动后各练的编号变了，重算再提示
+    if (!mounted) return;
     messenger.showSnackBar(SnackBar(
-      content: Text(occupant == null
-          ? tx('已调整到周${'一二三四五六日'[weekday - 1]}',
-              en: 'Moved to ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}')
-          : tx('已与周${'一二三四五六日'[weekday - 1]}「${dname(occupant.title)}」对调',
-              en: 'Swapped with ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]} "${dname(occupant.title)}"')),
+      content: Text(widget.isCycle
+          ? (occupant != null && occN != null
+              ? tx('已与第$occN练「${dname(occupant.title)}」对调',
+                  en: 'Swapped with Workout $occN "${dname(occupant.title)}"')
+              : tx('已移到空位', en: 'Moved to an empty slot'))
+          : occupant == null
+              ? tx('已调整到周${'一二三四五六日'[weekday - 1]}',
+                  en: 'Moved to ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]}')
+              : tx('已与周${'一二三四五六日'[weekday - 1]}「${dname(occupant.title)}」对调',
+                  en: 'Swapped with ${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][weekday - 1]} "${dname(occupant.title)}"')),
       backgroundColor: AppTheme.cardHi,
       behavior: SnackBarBehavior.floating,
       duration: const Duration(seconds: 2),
@@ -315,8 +367,14 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
             if (!mounted) return;
             navigator.pop(_dirty);
           }),
-          title: Text(tx('周${'一二三四五六日'[_day.weekday - 1]} · 编辑训练日',
-              en: '${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][_day.weekday - 1]} · Edit training day')),
+          title: Text(widget.isCycle
+              ? (_rotation.containsKey(_day.id)
+                  ? tx('第${_rotation[_day.id]}练 · 编辑训练日',
+                      en: 'Workout ${_rotation[_day.id]} · Edit training day')
+                  : tx('未排内容 · 编辑训练日',
+                      en: 'Unfilled · Edit training day'))
+              : tx('周${'一二三四五六日'[_day.weekday - 1]} · 编辑训练日',
+                  en: '${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][_day.weekday - 1]} · Edit training day')),
         ),
         body: _loading
             ? const Center(child: CircularProgressIndicator())
@@ -338,13 +396,22 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                           spacing: 6,
                           crossAxisAlignment: WrapCrossAlignment.center,
                           children: [
-                            Text(tx('安排在', en: 'Scheduled on'),
+                            Text(
+                                tx(widget.isCycle ? '轮转位置' : '安排在',
+                                    en: widget.isCycle
+                                        ? 'Rotation slot'
+                                        : 'Scheduled on'),
                                 style: const TextStyle(
                                     color: AppTheme.textDim, fontSize: 13)),
                             for (var wd = 1; wd <= 7; wd++)
                               ChoiceChip(
-                                label: Text(tx('周${'一二三四五六日'[wd - 1]}',
-                                    en: const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][wd - 1])),
+                                label: Text(widget.isCycle
+                                    ? (_slotRotation[wd] != null
+                                        ? tx('第${_slotRotation[wd]}练',
+                                            en: 'Workout ${_slotRotation[wd]}')
+                                        : tx('空', en: 'Empty'))
+                                    : tx('周${'一二三四五六日'[wd - 1]}',
+                                        en: const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][wd - 1])),
                                 selected: _day.weekday == wd,
                                 onSelected: (_) => _moveToWeekday(wd),
                                 labelStyle: TextStyle(
@@ -358,6 +425,15 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                               ),
                           ],
                         ),
+                        if (widget.isCycle)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                                tx('循环模式下这里不是星期几：位置就是轮转顺序，点「第N练」与之对调；「空」位不参与轮转。',
+                                    en: 'In cycle mode these are not weekdays: the position is the rotation order; tapping "Workout N" swaps with it. "Empty" slots are not in the rotation.'),
+                                style: const TextStyle(
+                                    color: AppTheme.textDim, fontSize: 12)),
+                          ),
                         const Divider(height: 28),
                         Row(
                           children: [
@@ -378,8 +454,11 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 16),
                             child: Text(
-                                tx('这一天还没有动作，点下方「添加动作」开始编排。',
-                                    en: 'No exercises yet for this day; tap "Add exercise" below to start.'),
+                                widget.isCycle
+                                    ? tx('这一天还没有动作；加入后会自动以「第N练」参与轮转，点下方「添加动作」开始编排。',
+                                        en: 'No exercises yet; once added, this day joins the rotation automatically. Tap "Add exercise" below to start.')
+                                    : tx('这一天还没有动作，点下方「添加动作」开始编排。',
+                                        en: 'No exercises yet for this day; tap "Add exercise" below to start.'),
                                 style: const TextStyle(
                                     color: AppTheme.textDim)),
                           )
