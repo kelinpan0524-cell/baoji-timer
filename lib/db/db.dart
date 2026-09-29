@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 
+import '../engine/superset.dart';
 import '../models/models.dart';
 
 /// SQLite 本地库：唯一数据源。所有查询经 DatabaseProvider。
@@ -50,7 +51,7 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 8,
+          version: 9,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -122,6 +123,9 @@ class Db {
     if (oldV < 8) {
       await upgradeV7to8(db);
     }
+    if (oldV < 9) {
+      await upgradeV8to9(db);
+    }
   }
 
   /// v6：计划模板目标参数快照进训练记录（调研条目 14）。
@@ -165,6 +169,17 @@ class Db {
     await db.execute('ALTER TABLE sessions ADD COLUMN impression INTEGER');
   }
 
+  /// v9：超级组（2026-09-29）——计划动作行与会话动作快照行各加
+  /// superset_tag（'' = 不配对；同 tag 且日内相邻 = 一个超级组，训练时
+  /// 轮转交替）。带 DEFAULT ''，回收站快照/导出导入的老行缺列可安全落库。
+  @visibleForTesting
+  Future<void> upgradeV8to9(Database db) async {
+    await db.execute(
+        "ALTER TABLE plan_exercises ADD COLUMN superset_tag TEXT NOT NULL DEFAULT ''");
+    await db.execute(
+        "ALTER TABLE session_exercises ADD COLUMN superset_tag TEXT NOT NULL DEFAULT ''");
+  }
+
   /// 建表（onCreate 与单元测试共用）。
   @visibleForTesting
   Future<void> createSchema(Database db) async => _onCreate(db, 1);
@@ -201,7 +216,8 @@ class Db {
         reps_max INTEGER NOT NULL DEFAULT 8,
         rest_sec INTEGER NOT NULL DEFAULT 120,
         kind TEXT NOT NULL DEFAULT 'assistance',
-        rule TEXT NOT NULL DEFAULT '{}'
+        rule TEXT NOT NULL DEFAULT '{}',
+        superset_tag TEXT NOT NULL DEFAULT ''
       )''');
     await db.execute('''
       CREATE TABLE exercise_meta(
@@ -237,7 +253,8 @@ class Db {
         target_sets INTEGER NOT NULL DEFAULT 0,
         target_reps_min INTEGER NOT NULL DEFAULT 0,
         target_reps_max INTEGER NOT NULL DEFAULT 0,
-        trace TEXT NOT NULL DEFAULT ''
+        trace TEXT NOT NULL DEFAULT '',
+        superset_tag TEXT NOT NULL DEFAULT ''
       )''');
     await db.execute('''
       CREATE TABLE sets(
@@ -550,6 +567,28 @@ class Db {
           where: 'id = ?', whereArgs: [idsInOrder[i]]);
     }
     await batch.commit(noResult: true);
+  }
+
+  /// 超级组标记一致性维护（v9）：按当前顺序重读一天的动作，把「同 tag
+  /// 不再相邻（被拖散/被隔开）」与「只剩单人」的 tag 清空。重排、删除、
+  /// 解除配对后都应调用。返回被解除配对的动作名（空列表 = 无变化），
+  /// 调用方据此 SnackBar 提示。
+  Future<List<String>> normalizeSupersetTags(int dayId) async {
+    final rows = await dayExercises(dayId);
+    final clears = supersetTagClears(
+      rows.map((e) => e.supersetTag).toList(),
+    );
+    if (clears.isEmpty) return const [];
+    final db = await database;
+    final batch = db.batch();
+    final names = <String>[];
+    for (final i in clears) {
+      batch.update('plan_exercises', {'superset_tag': ''},
+          where: 'id = ?', whereArgs: [rows[i].id]);
+      names.add(rows[i].name);
+    }
+    await batch.commit(noResult: true);
+    return names;
   }
 
   /// 全部已知动作（含肌群映射），编辑器自动补全/校对用。

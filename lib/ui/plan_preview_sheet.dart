@@ -204,6 +204,10 @@ Future<PlanPreviewResult?> showPlanPreviewSheet(
                           for (var j = 0; j < edited[i].length; j++)
                             _previewExerciseRow(
                               edited[i][j],
+                              // 超级组行加 ⇄ 前缀：本行标了配对（与下一行），
+                              // 或上一行标了配对（自己是被配对的下一行）。
+                              superset: edited[i][j].startsSuperset ||
+                                  (j > 0 && edited[i][j - 1].startsSuperset),
                               onTap: () async {
                                 final next = await _pickExerciseCandidate(
                                     ctx, edited[i][j]);
@@ -284,8 +288,10 @@ String _truncateReason(String aiError) {
   return t.length <= 40 ? t : '${t.substring(0, 40)}…';
 }
 
-/// 预览页的一行动作：待确认的加警示色与徽标，全部可点进候选选择。
-Widget _previewExerciseRow(AiExerciseSpec ex, {required VoidCallback onTap}) {
+/// 预览页的一行动作：待确认的加警示色与徽标，全部可点进候选选择；
+/// [superset] = 属于超级组（AI 标了配对），行首 ⇄ 提示交替执行。
+Widget _previewExerciseRow(AiExerciseSpec ex,
+    {required VoidCallback onTap, bool superset = false}) {
   final warn = ex.needsConfirm;
   return InkWell(
     onTap: onTap,
@@ -297,8 +303,8 @@ Widget _previewExerciseRow(AiExerciseSpec ex, {required VoidCallback onTap}) {
           Expanded(
             child: Text(
               tx(
-                  '· ${exname(ex.name)}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
-                  en: '· ${exname(ex.name)}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · Rest ${ex.restSec ?? '-'}s'),
+                  '${superset ? '⇄' : '·'} ${exname(ex.name)}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · 休 ${ex.restSec ?? '-'}s',
+                  en: '${superset ? '⇄' : '·'} ${exname(ex.name)}  ${ex.sets}×${ex.repsMin}-${ex.repsMax} · Rest ${ex.restSec ?? '-'}s'),
               style: TextStyle(
                 fontSize: 14,
                 color: warn ? AppTheme.warn : AppTheme.text,

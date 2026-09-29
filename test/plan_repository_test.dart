@@ -115,4 +115,31 @@ void main() {
     expect(meta!.muscles.main, '肩',
         reason: '修复前：saveAiPlan 尾部全量落库会把标注静默重置回内置默认「胸」');
   });
+
+  test('v9：AI 超级组链落库为同 tag 相邻行（配对/三连/悬挂不落）', () async {
+    final specs = [
+      AiDaySpec(1, '超级组日', [
+        AiExerciseSpec(name: '杠铃卧推', sets: 3, repsMin: 5, repsMax: 8,
+            startsSuperset: true),
+        AiExerciseSpec(name: '杠铃划船', sets: 3, repsMin: 5, repsMax: 8),
+        AiExerciseSpec(name: '杠铃弯举', sets: 3, repsMin: 8, repsMax: 12,
+            startsSuperset: true),
+        AiExerciseSpec(name: '哑铃颈后臂屈伸', sets: 3, repsMin: 8, repsMax: 12),
+        AiExerciseSpec(name: '卷腹', sets: 3, repsMin: 8, repsMax: 12,
+            startsSuperset: true), // 悬挂：无下一个，不落标记
+      ]),
+    ];
+    final plan = await repo.saveAiPlan(
+        name: '超级组计划', specs: specs, metaMap: const {});
+    final days = await db.planDays(plan.id!);
+    final exs = await db.dayExercises(days.first.id!);
+    expect(exs.length, 5);
+    // 卧推+划船 一组；弯举+臂屈伸 一组（悬挂的卷腹不带 tag）
+    expect(exs[0].supersetTag, isNotEmpty);
+    expect(exs[1].supersetTag, exs[0].supersetTag);
+    expect(exs[2].supersetTag, isNotEmpty);
+    expect(exs[3].supersetTag, exs[2].supersetTag);
+    expect(exs[2].supersetTag, isNot(exs[0].supersetTag), reason: '两组标记不同');
+    expect(exs[4].supersetTag, '', reason: '末位悬挂标记不落库');
+  });
 }

@@ -7,6 +7,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../db/db.dart';
 import '../engine/engine.dart';
+import '../engine/superset.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import '../presets/baoji_plan.dart';
@@ -319,18 +320,14 @@ class SessionController extends ChangeNotifier {
       return false;
     }
     setsByEx = await _db.setsOfSession(sessionId);
-    // 找到第一个"正式组未做完"的动作（与 completeSet 的推进判据一致：
-    // 只数 working 组，热身/力竭组不算完成进度）
-    curExIdx = exercises.length - 1;
-    for (var i = 0; i < exercises.length; i++) {
-      final done = (setsByEx[exercises[i].id] ?? [])
-          .where((e) => e.kind == SetKind.working)
-          .length;
-      if (done < exercises[i].rule.workingSets) {
-        curExIdx = i;
-        break;
-      }
-    }
+    // 恢复落点（v9 超级组）：按计划轮转序列走位到第一个未消费的槽位
+    // ——不配对时序列退化为线性，与旧「第一个正式组未做完」完全一致；
+    // 全部做完回落最后一个动作（加练口径）。
+    curExIdx = resumeExerciseIdx(
+      tags: _supersetTags,
+      plannedSets: exercises.map((e) => e.rule.workingSets).toList(),
+      doneWorking: _doneWorkingOfAll(),
+    );
     curSetIdx = (setsByEx[currentEx!.id] ?? []).length;
     workingSetsDone = currentSets
         .where((e) => e.kind == SetKind.working)
@@ -436,6 +433,9 @@ class SessionController extends ChangeNotifier {
           targetSets: pe.sets,
           targetRepsMin: pe.repsMin,
           targetRepsMax: pe.repsMax,
+          // 超级组标记同样快照（v9）：训练中的轮转推进按它分组，
+          // 模板日后取消配对不影响进行中/历史会话。
+          supersetTag: pe.supersetTag,
         ),
     ];
     final (s, withIds) = await _db.insertSessionWithExercises(
@@ -511,23 +511,59 @@ class SessionController extends ChangeNotifier {
     // 热身组不触发休息计时（调研条目 9，Flexify 规则）：留在动作态
     // 直接做下一组，不给"再来一组"入口（本来就在该动作上）。
     if (kind == SetKind.warmup) return pr;
-    final plannedWorking = ex.rule.workingSets;
-    if (workingSetsDone >= plannedWorking) {
-      // 本动作完成 → 下一个动作（若还有）也进入休息
-      if (curExIdx < exercises.length - 1) {
-        _advanceToNextExercise();
-      } else {
-        // 最后一个动作完成：直接结束会话；UI 检测到 !hasActive 后
-        // 走 endTraining 展示总结页并回填飞书
-        await finish();
-        return pr;
-      }
+    // 下一步动作推导（v9 超级组轮转）：不配对动作与旧线性推进完全
+    // 一致——未练满留在原动作、练满进下一动作；全部练满返回 null
+    // = 结束会话。超级组成员每组后轮转到组内下一个还有剩余计划组的
+    // 动作（A1→B1→A2→B2…）。
+    final nextIdx = nextExerciseIdxAfterSet(
+      tags: _supersetTags,
+      plannedSets: exercises.map((e) => e.rule.workingSets).toList(),
+      doneWorking: _doneWorkingOfAll(),
+      justIdx: curExIdx,
+    );
+    if (nextIdx == null) {
+      // 最后一个动作完成：直接结束会话；UI 检测到 !hasActive 后
+      // 走 endTraining 展示总结页并回填飞书
+      await finish();
+      return pr;
+    }
+    if (nextIdx != curExIdx) {
+      await _applyExerciseSwitch(nextIdx);
     }
     // 无论组间还是练满推进：休息页都能"再来一组"回到刚完成的动作。
     // 组间时 currentEx 未变，startExtraSet 回退到自身是无害幂等操作。
     extraSetExerciseName = ex.name;
     _beginRestFor(ex);
     return pr;
+  }
+
+  // ---------- 超级组（v9）：派生与切换 ----------
+
+  List<String> get _supersetTags =>
+      exercises.map((e) => e.supersetTag).toList();
+
+  /// 各动作已完成正式组数（从库内真值派生，含非当前动作——
+  /// 超级组轮转判据要看全组进度，不能只盯当前动作的计数器）。
+  List<int> _doneWorkingOfAll() => [
+        for (final e in exercises)
+          (setsByEx[e.id] ?? const <SetEntry>[])
+              .where((s) => s.kind == SetKind.working)
+              .length
+      ];
+
+  /// 把当前动作切到 [exIdx]：计数按库内真值重算，上下文重载；重量起点 =
+  /// 该动作本会话最后一组的实际值（超级组 A/B 交替时 A2 自动接 A1 的
+  /// 手感，两个动作的重量互不覆盖），无实际组才回落推荐值。
+  /// 练满推进、超级组轮转、跳页（jumpToExercise）共用。
+  Future<void> _applyExerciseSwitch(int exIdx) async {
+    curExIdx = exIdx;
+    final target = exercises[exIdx];
+    final list = setsByEx[target.id] ?? const <SetEntry>[];
+    workingSetsDone = list.where((e) => e.kind == SetKind.working).length;
+    curSetIdx = list.length;
+    await _loadContextForCurrent();
+    weightDraft =
+        list.isNotEmpty ? list.last.weightKg : _recommendFor(target.name);
   }
 
   void _advanceToNextExercise() {
@@ -563,15 +599,7 @@ class SessionController extends ChangeNotifier {
         .length;
     if (done >= target.rule.workingSets) return false; // 已练满：不可跳入
     if (phase == WorkoutPhase.resting) _finishRest(cancelAlarm: true);
-    curExIdx = exIdx;
-    final list = setsByEx[target.id] ?? const <SetEntry>[];
-    workingSetsDone = done;
-    curSetIdx = list.length;
-    await _loadContextForCurrent();
-    // 重量起点：该动作已有实际组就取最后一组的实际值，否则用推荐值
-    weightDraft = list.isNotEmpty
-        ? list.last.weightKg
-        : _recommendFor(target.name);
+    await _applyExerciseSwitch(exIdx);
     _setPhase(WorkoutPhase.lifting);
     notifyCard();
     notifyListeners();
@@ -601,13 +629,18 @@ class SessionController extends ChangeNotifier {
     if (sec <= 0) return; // 双保险：热身组不触发计时
     final end = DateTime.now().millisecondsSinceEpoch + sec * 1000;
     _startRestAt(end, notifyUi: true);
-    // 预载（下一）动作上下文。推荐重量只在换动作时刷新——
-    // 同一动作继续时保留用户手动调过的重量，不再每组被冲回推荐值。
+    // 预载（下一）动作上下文。重量只在换动作时刷新——同一动作继续时
+    // 保留用户手动调过的重量，不再每组被冲回推荐值。换动作时起点与
+    // _applyExerciseSwitch 同口径：该动作本会话已有实际组就接最后一组
+    // 的实际值（超级组 A2 接 A1），否则推荐值。
     _loadContextForCurrent().then((_) {
       if (!hasActive) return;
       final next = currentEx;
       if (next == null || next.id != justFinished.id) {
-        weightDraft = _recommendFor(next?.name ?? '');
+        final list = setsByEx[next?.id] ?? const <SetEntry>[];
+        weightDraft = list.isNotEmpty
+            ? list.last.weightKg
+            : _recommendFor(next?.name ?? '');
         notifyListeners();
       }
     });
@@ -793,30 +826,45 @@ class SessionController extends ChangeNotifier {
     notifyCard();
   }
 
-  /// 撤销最后一组（记错时用）。若当前动作还没有组而已完成上一动作，
-  /// 回退到上一动作撤销它的最后一组。
+  /// 撤销最后一组（记错时用）。目标是「全会话最新的一组」——按完成
+  /// 时间找全局最后一组删除，再切回它所属的动作。超级组轮转下当前
+  /// 动作未必是刚记录的动作（A1 后已切到 B），旧的 curExIdx-- 线性
+  /// 回退会撤错对象；不配对时全局最后一组就是当前/上一动作的尾组，
+  /// 行为与旧实现一致。回退跨动作时重量 = 该动作剩余最后一组的实际
+  /// 重量（重记这组时手感不从头再来）。
   Future<void> undoLastSet() async {
     if (session == null || exercises.isEmpty) return;
-    var ex = currentEx;
-    var list = setsByEx[ex!.id!];
-    if ((list == null || list.isEmpty) && curExIdx > 0) {
-      // 已自动推进到下一动作：回退
-      curExIdx--;
-      ex = exercises[curExIdx];
-      list = setsByEx[ex.id!];
+    SessionExercise? ex;
+    List<SetEntry>? list;
+    var lastDoneAt = -1;
+    var lastId = -1;
+    for (var i = 0; i < exercises.length; i++) {
+      final l = setsByEx[exercises[i].id];
+      if (l == null || l.isEmpty) continue;
+      final tail = l.last;
+      final id = tail.id ?? 0;
+      if (tail.doneAt > lastDoneAt || (tail.doneAt == lastDoneAt && id > lastId)) {
+        lastDoneAt = tail.doneAt;
+        lastId = id;
+        ex = exercises[i];
+        list = l;
+      }
+    }
+    if (ex == null || list == null) return;
+    final last = list.last;
+    final wasCurrent = ex.id == currentEx?.id;
+    await _db.deleteSet(last.id!);
+    list.removeLast();
+    if (!wasCurrent) {
+      curExIdx = exercises.indexOf(ex);
       await _loadContextForCurrent();
       // 回退动作的重量 = 它剩余最后一组的实际重量（重记这组时手感不从头再来）
-      weightDraft = (list != null && list.isNotEmpty)
+      weightDraft = list.isNotEmpty
           ? list.last.weightKg
           : _recommendFor(ex.name);
     }
-    if (list == null || list.isEmpty) return;
-    final last = list.last;
-    await _db.deleteSet(last.id!);
-    list.removeLast();
     curSetIdx = list.length;
-    // 计数收敛到 DB 真值：同动作撤销与跨动作回退（_advanceToNextExercise
-    // 已把计数归 0，回退后无条件自减会变成 -1）统一按剩余正式组重算。
+    // 计数收敛到 DB 真值：同动作撤销与跨动作回退统一按剩余正式组重算。
     workingSetsDone = list.where((e) => e.kind == SetKind.working).length;
     // PR 标记不随单组撤销丢项：仅当剩余正式组中已没有任何一组仍是
     // 历史新高时才清除（逐组重判，任一剩余组仍超历史最佳就保留）。

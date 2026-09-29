@@ -115,13 +115,16 @@ class AiService {
         '严格 JSON 数组，包在 ```json 代码块里，每个元素是一个训练日：\n'
         '[{"weekday":1-7(周一=1),"title":"训练日名称","exercises":[{"name":"规范中文动作名",'
         '"sets":组数,"reps_min":最少次数,"reps_max":最多次数,"rest_sec":组间休息秒数,'
-        '"kind":"compound或assistance","main_muscle":"胸/肩/背/手臂/腿/核心 之一"}]}]\n'
+        '"kind":"compound或assistance","main_muscle":"胸/肩/背/手臂/腿/核心 之一","superset":true(可选)}]}]\n'
         '3. 用户要调整（换动作/改组次/加减训练日/改频率）时，重新输出调整后的**完整**计划 JSON，'
         '不是只给改动项。\n'
         '4. 每周 3-5 个训练日（用户明确指定则照办）；同一肌群两次训练至少间隔 48 小时；'
         '容量安排符合渐进超负荷原则；热身组不写入；rest_sec：复合动作 150-180、辅助动作 90-120。\n'
         '5. 可以参考训练数据里用户的水平与弱项安排，但计划本身仍按上面的 JSON 输出。\n'
-        '6. 动作名优先用参考词表：$lib';
+        '6. 动作名优先用参考词表：$lib\n'
+        '7. 超级组：仅当用户提到"超级组/配对/交替练"时才用——配对的第一个动作加 "superset": true'
+        '（与下一个动作配对，连标两个=三动作连组）；优先拮抗肌配对；配对动作组数一致；'
+        '配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作正常休息。';
   }
 
   /// 连接测试：发一条最小请求，返回 (耗时 ms, 模型回复)。
@@ -265,10 +268,11 @@ class AiService {
 你是专业力量训练教练。根据用户的自然语言描述，设计一份每周力量训练计划，输出严格 JSON：
 1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
 2. 每个元素是一个训练日：{"weekday": 1-7(周一=1), "title": "训练日名称", "exercises": [...]}
-3. 每个 exercise：{"name": "规范中文动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "胸/肩/背/手臂/腿/核心 之一"}
+3. 每个 exercise：{"name": "规范中文动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "胸/肩/背/手臂/腿/核心 之一", "superset": true(可选)}
 4. 每周 3-5 个训练日；同一肌群两次训练至少间隔 48 小时；容量安排符合渐进超负荷原则；热身组不写入。
 5. rest_sec：复合动作 150-180，辅助动作 90-120。动作名尽量使用参考词表：$lib
 6. 用户未说明的部分按增肌最佳实践补全；描述过简时按"每周 3 练、全身均衡"处理；用户明确指定的动作/器械/次数/每周训练天数都尊重用户（如"每周 6 练"或"只要 2 天"照办）。
+7. 超级组：仅当用户提到"超级组/配对/交替练"时才使用，不要主动加——在配对的第一个动作上加 "superset": true 表示与下一个动作配成超级组（连标两个=三动作连组）；优先拮抗肌配对（如二头弯举+三头臂屈伸、卧推+划船）；配对动作组数保持一致；配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作保持正常组间休息。
 
 用户描述：$description
 ''';
@@ -289,10 +293,11 @@ class AiService {
 你是力量训练计划解析器。把下面的训练计划文本转换为严格 JSON。要求：
 1. 只输出 JSON 数组，不要输出任何其他文字或 markdown 代码块标记。
 2. 每个元素是一个训练日：{"weekday": 1-7(周一=1), "title": "训练日名称", "exercises": [...]}
-3. 每个 exercise：{"name": "动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "主发力肌群，从 胸/肩/背/手臂/腿/核心 里选一个"}
+3. 每个 exercise：{"name": "动作名", "sets": 组数, "reps_min": 最少次数, "reps_max": 最多次数, "rest_sec": 组间休息秒数, "kind": "compound或assistance", "main_muscle": "主发力肌群，从 胸/肩/背/手臂/腿/核心 里选一个", "superset": true(可选)}
 4. "3×5-8" 表示 sets=3, reps_min=5, reps_max=8；"3组8-12次" 同理。
 5. 动作名使用规范中文（参考词表：$lib）。次数字段缺失时用常见默认：复合动作 5-8、辅助动作 8-12；休息缺失时复合 180、辅助 120。
 6. 训练计划原文可能提到具体星期，如"周一"对应 weekday=1。
+7. 原文里的"超级组/配对/交替"（如"超级组：二头弯举+三头下压"或"A1 B1 A2 B2 交替"）：在配对的第一个动作上加 "superset": true 表示与下一个动作配对；配对中除最后一个动作外 rest_sec 给 20-30（转换休息），最后一个动作按原文或默认。
 
 计划原文：
 $planText
@@ -354,6 +359,18 @@ $planText
       return int.tryParse(normalized) ?? def;
     }
     return def;
+  }
+
+  /// 布尔字段安全转换（超级组 superset 标记）：容忍 true/1/"true"/"是"
+  /// 等弱模型形态；缺失与其他乱值一律 false。
+  static bool _asBool(Object? v) {
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    if (v is String) {
+      final s = v.trim().toLowerCase();
+      return s == 'true' || s == '1' || s == '是' || s == 'yes';
+    }
+    return false;
   }
 
   /// AI 输出集中清洗（可见于测试）：weekday 越界丢日、数字安全转换、
@@ -429,7 +446,14 @@ $planText
             restSec: rs <= 0 ? null : rs.clamp(0, 600),
             kind: rawKind is String ? rawKind : null,
             mainMuscle: rawMuscle is String ? rawMuscle : null,
+            startsSuperset: _asBool(ex['superset']),
           ));
+        }
+        // 超级组悬挂清洗：一天最后一个动作标了 superset=true（没有下一个
+        // 可配对）→ 忽略，避免预览页显示悬空的配对徽标。
+        if (exList.isNotEmpty && exList.last.startsSuperset) {
+          exList[exList.length - 1] =
+              exList.last.copyWith(startsSuperset: false);
         }
         if (exList.isEmpty) continue;
         final existing = byWeekday[weekday];

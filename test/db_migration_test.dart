@@ -299,6 +299,95 @@ void main() {
     await db.close();
   });
 
+  test('v8 老库升级：superset_tag 列出现、老行默认空串', () async {
+    final db = await databaseFactory.openDatabase(dbPath);
+    // 手写 v8 形状（v9 之前两张表都没有 superset_tag）
+    await db.execute('''
+      CREATE TABLE plan_exercises(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        day_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        order_idx INTEGER NOT NULL DEFAULT 0,
+        sets INTEGER NOT NULL DEFAULT 3,
+        reps_min INTEGER NOT NULL DEFAULT 5,
+        reps_max INTEGER NOT NULL DEFAULT 8,
+        rest_sec INTEGER NOT NULL DEFAULT 120,
+        kind TEXT NOT NULL DEFAULT 'assistance',
+        rule TEXT NOT NULL DEFAULT '{}'
+      )''');
+    await db.execute('''
+      CREATE TABLE session_exercises(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        order_idx INTEGER NOT NULL DEFAULT 0,
+        kind TEXT NOT NULL DEFAULT 'assistance',
+        rest_sec INTEGER NOT NULL DEFAULT 0,
+        rule TEXT NOT NULL DEFAULT '{}',
+        target_sets INTEGER NOT NULL DEFAULT 0,
+        target_reps_min INTEGER NOT NULL DEFAULT 0,
+        target_reps_max INTEGER NOT NULL DEFAULT 0,
+        trace TEXT NOT NULL DEFAULT ''
+      )''');
+    final peId = await db.insert('plan_exercises',
+        {'day_id': 1, 'name': '杠铃卧推', 'order_idx': 0, 'rule': '{}'});
+
+    // 生产路径同款迁移
+    await Db.instance.upgradeV8to9(db);
+
+    for (final table in ['plan_exercises', 'session_exercises']) {
+      final cols = [
+        for (final c in await db.rawQuery('PRAGMA table_info($table)'))
+          c['name'] as String
+      ];
+      expect(cols, contains('superset_tag'), reason: table);
+    }
+    // 老行默认空串（model 读回不配对）
+    final row = PlanExercise.fromMap(
+        (await db.query('plan_exercises', where: 'id = ?', whereArgs: [peId]))
+            .first);
+    expect(row.supersetTag, '');
+    await db.close();
+  });
+
+  test('v9：normalizeSupersetTags 拆散/单人清空、相邻保留', () async {
+    final db = await databaseFactory.openDatabase(dbPath);
+    await Db.instance.createSchema(db);
+    final wrapper = Db.forTesting(db);
+    final plan = await wrapper.insertPlan(Plan(
+        name: '超级组测试', source: 'manual', createdAt: '2026-09-29', isActive: 1));
+    final dayId = await wrapper.insertPlanDay(
+        PlanDay(planId: plan.id!, weekday: 1, title: '推拉'));
+    // 顺序：A(g) B(g) C(x 孤tag) D(h) E(无tag) F(h)——h 组被 E 隔开
+    final seed = [
+      ('二头弯举', 'g'), ('三头下压', 'g'), ('卷腹', 'x'),
+      ('卧推', 'h'), ('深蹲', ''), ('划船', 'h'),
+    ];
+    for (var k = 0; k < seed.length; k++) {
+      final (name, tag) = seed[k];
+      await wrapper.insertPlanExercise(PlanExercise(
+          dayId: dayId, name: name, orderIdx: k, sets: 3, restSec: 90,
+          repsMin: 8, repsMax: 12, kind: 'assistance',
+          rule: const ProgressionRule(repsMin: 8, repsMax: 12, workingSets: 3),
+          supersetTag: tag));
+    }
+
+    // g,g 相邻保留；x 孤 tag 清；h 被深蹲隔开 → 两个 h 都清
+    final detached = await wrapper.normalizeSupersetTags(dayId);
+    expect(detached, ['卷腹', '卧推', '划船']);
+    final after = await wrapper.dayExercises(dayId);
+    expect(after[0].supersetTag, 'g');
+    expect(after[1].supersetTag, 'g');
+    expect(after[2].supersetTag, '');
+    expect(after[3].supersetTag, '');
+    expect(after[4].supersetTag, '');
+    expect(after[5].supersetTag, '');
+
+    // 再跑一遍：已干净 → 无变化（幂等）
+    expect(await wrapper.normalizeSupersetTags(dayId), isEmpty);
+    await db.close();
+  });
+
   test('统计过滤纪律：active 会话的组不进任何聚合查询', () async {
     final db = await databaseFactory.openDatabase(dbPath);
     await createV5Schema(db);

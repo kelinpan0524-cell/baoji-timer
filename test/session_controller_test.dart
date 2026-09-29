@@ -84,6 +84,7 @@ void main() {
     int sets = 3,
     int restSec = 120,
     int workingSets = 3,
+    String supersetTag = '',
   }) async {
     final pe = PlanExercise(
       dayId: day.id!,
@@ -95,6 +96,7 @@ void main() {
       restSec: restSec,
       kind: 'compound',
       rule: ProgressionRule(repsMin: 5, repsMax: 8, workingSets: workingSets),
+      supersetTag: supersetTag,
     );
     final id = await db.insertPlanExercise(pe);
     return pe.copyWith(id: id);
@@ -1286,6 +1288,97 @@ void main() {
       expect(c.activeMs, 30 * 60000);
       await c.finish();
       expect(c.session!.durationMin, lessThan(5)); // 正常即时结束
+    });
+  });
+
+  group('超级组（v9）', () {
+    test('v9-1：全程轮转 A1→B1→A2→B2→出组→丙→自动结束；休息各按所属动作', () async {
+      final day = await makePlanDay('超级组日');
+      final a = await addPlanEx(day, '动作甲', 0,
+          sets: 2, workingSets: 2, restSec: 15, supersetTag: 'ss');
+      final b = await addPlanEx(day, '动作乙', 1,
+          sets: 2, workingSets: 2, restSec: 120, supersetTag: 'ss');
+      final c3 = await addPlanEx(day, '动作丙', 2,
+          sets: 1, workingSets: 1, restSec: 90);
+
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [a, b, c3]);
+      expect(
+          c.exercises.map((e) => e.supersetTag), ['ss', 'ss', ''],
+          reason: '超级组标记快照进会话动作行');
+
+      // A1：切到 B，休息按 A 的 15s（转换休息）
+      await c.completeSet(weight: 50, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.phase, WorkoutPhase.resting);
+      expect(c.curExIdx, 1, reason: 'A1 后轮转到 B');
+      expect(c.restTotalMs, closeTo(15000, 1500), reason: '转换休息用 A 的 restSec');
+      c.skipRest();
+      expect(c.phase, WorkoutPhase.lifting);
+
+      // B1：切回 A，休息按 B 的 120s（轮末完整休息）
+      await c.completeSet(weight: 80, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.curExIdx, 0, reason: 'B1 后轮转回 A');
+      expect(c.restTotalMs, closeTo(120000, 1500));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(c.weightDraft, 50,
+          reason: 'A2 接 A1 的实际重量，不被 B 的上下文覆盖');
+      c.skipRest();
+
+      // A2：A 练满 → 轮转到还有剩余组的 B（不是线性进丙）
+      await c.completeSet(weight: 50, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.curExIdx, 1, reason: 'A 练满后仍在组内轮转到 B');
+      c.skipRest();
+
+      // B2：组内全满 → 出组到丙
+      await c.completeSet(weight: 80, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.curExIdx, 2, reason: '超级组完成出组到丙');
+      c.skipRest();
+
+      // 丙完成：全部结束
+      await c.completeSet(weight: 40, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.hasActive, isFalse, reason: '最后一个动作完成自动结束会话');
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+
+    test('v9-2：撤销删全局最后一组并切回所属动作（轮转下当前动作≠刚记录动作）', () async {
+      final day = await makePlanDay('超级组日');
+      final a = await addPlanEx(day, '动作甲', 0, workingSets: 3, supersetTag: 'ss');
+      final b = await addPlanEx(day, '动作乙', 1, workingSets: 3, supersetTag: 'ss');
+
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [a, b]);
+      await c.completeSet(weight: 50, reps: 8, rir: 2, kind: SetKind.working);
+      expect(c.curExIdx, 1, reason: 'A1 后已轮转到 B（休息中）');
+      c.skipRest();
+
+      // 当前动作是乙，但最后一组是甲的 → 撤销必须删甲的组并回到甲
+      await c.undoLastSet();
+      expect(c.curExIdx, 0, reason: '撤销 A1 回到动作甲');
+      expect(c.workingSetsDone, 0);
+      expect((c.setsByEx[c.exercises[0].id] ?? const []).length, 0);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    });
+
+    test('v9-3：被杀恢复落在轮转序列的下一个动作', () async {
+      final day = await makePlanDay('超级组日');
+      final a = await addPlanEx(day, '动作甲', 0, workingSets: 3, supersetTag: 'ss');
+      final b = await addPlanEx(day, '动作乙', 1, workingSets: 3, supersetTag: 'ss');
+
+      final c = makeController();
+      await c.startFromDay(day: day, planExercises: [a, b]);
+      await c.completeSet(weight: 50, reps: 8, rir: 2, kind: SetKind.working);
+      c.skipRest();
+      await c.completeSet(weight: 80, reps: 8, rir: 2, kind: SetKind.working);
+      c.skipRest();
+      expect(c.curExIdx, 0, reason: 'A1B1 后轮到 A2');
+
+      // 模拟进程重启：新控制器从库恢复
+      final c2 = makeController();
+      await c2.restore();
+      expect(c2.hasActive, isTrue);
+      expect(c2.curExIdx, 0, reason: '恢复落点 = 轮转序列的下一个（A2）');
+      expect(c2.workingSetsDone, 1, reason: '动作甲已完成 1 组');
+      expect(c2.exercises.map((e) => e.supersetTag), ['ss', 'ss']);
     });
   });
 }

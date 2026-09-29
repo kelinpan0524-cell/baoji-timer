@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import '../engine/superset.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import '../presets/exercise_library.dart' show libraryMetaByName;
@@ -12,6 +13,10 @@ import 'exercise_detail_sheet.dart';
 import 'exercise_picker_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
+
+/// 该动作是否属于超级组（跳页面板/休息页小标记共用，与轮转引擎同口径）。
+bool _sessionInSuperset(List<SessionExercise> exs, int i) =>
+    supersetMembersOf(i, [for (final e in exs) e.supersetTag]) != null;
 
 /// 训练页（全屏）：动作态 / 休息态；折叠屏（≥840dp）双栏。
 /// 训练中不弹窗：结束训练用长按 2 秒环形进度（调研条目 5）；
@@ -334,7 +339,7 @@ class _WorkoutPageState extends State<WorkoutPage> with WidgetsBindingObserver {
                   children: [
                     Expanded(
                       child: Text(
-                        '${i + 1}. ${exname(s.exercises[i].name)}',
+                        '${_sessionInSuperset(s.exercises, i) ? '⇄ ' : ''}${i + 1}. ${exname(s.exercises[i].name)}',
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -2338,6 +2343,19 @@ class _RestViewState extends State<_RestView> {
                         _ProgressNudges(),
                       ],
                       const SizedBox(height: 12),
+                      // 超级组提示（v9）：当前/接下来轮到的动作在超级组里，
+                      // 提醒交替执行方式；不占主视线，小字放在「下一组」上方。
+                      if (_sessionInSuperset(s.exercises, s.curExIdx)) ...[
+                        Text(
+                          tx('⇄ 超级组 · 交替执行', en: '⇄ Superset · alternating'),
+                          style: const TextStyle(
+                            color: AppTheme.primary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
                       // 点"下一组"展开重量步进：休息中就能调下一组重量
                       GestureDetector(
                         onTap: () => setState(() => _weightOpen = !_weightOpen),

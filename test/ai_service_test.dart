@@ -129,6 +129,57 @@ void main() {
     });
   });
 
+  group('超级组解析（v9）', () {
+    test('"superset": true 标在第一个动作上 = 与下一个配对', () {
+      final specs = ai.parseResponse(
+          '[{"weekday":1,"title":"超级组日","exercises":['
+          '{"name":"杠铃卧推","sets":3,"reps_min":5,"reps_max":8,"superset":true},'
+          '{"name":"杠铃划船","sets":3,"reps_min":5,"reps_max":8},'
+          '{"name":"卷腹","sets":3,"reps_min":8,"reps_max":12}]}]');
+      final exs = specs.first.exercises;
+      expect(exs[0].startsSuperset, isTrue);
+      expect(exs[1].startsSuperset, isFalse);
+      expect(exs[2].startsSuperset, isFalse);
+    });
+
+    test('连标两个 = 三连组；一天末位的悬挂标记被忽略', () {
+      final specs = ai.parseResponse(
+          '[{"weekday":2,"title":"三连组","exercises":['
+          '{"name":"杠铃卧推","sets":3,"reps_min":5,"reps_max":8,"superset":true},'
+          '{"name":"杠铃划船","sets":3,"reps_min":5,"reps_max":8,"superset":true},'
+          '{"name":"杠铃弯举","sets":3,"reps_min":8,"reps_max":12,"superset":true}]}]');
+      final exs = specs.first.exercises;
+      expect(exs[0].startsSuperset, isTrue);
+      expect(exs[1].startsSuperset, isTrue);
+      // 最后一个动作没有"下一个"可配对 → 悬挂标记清掉
+      expect(exs[2].startsSuperset, isFalse);
+    });
+
+    test('布尔容错："true"/1/是 视为 true，乱值视为 false', () {
+      final specs = ai.parseResponse(
+          '[{"weekday":3,"title":"容错","exercises":['
+          '{"name":"杠铃卧推","sets":3,"reps_min":5,"reps_max":8,"superset":"true"},'
+          '{"name":"杠铃划船","sets":3,"reps_min":5,"reps_max":8,"superset":1},'
+          '{"name":"杠铃弯举","sets":3,"reps_min":8,"reps_max":12,"superset":"是"},'
+          '{"name":"哑铃侧平举","sets":3,"reps_min":8,"reps_max":12,"superset":"maybe"},'
+          '{"name":"卷腹","sets":3,"reps_min":8,"reps_max":12}]}]');
+      final exs = specs.first.exercises;
+      expect(exs[0].startsSuperset, isTrue);
+      expect(exs[1].startsSuperset, isTrue);
+      expect(exs[2].startsSuperset, isTrue);
+      expect(exs[3].startsSuperset, isFalse, reason: '非真值形态不误判');
+    });
+
+    test('三处提示词都带超级组契约', () {
+      expect(ai.buildDesignerPrompt('练背').contains('superset'), isTrue);
+      expect(AiService.planChatContract().contains('superset'), isTrue);
+      // 解析提示词无法直接构造（私有），借 parsePlan 未配置报错前不可达——
+      // 用 planChatContract 与 designer 的契约一致性替代覆盖
+      expect(ai.buildDesignerPrompt('练背').contains('转换休息'), isTrue);
+      expect(AiService.planChatContract().contains('转换休息'), isTrue);
+    });
+  });
+
   group('名称归一收紧（A3-2：泛称不被吸成长变体）', () {
     test('「卧推」保留原名，不落成「上斜杠铃卧推（轻）」等最长变体', () {
       final specs = ai.parseResponse(

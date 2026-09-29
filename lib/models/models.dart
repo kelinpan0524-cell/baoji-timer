@@ -291,6 +291,11 @@ class PlanExercise {
   final String kind; // compound | assistance
   final ProgressionRule rule;
 
+  /// 超级组标记（v9）：'' = 不配对；同 tag 且在训练日内相邻 = 一个
+  /// 超级组，训练时按轮转交替（A1→B1→A2→B2…）。tag 本身只是随机标识，
+  /// 不承载顺序或含义；连续性由 normalizeSupersetTags 维护。
+  final String supersetTag;
+
   const PlanExercise({
     this.id,
     required this.dayId,
@@ -302,6 +307,7 @@ class PlanExercise {
     required this.restSec,
     required this.kind,
     required this.rule,
+    this.supersetTag = '',
   });
 
   Map<String, dynamic> toMap() => {
@@ -315,6 +321,7 @@ class PlanExercise {
         'rest_sec': restSec,
         'kind': kind,
         'rule': ruleToJson(rule),
+        'superset_tag': supersetTag,
       };
 
   factory PlanExercise.fromMap(Map<String, dynamic> m) => PlanExercise(
@@ -328,6 +335,7 @@ class PlanExercise {
         restSec: (m['rest_sec'] as num?)?.toInt() ?? 120,
         kind: (m['kind'] as String?) ?? 'assistance',
         rule: ruleFromJson(m['rule']),
+        supersetTag: (m['superset_tag'] as String?) ?? '',
       );
 
   PlanExercise copyWith({
@@ -341,6 +349,7 @@ class PlanExercise {
     int? restSec,
     String? kind,
     ProgressionRule? rule,
+    String? supersetTag,
   }) =>
       PlanExercise(
         id: id ?? this.id,
@@ -353,6 +362,7 @@ class PlanExercise {
         restSec: restSec ?? this.restSec,
         kind: kind ?? this.kind,
         rule: rule ?? this.rule,
+        supersetTag: supersetTag ?? this.supersetTag,
       );
 }
 
@@ -508,6 +518,10 @@ class SessionExercise {
   /// 便于历史/统计追溯这次训练与计划的偏差。
   final String trace;
 
+  /// 超级组标记快照（v9）：开始训练时从 PlanExercise.supersetTag 原样
+  /// 复制，训练中的轮转推进按它分组；'' = 不配对。
+  final String supersetTag;
+
   const SessionExercise({
     this.id,
     required this.sessionId,
@@ -520,6 +534,7 @@ class SessionExercise {
     this.targetRepsMin = 0,
     this.targetRepsMax = 0,
     this.trace = '',
+    this.supersetTag = '',
   });
 
   Map<String, dynamic> toMap() => {
@@ -534,6 +549,7 @@ class SessionExercise {
         'target_reps_min': targetRepsMin,
         'target_reps_max': targetRepsMax,
         'trace': trace,
+        'superset_tag': supersetTag,
       };
 
   factory SessionExercise.fromMap(Map<String, dynamic> m) => SessionExercise(
@@ -548,6 +564,7 @@ class SessionExercise {
         targetRepsMin: (m['target_reps_min'] as num?)?.toInt() ?? 0,
         targetRepsMax: (m['target_reps_max'] as num?)?.toInt() ?? 0,
         trace: (m['trace'] as String?) ?? '',
+        supersetTag: (m['superset_tag'] as String?) ?? '',
       );
 
   SessionExercise copyWithId(int newId) => SessionExercise(
@@ -562,6 +579,7 @@ class SessionExercise {
         targetRepsMin: targetRepsMin,
         targetRepsMax: targetRepsMax,
         trace: trace,
+        supersetTag: supersetTag,
       );
 }
 
