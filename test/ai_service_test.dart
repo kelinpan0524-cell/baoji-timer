@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:baoji_timer/engine/engine.dart';
+import 'package:baoji_timer/models/models.dart';
 import 'package:baoji_timer/services/ai_service.dart';
 import 'package:baoji_timer/services/settings.dart';
 import 'package:http/http.dart' as http;
@@ -31,7 +32,32 @@ void main() {
       expect(prompt.contains('JSON'), isTrue);
     });
 
-    test('原文导入与描述生成的提示词不同', () {
+    test('词表按肌群分组渲染，硬约束要求照抄词表（2026-09-29）', () {
+      final prompt = ai.buildDesignerPrompt('练腿');
+      expect(prompt.contains('腿：'), isTrue, reason: '按肌群分组的词表');
+      expect(prompt.contains('胸：'), isTrue);
+      expect(prompt.contains('绳索髋屈伸'), isTrue, reason: '第四弹新动作进词表');
+      expect(prompt.contains('必须优先从参考词表'), isTrue, reason: '软约束升硬约束');
+      expect(ai.planChatContract().contains('必须优先从参考词表'), isTrue);
+    });
+
+    test('用户沉淀动作进词表与匹配（词表与挑选页同口径）', () {
+      ai.sedimentLibrary = [
+        const ExerciseMeta('我的独门绳索动作',
+            MuscleGroups(main: '背', secondary: []), false, 'gym'),
+      ];
+      final prompt = ai.buildDesignerPrompt('练背');
+      expect(prompt.contains('我的独门绳索动作'), isTrue,
+          reason: '沉淀动作要让 AI 引用到，不再换名重造');
+      expect(ai.planChatContract().contains('我的独门绳索动作'), isTrue);
+      expect(ai.metaMap().containsKey('我的独门绳索动作'), isTrue);
+      // 六级匹配：沉淀名 L2 精确命中，不再误标「待确认」
+      final matches = ai.matchExerciseNames(['我的独门绳索动作']);
+      expect(matches.single.name, '我的独门绳索动作');
+      expect(matches.single.needsConfirm, isFalse);
+    });
+
+    test('原文导入与描述生成的提示词不同', () async {
       // 两个模式的提示词必须可区分（解析契约相同、指令不同）
       final designer = ai.buildDesignerPrompt('练背');
       // _buildPrompt 私有，用 designer 与已知解析提示词的关键差异断言
@@ -172,11 +198,11 @@ void main() {
 
     test('三处提示词都带超级组契约', () {
       expect(ai.buildDesignerPrompt('练背').contains('superset'), isTrue);
-      expect(AiService.planChatContract().contains('superset'), isTrue);
+      expect(ai.planChatContract().contains('superset'), isTrue);
       // 解析提示词无法直接构造（私有），借 parsePlan 未配置报错前不可达——
       // 用 planChatContract 与 designer 的契约一致性替代覆盖
       expect(ai.buildDesignerPrompt('练背').contains('转换休息'), isTrue);
-      expect(AiService.planChatContract().contains('转换休息'), isTrue);
+      expect(ai.planChatContract().contains('转换休息'), isTrue);
     });
   });
 
@@ -474,7 +500,7 @@ void main() {
       // 2026-09-26：排计划契约并入每次对话，任何轮次给出完整计划 JSON
       // 都能提取成可保存计划（不再有"排计划模式"开关）
       expect(msgs[0].content, startsWith(AiService.kCoachPersona));
-      expect(msgs[0].content.contains(AiService.planChatContract()), isTrue);
+      expect(msgs[0].content.contains(ai.planChatContract()), isTrue);
       expect(msgs[1].role, 'system');
       expect(msgs[1].content.contains('DATA-PACK'), isTrue);
       // 2026-09-26：数据包新增「当前计划与日程」段，引导句明示其存在与
@@ -749,7 +775,7 @@ void main() {
 
   group('对话式排计划', () {
     test('契约包含 JSON 结构、多轮「完整输出」规则与参考词表', () {
-      final p = AiService.planChatContract();
+      final p = ai.planChatContract();
       expect(p.contains('```json'), isTrue);
       expect(p.contains('"weekday"'), isTrue);
       // 调整后必须重新输出完整计划（不是只给改动项）——多轮排计划的关键

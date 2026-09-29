@@ -242,6 +242,35 @@ const kExerciseLibrary = <ExerciseMeta>[
   // —— 功能 ——
   ExerciseMeta('借力推', MuscleGroups(main: '肩', secondary: ['手臂', '腿']), true, 'gym', '屈膝微蹲借腿部蹬伸把杠铃一次性推过头顶，练全身爆发力；蹬伸与上推同步完成。常见错误：分成先蹲后推两段、推起时脚跟离地。', '杠铃'),
   ExerciseMeta('壶铃单臂划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'both', '俯身单手持壶铃贴身拉向髋侧，肘贴肋走。常见错误：扭转躯干借力、拉向胸口。', '壶铃'),
+
+  // ============ 补库第四弹（2026-09-29，Arono 点名：臀腿 + 商业健身房器械） ============
+  // 同前口径：肌群/复合判定参考 free-exercise-db 事实映射，名称与要点原创；
+  // 全部有对应示意图（见 exercise_media.dart）。臀部动作沿用惯例归主肌群「腿」。
+  // —— 腿（臀为主） ——
+  ExerciseMeta('绳索髋屈伸', MuscleGroups(main: '腿', secondary: ['核心']), false, 'gym', '龙门架滑轮调最低位，背对器械双手从胯下握住绳索，屈髋俯身再伸髋把重量顶起站直，顶峰夹臀一秒；主打臀大肌与腘绳。常见错误：用腰过度超伸代替伸髋、站得离器械太远张力松掉。', '龙门架绳索'),
+  ExerciseMeta('绳索单腿后踢', MuscleGroups(main: '腿', secondary: []), false, 'gym', '绳索扣在一侧脚踝，双手扶架站稳微前倾，该腿伸直向后上方踢到臀肌收紧再慢回；一侧练完换边。常见错误：踢得过高改用腰借力、支撑腿晃动。', '龙门架绳索'),
+  ExerciseMeta('跪姿后踢腿', MuscleGroups(main: '腿', secondary: ['核心']), false, 'both', '四点跪姿双手撑地，保持一侧膝弯 90 度、脚跟向天花板方向上顶，顶到臀肌绷紧即停，不必追求高度。常见错误：塌腰代偿、骨盆翻转、动作过快。', '自重'),
+  ExerciseMeta('弹力带髋伸展', MuscleGroups(main: '腿', secondary: []), false, 'home', '弹力带一端固定在身后低位（或踩在另一脚下），另一端套在髋部/脚踝，对抗弹力向前伸髋站直，顶端夹臀。常见错误：站立不稳、用弓腰顶行程。', '弹力带'),
+  ExerciseMeta('跪姿杠铃蹲', MuscleGroups(main: '腿', secondary: ['核心']), true, 'gym', '小腿贴地跪姿，杠铃压肩（在架内做、设好保护销），臀向后向下坐再蹬地顶髋回到跪直；臀大肌孤立刺激强，重量保守。常见错误：身体后仰、脚背没压实。', '杠铃'),
+  // —— 腿（器械） ——
+  ExerciseMeta('站姿腿弯举', MuscleGroups(main: '腿', secondary: []), false, 'gym', '站姿弯举器，挡辊压在训练腿脚跟上方，扶稳把手屈膝把脚跟勾向臀部再慢放；单侧逐腿练。常见错误：身体前倾借力、用惯性甩配重。', '固定器械'),
+  ExerciseMeta('单腿腿屈伸', MuscleGroups(main: '腿', secondary: []), false, 'gym', '腿屈伸器上只放一条腿，伸直到顶停一秒再慢放，专门补两侧力量差。常见错误：臀部离座借力、配重回落弹跳。', '固定器械'),
+  ExerciseMeta('倒蹬机提踵', MuscleGroups(main: '腿', secondary: []), false, 'gym', '腿举器上只把前脚掌踩在踏板下缘，膝盖伸直固定，小腿发力把踏板顶全程；斜躺角度可以上大重量。常见错误：屈膝借力、底部弹震。', '固定器械'),
+  ExerciseMeta('史密斯机提踵', MuscleGroups(main: '腿', secondary: []), false, 'gym', '史密斯机杠压肩、前脚掌踩稳，脚跟下放到充分拉伸再顶起至最高；轨道固定不用管平衡，纯练小腿。常见错误：行程过短、屈膝借力。', '固定器械'),
+  ExerciseMeta('框架硬拉机', MuscleGroups(main: '腿', secondary: ['背']), true, 'gym', '框架硬拉器对握把手，屈髋起始、伸髋站直到顶端夹臀；固定轨迹去掉杠铃平衡负担，适合安全上大重量练后链。常见错误：顶端塌腰超伸、下放砸配重。', '固定器械'),
+  ExerciseMeta('臀腘绳挺身（GHD）', MuscleGroups(main: '腿', secondary: ['核心']), true, 'gym', '臀腘绳凳（GHD）固定脚踝，从跪直位缓缓俯身至接近水平，再用臀与腘绳把身体拉回；初期力量不足先做半程。常见错误：用腰椎超伸代替伸髋、下落过快。', '固定器械'),
+  ExerciseMeta('反向山羊挺身', MuscleGroups(main: '腿', secondary: ['核心']), true, 'gym', '俯卧在反向挺身器上，双腿自然下垂，臀与腘绳发力把两腿向后上方摆到与身体成一线再慢回；对下背压力小、练后链好。常见错误：顶端塌腰、靠惯性甩腿。', '固定器械'),
+  // —— 背（器械） ——
+  ExerciseMeta('俯卧T杠划船', MuscleGroups(main: '背', secondary: ['手臂']), true, 'gym', '胸腹俯卧在 T 杠划船凳上，双臂把把手拉向胸口，顶端肩胛充分收拢；躯干被固定无法借力。常见错误：幅度减半、头部抬离靠垫。', '固定器械'),
+  ExerciseMeta('高位划船机', MuscleGroups(main: '背', secondary: ['肩']), true, 'gym', '坐姿高位把位，把手向锁骨方向拉，肘部张开沿身体两侧走，上背与肩后束刺激多。常见错误：身体后仰摇借力、只拉半程。', '固定器械'),
+  // —— 肩（器械） ——
+  ExerciseMeta('坐姿推肩机', MuscleGroups(main: '肩', secondary: ['手臂']), true, 'gym', '背贴靠垫坐稳，把手从耳侧沿固定轨道上推至手臂接近伸直；不用平衡负担，专注肩部发力。常见错误：耸肩、顶端不伸直。', '固定器械'),
+  ExerciseMeta('耸肩机', MuscleGroups(main: '肩', secondary: []), false, 'gym', '耸肩器把手在体侧，双肩垂直向耳侧方向耸起至顶、停一秒慢放；固定轨道可安全上大重量。常见错误：绕肩旋转、屈肘上提。', '固定器械'),
+  // —— 手臂（器械） ——
+  ExerciseMeta('器械弯举', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '弯举器手臂固定在垫板上屈肘弯举到顶挤压二头；垫板限制肘部前移，孤立度高。常见错误：臀部离座、配重片回落砸堆。', '固定器械'),
+  ExerciseMeta('坐姿臂屈伸机', MuscleGroups(main: '手臂', secondary: []), false, 'gym', '坐姿臂屈伸器，上臂贴稳挡垫，前臂下压至完全伸直停一秒；对肘关节友好、三头孤立。常见错误：肘部离垫、身体下压借力。', '固定器械'),
+  // —— 胸（器械） ——
+  ExerciseMeta('上斜推胸机', MuscleGroups(main: '胸', secondary: ['肩']), true, 'gym', '上斜姿势的坐姿推胸器，背贴靠垫沿固定轨道向斜上方推起，主打胸上沿。常见错误：肩部耸起、顶端偷懒不伸直。', '固定器械'),
 ];
 
 /// 兼容旧引用：薄肌计划内置词表 = 大库子集。

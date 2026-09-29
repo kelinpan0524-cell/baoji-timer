@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../db/db.dart';
 import '../l10n/lang.dart';
+import '../presets/exercise_library.dart';
 import '../services/ai_service.dart';
 import '../services/export_service.dart';
 import '../services/focus_service.dart';
@@ -70,6 +71,9 @@ class AppContainer {
     };
     planRepo.addListener(() {
       unawaited(trainReminders.reschedule());
+      // AI 词表同步（2026-09-29）：计划变化（AI 保存/编辑器增删）会让
+      // exercise_meta 沉淀动作变化，重灌一次让 AI 引用到最新动作库。
+      unawaited(_syncAiSedimentLibrary());
     });
     // 生命周期：条目 2 双通道互斥——人在屏上时休息到点只走屏内提示，
     // 离开前台才交回系统精确提醒；两通道互不重复。
@@ -126,6 +130,7 @@ class AppContainer {
     unawaited(notify.init().catchError((Object e) {}));
     await ensureFirstRunSeeded();
     await planRepo.reload();
+    await _syncAiSedimentLibrary();
     await session.restore();
     // 练前提醒：计划加载完成后排一轮（planRepo 监听会覆盖后续变化）
     unawaited(trainReminders.reschedule());
@@ -141,6 +146,20 @@ class AppContainer {
     if (await db.exerciseMetaCount() == 0) {
       await planRepo.seedExerciseLibrary();
     }
+  }
+
+  /// AI 词表同步（2026-09-29）：把 exercise_meta 里内置词表之外的用户沉淀
+  /// 动作灌进 AiService——AI 排计划时与动作挑选页同一套动作库（不再换名
+  /// 重造沉淀过的动作），六级匹配也能精确命中沉淀名。失败静默（词表退回
+  /// 内置库，不影响功能）。
+  Future<void> _syncAiSedimentLibrary() async {
+    try {
+      final all = await db.allExerciseMeta();
+      ai.sedimentLibrary = [
+        for (final m in all)
+          if (libraryMetaByName(m.name) == null) m,
+      ];
+    } catch (_) {}
   }
 
   Future<void> _onEnterFocus() async {

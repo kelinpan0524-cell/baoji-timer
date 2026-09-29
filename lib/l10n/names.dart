@@ -179,6 +179,26 @@ const _kExerciseEn = <String, String>{
   '器械卷腹': 'Machine Crunch',
   '借力推': 'Push Press',
   '壶铃单臂划船': 'Single-Arm Kettlebell Row',
+  // 补库第四弹（2026-09-29 臀腿+商业健身房器械）
+  '绳索髋屈伸': 'Cable Pull Through',
+  '绳索单腿后踢': 'One-Legged Cable Kickback',
+  '跪姿后踢腿': 'Glute Kickback',
+  '弹力带髋伸展': 'Band Hip Extension',
+  '跪姿杠铃蹲': 'Kneeling Squat',
+  '站姿腿弯举': 'Standing Leg Curl',
+  '单腿腿屈伸': 'Single-Leg Leg Extension',
+  '倒蹬机提踵': 'Calf Press on Leg Press',
+  '史密斯机提踵': 'Smith Machine Calf Raise',
+  '框架硬拉机': 'Leverage Machine Deadlift',
+  '臀腘绳挺身（GHD）': 'Glute Ham Raise',
+  '反向山羊挺身': 'Reverse Hyperextension',
+  '俯卧T杠划船': 'Lying T-Bar Row',
+  '高位划船机': 'Leverage High Row',
+  '坐姿推肩机': 'Leverage Shoulder Press',
+  '耸肩机': 'Leverage Shrug',
+  '器械弯举': 'Machine Bicep Curl',
+  '坐姿臂屈伸机': 'Machine Triceps Extension',
+  '上斜推胸机': 'Leverage Incline Chest Press',
 };
 
 /// 训练日标题 / 计划模板名 / 模板介绍等随库内置的名词。
@@ -408,6 +428,26 @@ const _kCueEn = <String, String>{
   '哑铃侧屈': 'Stand tall holding a dumbbell in one hand, other hand behind your head. Bend sideways toward the weighted side, then straighten using the obliques on the opposite side, pelvis stable. Pure lateral fold - no leaning forward or back. Common mistakes: bobbing with momentum, a too-heavy bell turning it into a shrug.',
   '颈前深蹲': 'Rest the bar on the front delts and collarbone, elbows high and pointing forward near parallel to the floor; brace the core and squat with an upright torso to at least thigh-parallel. Common mistakes: elbows dropping so the bar rolls forward, the torso pitching. If wrist or shoulder mobility is lacking, transition via goblet squats.',
   '杠铃臀推': 'Upper back against a bench, padded barbell over the hips, feet flat. Drive through the heels until shoulders, hips and knees form a straight line; squeeze the glutes 1-2 seconds at the top, lower under control. Common mistakes: overextending into a lower-back arch at the top, bouncing with momentum.',
+  // 补库第四弹（2026-09-29 臀腿+商业健身房器械）
+  '绳索髋屈伸': 'Set a cable pulley to the lowest position, face away from the stack and hold the rope between your legs. Hinge at the hips, then drive them forward to stand tall against the cable, squeezing the glutes one second at the top; targets glutes and hamstrings. Common mistakes: hyperextending the lower back instead of driving with the hips, standing too far from the machine so tension dies.',
+  '绳索单腿后踢': 'Cuff a cable to one ankle, hold the frame and lean forward slightly. Kick that leg straight back and up until the glute fully contracts, then return slowly; switch sides when done. Common mistakes: kicking too high so the lower back takes over, wavering on the support leg.',
+  '跪姿后踢腿': 'On all fours with hands under shoulders, keep one knee bent 90 degrees and drive the heel toward the ceiling, stopping as soon as the glute is tight - height is not the goal. Common mistakes: sagging the lower back to fake range, tilting the pelvis, rushing the reps.',
+  '弹力带髋伸展': 'Anchor a band behind you at a low point (or stand on one end), loop the other end around your hip or ankle. Drive the hips forward against the pull until standing tall and squeeze the glute at the top. Common mistakes: unstable stance, arching the lower back to finish the range.',
+  '跪姿杠铃蹲': 'Kneel with shins flat on the floor and a barbell across your shoulders (inside a rack with safety pins set). Sit the hips back and down toward the heels, then drive up through the glutes to tall-kneel; a very isolated glute move - keep loads conservative. Common mistakes: leaning the torso back, feet not pinned down so you cannot sit back.',
+  '站姿腿弯举': 'On a standing leg curl machine, place the roller above the heel of the working leg, hold the handles, and curl the heel toward your glute before lowering slowly; one leg at a time. Common mistakes: leaning the body forward to cheat, swinging the stack with momentum.',
+  '单腿腿屈伸': 'On a leg extension machine, work one leg at a time: extend fully, pause one second at the top, lower slowly - the go-to fix for side-to-side strength gaps. Common mistakes: lifting the hips off the seat, letting the weight bounce back up.',
+  '倒蹬机提踵': 'In a leg press, place only the balls of your feet on the lower edge of the platform, knees locked straight, and press through a full calf range; the reclined angle lets you pile on weight. Common mistakes: bending the knees to cheat, bouncing at the bottom.',
+  '史密斯机提踵': 'Stand under a Smith machine bar with the balls of your feet planted, bar on your shoulders. Lower the heels to a full stretch, then press up to the very top; the fixed rail means zero balance demand - pure calf work. Common mistakes: cutting the range short, bending the knees to cheat.',
+  '框架硬拉机': 'On a leverage deadlift machine, take the neutral handles from a hinged start and drive the hips to stand tall, squeezing the glutes at the top. The fixed path removes the balance demand of a barbell deadlift - great for loading the posterior chain heavy and safe. Common mistakes: arching the lower back at the top, dropping the weight stack on the way down.',
+  '臀腘绳挺身（GHD）': 'Set ankles under the pads of a glute-ham developer, start kneeling tall, and lower your torso slowly until near horizontal, then pull yourself back up with the glutes and hamstrings. Start with half range if strength is not there yet. Common mistakes: hyperextending the lumbar spine instead of driving with the hips, dropping too fast.',
+  '反向山羊挺身': 'Lie prone on a reverse hyperextension bench with legs hanging. Swing both legs back and up until they line up with your torso, driven by the glutes and hamstrings, then return slowly; easy on the lower back, great for the posterior chain. Common mistakes: overarching at the top, swinging on momentum.',
+  '俯卧T杠划船': 'Chest and abdomen prone on a T-bar row bench, row the handle toward your chest with both arms and retract the shoulder blades fully at the top; the pinned torso leaves no room to cheat. Common mistakes: half range, head lifting off the pad.',
+  '高位划船机': 'Sit at a leverage high-row machine with the handles high; pull them toward your collarbone with elbows driving out and back, hitting the upper back and rear delts. Common mistakes: rocking the torso for leverage, pulling only half way.',
+  '坐姿推肩机': 'Back firmly on the pad, press the handles from ear height up along the fixed track until the arms are nearly straight; no balance to fight, so focus on feeling the delts work. Common mistakes: shrugging the traps, stopping short of full extension.',
+  '耸肩机': 'On a shrug machine with handles at your sides, shrug both shoulders straight up toward the ears, hold one second at the top and lower slowly; the fixed path lets you load heavy safely. Common mistakes: rolling the shoulders, bending the elbows to lift.',
+  '器械弯举': 'On a bicep curl machine with arms locked on the pad, curl to the top and squeeze; the pad stops the elbows from drifting forward, making it highly isolated. Common mistakes: hips lifting off the seat, letting the weight stack slam down.',
+  '坐姿臂屈伸机': 'On a seated triceps extension machine, keep the upper arms firmly on the pads and press the forearms down to full lockout, pausing one second; elbow-friendly and very isolated. Common mistakes: elbows lifting off the pads, pressing the body down instead of the arms.',
+  '上斜推胸机': 'An incline chest press machine: back on the pad, press the handles up and together along the fixed track, focusing on the upper chest. Common mistakes: shoulders shrugging up, lazily stopping short of the top.',
 };
 
 /// 动作名显示（动作库/训练/历史/统计等处）。
