@@ -151,4 +151,37 @@ void main() {
     expect(await repo.dayForDateOn(plan, DateTime(2026, 8, 31)), isNull,
         reason: 'patternStart(9/1) 之前不产生训练日');
   });
+
+  test('cycleRotationIndex：「第N练」标签与实际轮转顺序一致，空模板日不编号', () async {
+    final plan = await buildCyclePlan(['胸', '空A', '腿', '背', '空B', '肩'],
+        emptyIdx: const [1, 4], train: 2, rest: 1);
+    final days = await db.planDays(plan.id!);
+    final exMap = await db.daysExercisesMap(days.map((d) => d.id!).toList());
+    final rotation = cycleRotationIndex(days, exMap);
+
+    // 空模板日不进编号；非空的按槽位顺序连续编号（与列表展示口径一致）
+    expect(rotation.length, 4);
+    expect(rotation[days[0].id], 1); // 胸
+    expect(rotation.containsKey(days[1].id), false); // 空A
+    expect(rotation[days[2].id], 2); // 腿
+    expect(rotation[days[3].id], 3); // 背
+    expect(rotation.containsKey(days[4].id), false); // 空B
+    expect(rotation[days[5].id], 4); // 肩
+
+    // 乱序输入结果不变（函数内部按 weekday,id 排序，不依赖传入顺序）
+    expect(cycleRotationIndex(days.reversed.toList(), exMap), rotation);
+
+    // 对拍轮转引擎：第 n 次训练（从 1 计）推导出的模板日，标签恰为第 n%4 练
+    var n = 0;
+    for (var i = 0; i < 30; i++) {
+      final day = await repo.dayForDateOn(
+          plan, DateTime(2026, 9, 1).add(Duration(days: i)));
+      if (day != null) {
+        n++;
+        expect(rotation[day.id], ((n - 1) % 4) + 1,
+            reason: '第 $n 次训练应使用第 ${((n - 1) % 4) + 1} 练的模板日');
+      }
+    }
+    expect(n, 20, reason: '练2休1、30 天应恰好 20 个训练日');
+  });
 }

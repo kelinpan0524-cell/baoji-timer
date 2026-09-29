@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../engine/engine.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
+import '../services/plan_repository.dart';
 import 'plan_editor_page.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -520,6 +521,13 @@ class _ScheduleViewsState extends State<ScheduleViews> {
     final c = app(context);
     final plan = widget.plan;
     final templates = _templates ?? await c.db.planDays(plan.id!);
+    // 循环模式下模板日标签用轮转序号「第N练」，与计划页模板日列表同口径
+    final templateRotation = plan.isCycle
+        ? cycleRotationIndex(
+            templates,
+            await c.db
+                .daysExercisesMap(templates.map((t) => t.id!).toList()))
+        : const <int, int>{};
     final dateLabel =
         tx('${d.month}月${d.day}日', en: '${d.month}/${d.day}');
     if (!mounted) return;
@@ -556,7 +564,7 @@ class _ScheduleViewsState extends State<ScheduleViews> {
                   final changed = await Navigator.of(context).push(
                     MaterialPageRoute<bool>(
                         builder: (_) =>
-                            PlanEditorPage(day: cell.day!)),
+                            PlanEditorPage(day: cell.day!, isCycle: plan.isCycle)),
                   );
                   if (changed == true) {
                     widget.onChanged();
@@ -599,9 +607,15 @@ class _ScheduleViewsState extends State<ScheduleViews> {
                       color: AppTheme.primary),
                   title: Text(dname(t.title)),
                   subtitle: Text(
-                      tx('模板 · 周${'一二三四五六日'[t.weekday - 1]}',
-                          en:
-                              'Template · ${_weekdayEn['一二三四五六日'[t.weekday - 1]]}'),
+                      plan.isCycle
+                          ? (templateRotation.containsKey(t.id)
+                              ? tx('模板 · 第${templateRotation[t.id]}练',
+                                  en: 'Template · Workout ${templateRotation[t.id]}')
+                              : tx('模板 · 未排内容',
+                                  en: 'Template · not in rotation'))
+                          : tx('模板 · 周${'一二三四五六日'[t.weekday - 1]}',
+                              en:
+                                  'Template · ${_weekdayEn['一二三四五六日'[t.weekday - 1]]}'),
                       style: const TextStyle(fontSize: 12)),
                   onTap: () async {
                     Navigator.pop(ctx);

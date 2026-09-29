@@ -7,6 +7,27 @@ import '../presets/exercise_library.dart';
 import '../services/lark_service.dart';
 import 'settings.dart';
 
+/// 循环模式的轮转序号（UI 标签用）：非空模板日按槽位顺序（weekday, id）
+/// 从 1 编号，即「第 N 练」；空模板日（无动作）不参与轮转、不进返回值。
+/// 编号口径与 PlanRepository._cycleDayFor 的轮转一致：同为跳过空模板日、
+/// 同按 planDays 排序取序——第 N 练就是轮到第 N 次训练时用的模板日。
+Map<int, int> cycleRotationIndex(
+    List<PlanDay> days, Map<int, List<PlanExercise>> exMap) {
+  final sorted = [...days]..sort((a, b) {
+      final byWd = a.weekday.compareTo(b.weekday);
+      return byWd != 0 ? byWd : (a.id ?? 0).compareTo(b.id ?? 0);
+    });
+  final result = <int, int>{};
+  var n = 0;
+  for (final d in sorted) {
+    if (d.id == null) continue;
+    if ((exMap[d.id] ?? const <PlanExercise>[]).isNotEmpty) {
+      result[d.id!] = ++n;
+    }
+  }
+  return result;
+}
+
 /// 计划仓库：安装内置计划、AI 计划落库、今日训练生成（含渐进推荐）。
 class PlanRepository extends ChangeNotifier {
   PlanRepository(this._db, this._settings);

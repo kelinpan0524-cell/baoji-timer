@@ -531,6 +531,9 @@ class _PlanPageState extends State<PlanPage> {
     final c = app(context);
     final days = await c.db.planDays(plan.id!);
     final exMap = await c.db.daysExercisesMap(days.map((d) => d.id!).toList());
+    // 循环模式下「周几」只是槽位排序键，展示成轮转序号「第N练」才不误导
+    final rotation =
+        plan.isCycle ? cycleRotationIndex(days, exMap) : const <int, int>{};
     if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
@@ -547,8 +550,12 @@ class _PlanPageState extends State<PlanPage> {
                     fontSize: 18, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
             Text(
-                tx('这里是计划的内容骨架；具体哪天练哪个由排程决定（按星期/循环/手动拖动）。',
-                    en: "This is the plan's content skeleton; which day trains what is decided by scheduling (weekly / cycle / manual drag)."),
+                plan.isCycle
+                    ? tx(
+                        '循环模式：训练日按「第1练→第N练」的顺序依次轮转，空模板日跳过；哪天练哪个由循环排程决定。',
+                        en: 'Cycle mode: training days rotate in order (Workout 1 → N), empty days are skipped; the cycle schedule decides which day trains what.')
+                    : tx('这里是计划的内容骨架；具体哪天练哪个由排程决定（按星期/循环/手动拖动）。',
+                        en: "This is the plan's content skeleton; which day trains what is decided by scheduling (weekly / cycle / manual drag)."),
                 style: const TextStyle(
                     color: AppTheme.textDim, fontSize: 12)),
             const SizedBox(height: 8),
@@ -558,9 +565,15 @@ class _PlanPageState extends State<PlanPage> {
                     color: AppTheme.primary),
                 title: Text(dname(d.title)),
                 subtitle: Text(
-                    tx(
-                        '周${'一二三四五六日'[d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} 个动作',
-                        en: '${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} exercises'),
+                    plan.isCycle
+                        ? (rotation.containsKey(d.id)
+                            ? tx('第${rotation[d.id]}练 · ${(exMap[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                                en: 'Workout ${rotation[d.id]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} exercises')
+                            : tx('未排内容 · 不参与轮转',
+                                en: 'No exercises · not in rotation'))
+                        : tx(
+                            '周${'一二三四五六日'[d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} 个动作',
+                            en: '${const ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d.weekday - 1]} · ${(exMap[d.id] ?? const <PlanExercise>[]).length} exercises'),
                     style: const TextStyle(fontSize: 12)),
                 trailing: const Icon(Icons.chevron_right, size: 18),
                 onTap: () async {
@@ -568,7 +581,8 @@ class _PlanPageState extends State<PlanPage> {
                   if (!mounted) return;
                   final changed = await Navigator.of(context).push(
                     MaterialPageRoute<bool>(
-                        builder: (_) => PlanEditorPage(day: d)),
+                        builder: (_) =>
+                            PlanEditorPage(day: d, isCycle: plan.isCycle)),
                   );
                   if (changed == true && mounted) {
                     await _refresh();
