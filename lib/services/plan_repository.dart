@@ -94,6 +94,8 @@ class PlanRepository extends ChangeNotifier {
       patternStart: src?.patternStart ?? '',
       cycleTrain: src?.cycleTrain ?? 0,
       cycleRest: src?.cycleRest ?? 0,
+      shiftDays: src?.shiftDays ?? 0,
+      shiftFrom: src?.shiftFrom ?? '',
     ));
     // 旧 id → 新 id 映射：排程覆盖行跟着复制（改期历史不丢）
     final idMap = <int, int>{};
@@ -107,7 +109,20 @@ class PlanRepository extends ChangeNotifier {
       idMap[day.id!] = newDayId;
       var i = 0;
       for (final ex in srcEx[day.id!] ?? const <PlanExercise>[]) {
-        await _db.insertPlanExercise(ex.copyWith(dayId: newDayId, orderIdx: i++));
+        // 显式丢掉源 id：copyWith 会保留 id，带着旧主键插同库必撞
+        // UNIQUE 约束（存量 bug，2026-09-29 由 shift 测试踩中——此前无覆盖）。
+        await _db.insertPlanExercise(PlanExercise(
+          dayId: newDayId,
+          name: ex.name,
+          orderIdx: i++,
+          sets: ex.sets,
+          repsMin: ex.repsMin,
+          repsMax: ex.repsMax,
+          restSec: ex.restSec,
+          kind: ex.kind,
+          rule: ex.rule,
+          supersetTag: ex.supersetTag,
+        ));
       }
     }
     for (final e in await _db.allScheduleEntries(sourcePlanId)) {
@@ -418,8 +433,12 @@ class PlanRepository extends ChangeNotifier {
       if (override.dayId == null) return null; // 显式休息
       return await _db.planDayById(override.dayId!);
     }
-    if (plan.isCycle) return _cycleDayFor(plan, d);
-    return _dayForWeekdayOn(plan, d.weekday);
+    // 全计划顺延（shiftDays/shiftFrom）：规则推导先回退到"有效日期"再走
+    // 循环/星期——明天排今天的内容、依此类推；上面的覆盖行按真实日期命中，
+    // 手动改期/休息墓碑不受顺延影响（用户明确钉过的日子不动）。
+    final eff = plan.effectiveScheduleDate(d);
+    if (plan.isCycle) return _cycleDayFor(plan, eff);
+    return _dayForWeekdayOn(plan, eff.weekday);
   }
 
   /// 某计划的星期模板日（不依赖激活缓存）。
@@ -467,6 +486,56 @@ class PlanRepository extends ChangeNotifier {
   Future<void> setOverride(Plan plan, DateTime d, int? dayId) async {
     await _db.upsertScheduleEntry(
         PlanScheduleEntry(planId: plan.id!, date: fmtDate(d), dayId: dayId));
+  }
+
+  /// 全计划顺延一天（2026-09-29 Arono：「今天休息，之后所有训练推一天」）：
+  /// [fromDate] 当天落「显式休息」墓碑（今天不练），[fromDate] 起的规则推导
+  /// 整体后移一天——明天排今天的内容、后天排明天的，依此类推，长期有效。
+  /// weekly / cycle 通用（推导统一走 effectiveScheduleDate）；多次顺延累加、
+  /// shiftFrom 保留最早一次。返回撤销快照（原 shiftDays / shiftFrom /
+  /// 原覆盖行是否存在与 dayId——hadEntry=false 表示原本无覆盖行）。
+  Future<(int, String, bool, int?)> shiftScheduleOneDay(
+      Plan plan, DateTime fromDate) async {
+    // 不信任调用方手里的 Plan（可能在上次操作后过期）：重读最新行再累加，
+    // 连点两次也各自 +1，不会把同值写两遍。
+    final fresh = plan.id == null
+        ? plan
+        : (await _db.allPlans()).where((p) => p.id == plan.id).firstOrNull ??
+            plan;
+    final prev = await _db.scheduleEntryOn(fresh.id!, fmtDate(fromDate));
+    if (prev == null || prev.dayId != null) {
+      // 原本无覆盖（规则训练日/休息日）或有手动训练 → 统一盖休息墓碑；
+      // 原有墓碑则不重写（保持原行）。撤销时按快照还原。
+      await setOverride(fresh, fromDate, null);
+    }
+    final dateStr = fmtDate(fromDate);
+    final newFrom =
+        fresh.shiftFrom.isEmpty || dateStr.compareTo(fresh.shiftFrom) < 0
+            ? dateStr
+            : fresh.shiftFrom;
+    await _db.updatePlanFields(fresh.id!, {
+      'shift_days': fresh.shiftDays + 1,
+      'shift_from': newFrom,
+    });
+    return (
+      fresh.shiftDays,
+      fresh.shiftFrom,
+      prev != null,
+      prev?.dayId,
+    );
+  }
+
+  /// 撤销一次 shiftScheduleOneDay：还原顺延字段，并把当天覆盖行恢复原样
+  /// （原本无行 → 删除；原本休息墓碑/手动训练 → 原样写回）。
+  Future<void> undoShiftScheduleOneDay(
+      Plan plan, DateTime fromDate, (int, String, bool, int?) snapshot) async {
+    final (days, from, hadEntry, dayId) = snapshot;
+    await _db.updatePlanFields(plan.id!, {'shift_days': days, 'shift_from': from});
+    if (hadEntry) {
+      await setOverride(plan, fromDate, dayId);
+    } else {
+      await clearOverride(plan, fromDate);
+    }
   }
 
   /// 清除某天覆盖行：回到按模板/循环的默认推导。

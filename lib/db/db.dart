@@ -51,7 +51,8 @@ class Db {
     final dir = getDatabasesPath();
     final future = dir.then((d) => openDatabase(
           p.join(d, 'baoji_timer.db'),
-          version: 9,
+          // v9=超级组（superset_tag），v10=全计划顺延（plans.shift_*）。
+          version: 10,
           onConfigure: (db) => db.execute('PRAGMA foreign_keys = ON'),
           onCreate: (db, v) => createSchema(db),
           onUpgrade: _onUpgrade,
@@ -126,6 +127,18 @@ class Db {
     if (oldV < 9) {
       await upgradeV8to9(db);
     }
+    if (oldV < 10) {
+      await upgradeV9to10(db);
+    }
+  }
+
+  /// v10：plans 加全计划顺延字段（shift_days / shift_from）。
+  /// 纯加列，无表重建。v9 见 upgradeV8to9（超级组）。
+  Future<void> upgradeV9to10(Database db) async {
+    await db.execute(
+        'ALTER TABLE plans ADD COLUMN shift_days INTEGER NOT NULL DEFAULT 0');
+    await db.execute(
+        "ALTER TABLE plans ADD COLUMN shift_from TEXT NOT NULL DEFAULT ''");
   }
 
   /// v6：计划模板目标参数快照进训练记录（调研条目 14）。
@@ -195,7 +208,9 @@ class Db {
         pattern TEXT NOT NULL DEFAULT 'weekly',
         pattern_start TEXT NOT NULL DEFAULT '',
         cycle_train INTEGER NOT NULL DEFAULT 0,
-        cycle_rest INTEGER NOT NULL DEFAULT 0
+        cycle_rest INTEGER NOT NULL DEFAULT 0,
+        shift_days INTEGER NOT NULL DEFAULT 0,
+        shift_from TEXT NOT NULL DEFAULT ''
       )''');
     await db.execute('''
       CREATE TABLE plan_days(

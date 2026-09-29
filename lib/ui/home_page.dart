@@ -6,6 +6,7 @@ import '../engine/superset.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import 'ai_coach_page.dart';
+import 'schedule_views.dart';
 import 'settings_subpages.dart';
 import 'theme.dart';
 import 'widgets/common.dart';
@@ -403,8 +404,39 @@ class _HomePageState extends State<HomePage> {
                 ? null
                 : () => _start(context, day, exs),
           ),
+          // 今天不练的出口（2026-09-29）：休息并把之后所有训练推一天。
+          // 低调文字按钮，不与开始训练抢视觉。
+          Align(
+            child: TextButton(
+              onPressed: () => _shiftToday(context),
+              style: TextButton.styleFrom(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
+              child: Text(
+                  tx('今天休息？之后全部顺延一天',
+                      en: 'Rest today? Shift all later by one'),
+                  style: const TextStyle(
+                      fontSize: 13, color: AppTheme.textDim)),
+            ),
+          ),
         ],
       ),
+    );
+  }
+
+  /// 今天休息 + 全计划顺延一天（与计划页日期弹层共用交互流）。
+  Future<void> _shiftToday(BuildContext context) async {
+    final c = app(context);
+    final plan = c.planRepo.activePlan;
+    if (plan?.id == null) return;
+    await showShiftAllDayFlow(
+      context: context,
+      plan: plan!,
+      d: DateTime.now(),
+      onChanged: () async {
+        await _refresh();
+        await _syncLarkDays(c);
+      },
     );
   }
 
