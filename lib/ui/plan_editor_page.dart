@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../engine/engine.dart';
+import '../engine/superset.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import '../services/plan_repository.dart';
@@ -283,13 +284,15 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
   }
 
   /// 复制动作：同配置插到末尾，名字加「副本」提示改名。
+  /// 超级组标记不带过去——副本落在末尾，带着旧 tag 会变成悬空标记。
   Future<void> _copyExercise(PlanExercise ex) async {
     final c = app(context);
     await c.db.insertPlanExercise(
       ex.copyWith(
           id: null,
           name: tx('${ex.name}（副本）', en: '${ex.name} (copy)'),
-          orderIdx: _exercises.length),
+          orderIdx: _exercises.length,
+          supersetTag: ''),
     );
     _dirty = true;
     await _reload();
@@ -312,7 +315,7 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
       await c.db.reorderPlanExercises(_day.id!, rest);
     }
     _dirty = true;
-    await _reload();
+    await _normalizeAfterMutation();
     if (!mounted) return;
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(SnackBar(
@@ -329,8 +332,7 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
           ids.insert(index.clamp(0, ids.length), newId);
           await c.db.reorderPlanExercises(_day.id!, ids);
           _dirty = true;
-          await _reload();
-          if (mounted) setState(() {});
+          await _normalizeAfterMutation();
         },
       ),
     ));
@@ -345,6 +347,92 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
     final c = app(context);
     await c.db.reorderPlanExercises(_day.id!, list.map((e) => e.id!).toList());
     _dirty = true;
+    // 超级组成员被拖离同伴 → 自动解除配对并提示。
+    await _normalizeAfterMutation();
+  }
+
+  // ---------- 超级组（v9）：配对 / 解除 / 徽标 ----------
+
+  List<String> get _supersetTagsNow =>
+      [for (final e in _exercises) e.supersetTag];
+
+  /// i 所属的连续超级组（同 tag 相邻、≥2 人）；null = 未配对。
+  List<int>? _supersetGroupOf(int i) =>
+      supersetMembersOf(i, _supersetTagsNow);
+
+  /// 变更（重排/删除/解除）后的一致性维护：被拆散或只剩单人的 tag 自动
+  /// 清掉，SnackBars/Toast 提示被解除的动作。
+  Future<void> _normalizeAfterMutation() async {
+    final c = app(context);
+    final detached = await c.db.normalizeSupersetTags(_day.id!);
+    await _reload();
+    if (!mounted) return;
+    if (detached.isNotEmpty) {
+      toast(
+        context,
+        tx('顺序变化已自动解除超级组：${detached.map(exname).join('、')}',
+            en: 'Superset auto-unpaired after reorder: '
+                '${detached.map(exname).join(', ')}'),
+      );
+    }
+  }
+
+  /// 配对/解除超级组。
+  /// 解除：清当前动作的 tag（剩余成员是否还成组由 normalize 收敛——
+  /// 两人组直接散，三人组去掉首/尾后余下两人仍相邻则保留）。
+  /// 配对：与下一个动作打同 tag（下一个已在自己组里则并入成连组），
+  /// 可顺带把第一个动作的组间休息设为转换休息（A 做完转 B 前歇多久）。
+  Future<void> _toggleSuperset(int i) async {
+    final c = app(context);
+    final ex = _exercises[i];
+    final group = _supersetGroupOf(i);
+    if (group != null) {
+      await c.db.updatePlanExercise(ex.copyWith(supersetTag: ''));
+      _dirty = true;
+      await _normalizeAfterMutation();
+      if (mounted) {
+        toast(
+          context,
+          tx('已解除「${exname(ex.name)}」的超级组',
+              en: 'Superset unpaired for "${exname(ex.name)}"'),
+        );
+      }
+      return;
+    }
+    if (i + 1 >= _exercises.length) {
+      toast(
+        context,
+        tx('这是最后一个动作，没有可配对的下一个',
+            en: 'This is the last exercise; nothing after it to pair with'),
+      );
+      return;
+    }
+    final next = _exercises[i + 1];
+    final sec = await showModalBottomSheet<int>(
+      context: context,
+      backgroundColor: AppTheme.cardHi,
+      isScrollControlled: true,
+      builder: (_) => _SupersetPairSheet(first: ex, second: next),
+    );
+    if (sec == null || !mounted) return; // 用户取消
+    final tag =
+        next.supersetTag.isNotEmpty ? next.supersetTag : newSupersetTag();
+    await c.db.updatePlanExercise(ex.copyWith(
+      supersetTag: tag,
+      restSec: sec > 0 ? sec : ex.restSec,
+    ));
+    if (next.supersetTag.isEmpty) {
+      await c.db.updatePlanExercise(next.copyWith(supersetTag: tag));
+    }
+    _dirty = true;
+    await _reload();
+    if (mounted) {
+      toast(
+        context,
+        tx('已组成超级组：${exname(ex.name)} ⇄ ${exname(next.name)}',
+            en: 'Superset paired: ${exname(ex.name)} ⇄ ${exname(next.name)}'),
+      );
+    }
   }
 
   @override
@@ -547,9 +635,18 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(exname(e.name),
-                            style: const TextStyle(
-                                fontSize: 15, fontWeight: FontWeight.w600)),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 2,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            Text(exname(e.name),
+                                style: const TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w600)),
+                            if (_supersetGroupOf(i) != null)
+                              _supersetBadge(i),
+                          ],
+                        ),
                         const SizedBox(height: 2),
                         Text(
                             '${e.sets}×${e.repsMin}-${e.repsMax} · ${tx('休 ${e.restSec}s', en: 'Rest ${e.restSec}s')} · ${e.kind == 'compound' ? tx('复合', en: 'Compound') : tx('辅助', en: 'Assistance')}'
@@ -558,6 +655,21 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
                                 color: AppTheme.textDim, fontSize: 12)),
                       ],
                     ),
+                  ),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: _supersetGroupOf(i) != null
+                      ? tx('解除超级组', en: 'Unpair superset')
+                      : tx('与下一动作组成超级组',
+                          en: 'Pair with next as superset'),
+                  onPressed: () => _toggleSuperset(i),
+                  icon: Icon(
+                    _supersetGroupOf(i) != null ? Icons.link : Icons.add_link,
+                    size: 19,
+                    color: _supersetGroupOf(i) != null
+                        ? AppTheme.primary
+                        : AppTheme.textDim,
                   ),
                 ),
                 IconButton(
@@ -578,6 +690,25 @@ class _PlanEditorPageState extends State<PlanEditorPage> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  /// 超级组徽标：⇄ + 同组伙伴名（自己的名字不重复出现）。
+  Widget _supersetBadge(int i) {
+    final group = _supersetGroupOf(i)!;
+    final partners =
+        [for (final j in group) if (j != i) exname(_exercises[j].name)]
+            .join('+');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        tx('⇄ 超级组·$partners', en: '⇄ superset · $partners'),
+        style: const TextStyle(fontSize: 10, color: AppTheme.primary),
       ),
     );
   }
@@ -959,6 +1090,112 @@ class _ExerciseEditSheetState extends State<_ExerciseEditSheet> {
         child: Text(label,
             style: TextStyle(
                 fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: sel ? const Color(0xFF06220F) : AppTheme.textDim)),
+      ),
+    );
+  }
+}
+
+/// 超级组配对确认弹层（v9）：展示 A ⇄ B 的轮转执行方式，让用户选
+/// 「转换休息」（A 做完一组转 B 前歇多久 = 第一个动作的组间休息秒数）。
+/// 返回值：null = 取消；0 = 保持第一个动作当前休息不动；>0 = 选定的秒数。
+class _SupersetPairSheet extends StatefulWidget {
+  const _SupersetPairSheet({required this.first, required this.second});
+
+  final PlanExercise first;
+  final PlanExercise second;
+
+  @override
+  State<_SupersetPairSheet> createState() => _SupersetPairSheetState();
+}
+
+class _SupersetPairSheetState extends State<_SupersetPairSheet> {
+  static const _choices = [15, 30, 45, 60];
+  late int _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    // 当前休息本来就是快捷档之一 → 预选它；否则预选 0（保持不变）。
+    _selected = _choices.contains(widget.first.restSec)
+        ? widget.first.restSec
+        : 0;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = exname(widget.first.name);
+    final b = exname(widget.second.name);
+    return Padding(
+      padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(tx('组成超级组', en: 'Pair as superset'),
+              style:
+                  const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          Text(
+            tx('$a ⇄ $b', en: '$a ⇄ $b'),
+            style: const TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700, color: AppTheme.primary),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            tx(
+                '训练时交替执行：$a 第1组 → $b 第1组 → $a 第2组 → ……直到都练满。'
+                '\n$b 的组间休息照旧（每轮结束的完整休息）；$a 做完转 $b 前歇多久由 $a 的休息秒数决定，建议 15-60 秒：',
+                en:
+                    'Alternating order: $a set 1 → $b set 1 → $a set 2 → … until all sets are done.'
+                    '\n$b keeps its rest (full rest between rounds); how long to rest after $a before switching to $b is $a\'s rest seconds — 15-60s recommended:'),
+            style: const TextStyle(color: AppTheme.textDim, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              _chip(0, tx('保持 ${widget.first.restSec}s', en: 'Keep ${widget.first.restSec}s')),
+              for (final v in _choices) _chip(v, '$v${tx('秒', en: 's')}'),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52)),
+              onPressed: () => Navigator.pop(context, _selected),
+              child: Text(tx('配对', en: 'Pair')),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(int value, String label) {
+    final sel = _selected == value;
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        setState(() => _selected = value);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: sel ? AppTheme.accent : AppTheme.cardHi,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 14,
                 fontWeight: FontWeight.w600,
                 color: sel ? const Color(0xFF06220F) : AppTheme.textDim)),
       ),

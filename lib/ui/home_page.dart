@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/app.dart';
 import '../engine/engine.dart';
+import '../engine/superset.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import 'ai_coach_page.dart';
@@ -380,11 +381,20 @@ class _HomePageState extends State<HomePage> {
                   en: '${exs.length} exercises · ~${_estimateMin(exs)} min'),
               style: const TextStyle(color: AppTheme.textDim)),
           const SizedBox(height: 8),
-          ...exs.map((e) => Padding(
-                padding: const EdgeInsets.symmetric(vertical: 3),
-                child: Text('· ${exname(e.name)} ${e.sets}×${e.repsMin}-${e.repsMax}',
-                    style: const TextStyle(fontSize: 15)),
-              )),
+          ...exs.asMap().entries.map((entry) {
+                final i = entry.key;
+                final e = entry.value;
+                // 超级组成员行加 ⇄ 前缀（同标记相邻成组才显示，与训练引擎同口径）
+                final grouped = supersetMembersOf(
+                        i, [for (final x in exs) x.supersetTag]) !=
+                    null;
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Text(
+                      '${grouped ? '⇄ ' : '· '}${exname(e.name)} ${e.sets}×${e.repsMin}-${e.repsMax}',
+                      style: const TextStyle(fontSize: 15)),
+                );
+              }),
           const SizedBox(height: 16),
           BigButton(
             label: tx('开始训练', en: 'Start Workout'),
@@ -399,9 +409,29 @@ class _HomePageState extends State<HomePage> {
   }
 
   int _estimateMin(List<PlanExercise> exs) {
+    // 超级组（v9）按轮次估：一轮 = 成员各一组（各约 45s）+ 轮末完整休息
+    //（= 最后成员的休息秒数，成员间的转换休息短、已并入轮内不再单算）；
+    // 非成员沿用每组「休息+45s」。比逐动作各自累计更贴近真实用时。
+    final tags = [for (final e in exs) e.supersetTag];
     var sec = 0;
-    for (final e in exs) {
-      sec += e.sets * (e.restSec + 45);
+    var i = 0;
+    while (i < exs.length) {
+      final t = tags[i];
+      var j = i + 1;
+      if (t.isNotEmpty) {
+        while (j < exs.length && tags[j] == t) {
+          j++;
+        }
+      }
+      if (j - i >= 2) {
+        final members = exs.sublist(i, j);
+        final rounds =
+            members.map((m) => m.sets).reduce((a, b) => a > b ? a : b);
+        sec += rounds * (members.length * 45 + members.last.restSec);
+      } else {
+        sec += exs[i].sets * (exs[i].restSec + 45);
+      }
+      i = j;
     }
     return (sec / 60).ceil();
   }

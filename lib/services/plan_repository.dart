@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../db/db.dart';
 import '../engine/engine.dart';
+import '../engine/superset.dart';
 import '../presets/baoji_plan.dart';
 import '../presets/exercise_library.dart';
 import '../services/lark_service.dart';
@@ -327,6 +328,15 @@ class PlanRepository extends ChangeNotifier {
         weekday: spec.weekday,
         title: spec.title,
       ));
+      // 超级组链 → tag（v9）：startsSuperset=true 表示与下一个动作配对
+      //（连标两个 = 三连组），连通段打同一个 tag；末位悬挂标记不产生边。
+      final exs = spec.exercises;
+      final tags = List<String>.filled(exs.length, '');
+      for (var i = 0; i < exs.length - 1; i++) {
+        if (!exs[i].startsSuperset) continue;
+        if (tags[i].isEmpty) tags[i] = newSupersetTag();
+        tags[i + 1] = tags[i];
+      }
       var i = 0;
       for (final ex in spec.exercises) {
         final meta = metaMap[ex.name];
@@ -352,10 +362,11 @@ class PlanRepository extends ChangeNotifier {
         final kind = meta?.isCompound == true
             ? 'compound'
             : (ex.kind ?? 'assistance');
+        final idx = i++; // 先取下标再自增：tags[idx] 与 orderIdx 同源不越界
         await _db.insertPlanExercise(PlanExercise(
           dayId: dayId,
           name: ex.name,
-          orderIdx: i++,
+          orderIdx: idx,
           sets: ex.sets,
           repsMin: ex.repsMin,
           repsMax: ex.repsMax,
@@ -370,6 +381,7 @@ class PlanRepository extends ChangeNotifier {
             incrementKg: kind == 'compound' ? 2.5 : 1.25,
             workingSets: ex.sets,
           ),
+          supersetTag: tags[idx],
         ));
       }
     }
@@ -564,6 +576,11 @@ class AiExerciseSpec {
   final int? restSec;
   final String? kind;
   final String? mainMuscle; // AI 判定的主肌群（词表外动作的兜底）
+
+  /// 超级组链标记（v9）：true = 与下一个动作组成超级组（连标两个 =
+  /// 三连组）。落库时由 _writeSpecsIntoPlan 转成 superset_tag；
+  /// 一天最后一个动作标 true = 悬挂，解析层已清掉。
+  final bool startsSuperset;
   const AiExerciseSpec({
     required this.name,
     this.rawName = '',
@@ -575,6 +592,7 @@ class AiExerciseSpec {
     this.restSec,
     this.kind,
     this.mainMuscle,
+    this.startsSuperset = false,
   });
 
   /// 预览页确认后替换动作名（并解除待确认态）。
@@ -589,5 +607,20 @@ class AiExerciseSpec {
         restSec: restSec,
         kind: kind,
         mainMuscle: mainMuscle,
+        startsSuperset: startsSuperset,
+      );
+
+  AiExerciseSpec copyWith({bool? startsSuperset}) => AiExerciseSpec(
+        name: name,
+        rawName: rawName,
+        needsConfirm: needsConfirm,
+        candidates: candidates,
+        sets: sets,
+        repsMin: repsMin,
+        repsMax: repsMax,
+        restSec: restSec,
+        kind: kind,
+        mainMuscle: mainMuscle,
+        startsSuperset: startsSuperset ?? this.startsSuperset,
       );
 }

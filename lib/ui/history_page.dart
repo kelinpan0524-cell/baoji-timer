@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../engine/engine.dart';
+import '../engine/superset.dart';
 import '../l10n/lang.dart';
 import '../l10n/names.dart';
 import 'theme.dart';
@@ -351,7 +352,10 @@ List<Widget> buildSessionDetailRows(
       ),
     );
   }
-  for (final se in ses) {
+  // 超级组成员行加 ⇄ 前缀（v9，与轮转引擎同口径：同 tag 相邻成组）
+  final tags = [for (final se in ses) se.supersetTag];
+  for (var k = 0; k < ses.length; k++) {
+    final se = ses[k];
     final sets = map[se.id!] ?? [];
     if (sets.isEmpty) continue;
     // 每个动作一张小表（别再一条长文字流）：列 = 组 | 重量 kg | 次数 | 余力；
@@ -363,7 +367,7 @@ List<Widget> buildSessionDetailRows(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              exname(se.name),
+              '${supersetMembersOf(k, tags) != null ? '⇄ ' : ''}${exname(se.name)}',
               style:
                   const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
             ),

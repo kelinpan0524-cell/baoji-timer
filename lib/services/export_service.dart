@@ -318,11 +318,22 @@ class ExportService {
       exCount: exs.length,
       exLines: expand
           ? [
-              for (final e in exs)
-                '${e.name} ${e.sets}×${e.repsMin}-${e.repsMax}',
+              for (var k = 0; k < exs.length; k++)
+                '${exs[k].name} ${exs[k].sets}×${exs[k].repsMin}-${exs[k].repsMax}'
+                '${_supersetNote(exs, k)}',
             ]
           : const [],
     );
+  }
+
+  /// 超级组标注（AI 教练数据包用，v9）：连续段的第一人注明与谁配对
+  /// 交替，让教练看得懂今天的安排；段中/段尾与未配对动作不加尾巴。
+  static String _supersetNote(List<PlanExercise> exs, int k) {
+    final t = exs[k].supersetTag;
+    if (t.isEmpty) return '';
+    if (k > 0 && exs[k - 1].supersetTag == t) return ''; // 段中/段尾
+    if (k + 1 >= exs.length || exs[k + 1].supersetTag != t) return '';
+    return '（超级组：与「${exs[k + 1].name}」配对交替）';
   }
 }
 
